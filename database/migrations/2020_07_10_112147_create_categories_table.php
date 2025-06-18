@@ -20,11 +20,11 @@ class CreateCategoriesTable extends Migration
             $table->text('summary')->nullable();
             $table->string('photo')->nullable();
             $table->boolean('is_parent')->default(1);
-            $table->unsignedBigInteger('parent_id')->nullable();
-            $table->unsignedBigInteger('added_by')->nullable();
+            $table->bigInteger('parent_id')->nullable();
+            $table->bigInteger('added_by')->nullable();
             $table->enum('status',['active','inactive'])->default('inactive');
-            $table->foreign('parent_id')->references('id')->on('categories')->onDelete('SET NULL');
-            $table->foreign('added_by')->references('id')->on('users')->onDelete('SET NULL');
+            $table->foreign('parent_id')->references('id')->on('categories')->onDelete('set null');
+            $table->foreign('added_by')->references('id')->on('users')->onDelete('set null');
             $table->timestamps();
         });
     }

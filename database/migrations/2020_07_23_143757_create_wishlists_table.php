@@ -15,24 +15,23 @@ class CreateWishlistsTable extends Migration
     {
         Schema::create('wishlists', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('product_id');
-            $table->unsignedBigInteger('cart_id')->nullable();
-            $table->unsignedBigInteger('user_id')->nullable();
-            $table->float('price');
+
+            // Foreign keys
+            $table->foreignId('product_id')->constrained('products')->onDelete('CASCADE');
+
+            // Nullable foreign keys
+            $table->foreignId('cart_id')->nullable()->constrained('carts')->onDelete('SET NULL');
+            $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('SET NULL');
+
+            // Data columns
+            $table->decimal('price', 10, 2);
             $table->integer('quantity');
-            $table->float('amount');
-            $table->foreign('product_id')->references('id')->on('products')->onDelete('CASCADE');
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('SET NULL');
-            $table->foreign('cart_id')->references('id')->on('carts')->onDelete('SET NULL');
+            $table->decimal('amount', 10, 2);
+
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     *
-     * @return void
-     */
     public function down()
     {
         Schema::dropIfExists('wishlists');

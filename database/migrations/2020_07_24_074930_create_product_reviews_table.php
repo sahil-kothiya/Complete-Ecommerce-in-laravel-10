@@ -15,22 +15,22 @@ class CreateProductReviewsTable extends Migration
     {
         Schema::create('product_reviews', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id')->nullable();
-            $table->unsignedBigInteger('product_id')->nullable();
-            $table->tinyInteger('rate')->default(0);
+
+            // Nullable foreign keys required for SET NULL
+            $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('SET NULL');
+            $table->foreignId('product_id')->nullable()->constrained('products')->onDelete('SET NULL');
+
+            // Rating and review fields
+            $table->unsignedTinyInteger('rate')->default(0); // PostgreSQL doesn't have TINYINT, use unsigned small int (tiny -> small cast)
             $table->text('review')->nullable();
-            $table->enum('status',['active','inactive'])->default('active');
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('SET NULL');
-            $table->foreign('product_id')->references('id')->on('products')->onDelete('SET NULL');
+
+            // Enum field for status
+            $table->enum('status', ['active', 'inactive'])->default('active');
+
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     *
-     * @return void
-     */
     public function down()
     {
         Schema::dropIfExists('product_reviews');

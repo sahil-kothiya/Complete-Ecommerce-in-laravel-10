@@ -13,18 +13,22 @@ class CreateCartsTable extends Migration
      */
     public function up()
     {
-        Schema::create('carts', function (Blueprint $table) {
+       Schema::create('carts', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('product_id');
-            $table->unsignedBigInteger('order_id')->nullable();
-            $table->unsignedBigInteger('user_id')->nullable();
-            $table->float('price');
-            $table->enum('status',['new','progress','delivered','cancel'])->default('new');
+
+            // Foreign keys and relations
+            $table->foreignId('product_id')->constrained('products')->onDelete('CASCADE');
+
+            // Nullable foreign keys (required for SET NULL or optional relationships)
+            $table->foreignId('order_id')->nullable()->constrained('orders')->onDelete('SET NULL');
+            $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('CASCADE');
+
+            // Pricing and order details
+            $table->decimal('price', 10, 2);
+            $table->enum('status', ['new', 'progress', 'delivered', 'cancel'])->default('new');
             $table->integer('quantity');
-            $table->float('amount');
-            $table->foreign('product_id')->references('id')->on('products')->onDelete('CASCADE');
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('CASCADE');
-            $table->foreign('order_id')->references('id')->on('orders')->onDelete('SET NULL');
+            $table->decimal('amount', 10, 2);
+
             $table->timestamps();
         });
     }

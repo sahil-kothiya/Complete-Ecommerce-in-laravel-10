@@ -13,16 +13,22 @@ class CreatePostCommentsTable extends Migration
      */
     public function up()
     {
-        Schema::create('post_comments', function (Blueprint $table) {
+         Schema::create('post_comments', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id')->nullable();
-            $table->unsignedBigInteger('post_id')->nullable();
+
+            // Nullable foreign keys for SET NULL
+            $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('SET NULL');
+            $table->foreignId('post_id')->nullable()->constrained('posts')->onDelete('SET NULL');
+
             $table->text('comment');
-            $table->enum('status',['active','inactive'])->default('active');
+            $table->enum('status', ['active', 'inactive'])->default('active');
             $table->text('replied_comment')->nullable();
-            $table->unsignedBigInteger('parent_id')->nullable();
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('SET NULL');
-            $table->foreign('post_id')->references('id')->on('posts')->onDelete('SET NULL');
+
+            // Parent comment for nesting/replies
+            $table->bigInteger('parent_id')->nullable();
+            $table->foreign('parent_id')->references('id')->on('post_comments')->onDelete('SET NULL');
+
+
             $table->timestamps();
         });
     }

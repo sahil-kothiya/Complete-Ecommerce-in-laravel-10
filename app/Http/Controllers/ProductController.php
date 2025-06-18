@@ -6,7 +6,8 @@ use Illuminate\Http\Request;
 use App\Models\Product;
 use App\Models\Category;
 use App\Models\Brand;
-
+use App\Models\ProductImage;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class ProductController extends Controller
@@ -59,26 +60,35 @@ class ProductController extends Controller
             'discount' => 'nullable|numeric',
         ]);
 
-        $slug = generateUniqueSlug($request->title, Product::class);
-        $validatedData['slug'] = $slug;
+        $imagePaths = array_filter(array_map('trim', explode(',', $validatedData['photo'])));
+        unset($validatedData['photo']); // no longer store this in products table
+
+        $validatedData['slug'] = generateUniqueSlug($request->title, Product::class);
         $validatedData['is_featured'] = $request->input('is_featured', 0);
+        $validatedData['size'] = $request->has('size') ? implode(',', $request->input('size')) : '';
 
-        if ($request->has('size')) {
-            $validatedData['size'] = implode(',', $request->input('size'));
-        } else {
-            $validatedData['size'] = '';
+        DB::beginTransaction();
+
+        try {
+            $product = Product::create($validatedData);
+
+            foreach ($imagePaths as $index => $path) {
+                ProductImage::create([
+                    'product_id' => $product->id,
+                    'image_path' => $path,
+                    'is_primary' => $index === 0,
+                    'sort_order' => $index + 1,
+                ]);
+            }
+
+            DB::commit();
+
+            return redirect()->route('product.index')->with('success', 'Product Successfully added');
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            report($e);
+            return redirect()->route('product.index')->with('error', 'Error while adding product. Please try again!');
         }
-
-        $product = Product::create($validatedData);
-
-        $message = $product
-            ? 'Product Successfully added'
-            : 'Please try again!!';
-
-        return redirect()->route('product.index')->with(
-            $product ? 'success' : 'error',
-            $message
-        );
     }
 
     /**
@@ -101,7 +111,7 @@ class ProductController extends Controller
     public function edit($id)
     {
         $brands = Brand::get();
-        $product = Product::findOrFail($id);
+        $product = Product::with('images')->findOrFail($id); // eager loading images
         $categories = Category::where('is_parent', 1)->get();
         $items = Product::where('id', $id)->get();
 
@@ -123,7 +133,7 @@ class ProductController extends Controller
             'title' => 'required|string',
             'summary' => 'required|string',
             'description' => 'nullable|string',
-            'photo' => 'required|string',
+            'photo' => 'required|string', // comma-separated paths
             'size' => 'nullable',
             'stock' => 'required|numeric',
             'cat_id' => 'required|exists:categories,id',
@@ -136,25 +146,46 @@ class ProductController extends Controller
             'discount' => 'nullable|numeric',
         ]);
 
-        $validatedData['is_featured'] = $request->input('is_featured', 0);
+        // Extract and clean photo paths
+        $imagePaths = array_filter(array_map('trim', explode(',', $validatedData['photo'])));
+        unset($validatedData['photo']); // no longer directly stored in products table
 
-        if ($request->has('size')) {
-            $validatedData['size'] = implode(',', $request->input('size'));
-        } else {
-            $validatedData['size'] = '';
+        // Generate slug if title changed
+        if ($product->title !== $request->title) {
+            $validatedData['slug'] = generateUniqueSlug($request->title, Product::class, $id);
         }
 
-        $status = $product->update($validatedData);
+        $validatedData['is_featured'] = $request->input('is_featured', 0);
+        $validatedData['size'] = $request->has('size') ? implode(',', $request->input('size')) : '';
 
-        $message = $status
-            ? 'Product Successfully updated'
-            : 'Please try again!!';
+        DB::beginTransaction();
 
-        return redirect()->route('product.index')->with(
-            $status ? 'success' : 'error',
-            $message
-        );
+        try {
+            $product->update($validatedData);
+
+            // Remove old images
+            ProductImage::where('product_id', $product->id)->delete();
+
+            // Add new images
+            foreach ($imagePaths as $index => $path) {
+                ProductImage::create([
+                    'product_id' => $product->id,
+                    'image_path' => $path,
+                    'is_primary' => $index === 0,
+                    'sort_order' => $index + 1,
+                ]);
+            }
+
+            DB::commit();
+
+            return redirect()->route('product.index')->with('success', 'Product Successfully updated');
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            report($e);
+            return redirect()->route('product.index')->with('error', 'Error while updating product. Please try again!');
+        }
     }
+
 
     /**
      * Remove the specified resource from storage.
