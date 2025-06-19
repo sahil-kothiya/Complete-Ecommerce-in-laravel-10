@@ -89,9 +89,9 @@
                             // dd($categories);
                             @endphp
                             @if($categories)
-                            <button class="btn" style="background:black" data-filter="*">
-                                All Products
-                            </button>
+                            <button class="btn how-active1" data-filter="*">
+                                All Products</button>
+
                             @foreach($categories as $key=>$cat)
 
                             <button class="btn" style="background:none;color:black;" data-filter=".{{$cat->id}}">
@@ -566,51 +566,53 @@
     #Gslider .carousel-indicators {
         bottom: 70px;
     }
+
+    .filter-tope-group button {
+        background-color: transparent;
+        color: black;
+        border: 1px solid #ccc;
+        margin: 0 5px 10px 0;
+        padding: 8px 16px;
+        transition: background 0.3s, color 0.3s;
+    }
+
+    .filter-tope-group button.how-active1 {
+        background-color: #F7941D !important;
+        color: white !important;
+        border-color: #F7941D !important;
+    }
 </style>
 @endpush
 
 @push('scripts')
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert.min.js"></script>
 <script>
-    /*==================================================================
-        [ Isotope ]*/
-    var $topeContainer = $('.isotope-grid');
-    var $filter = $('.filter-tope-group');
+    $(document).ready(function() {
+        var $topeContainer = $('.isotope-grid');
+        var $filterButtons = $('.filter-tope-group button');
 
-    // filter items on button click
-    $filter.each(function() {
-        $filter.on('click', 'button', function() {
+        // Isotope init
+        $topeContainer.isotope({
+            itemSelector: '.isotope-item',
+            layoutMode: 'fitRows',
+            percentPosition: true,
+            animationEngine: 'best-available',
+            masonry: {
+                columnWidth: '.isotope-item'
+            }
+        });
+
+        // Filter handler
+        $filterButtons.on('click', function() {
             var filterValue = $(this).attr('data-filter');
+
+            // Filter items
             $topeContainer.isotope({
                 filter: filterValue
             });
-        });
 
-    });
-
-    // init Isotope
-    $(window).on('load', function() {
-        var $grid = $topeContainer.each(function() {
-            $(this).isotope({
-                itemSelector: '.isotope-item',
-                layoutMode: 'fitRows',
-                percentPosition: true,
-                animationEngine: 'best-available',
-                masonry: {
-                    columnWidth: '.isotope-item'
-                }
-            });
-        });
-    });
-
-    var isotopeButton = $('.filter-tope-group button');
-
-    $(isotopeButton).each(function() {
-        $(this).on('click', function() {
-            for (var i = 0; i < isotopeButton.length; i++) {
-                $(isotopeButton[i]).removeClass('how-active1');
-            }
-
+            // Update active class
+            $filterButtons.removeClass('how-active1');
             $(this).addClass('how-active1');
         });
     });
