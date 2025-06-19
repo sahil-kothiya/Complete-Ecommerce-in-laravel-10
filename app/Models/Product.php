@@ -13,6 +13,10 @@ class Product extends Model
     {
         return $this->hasMany(ProductImage::class)->orderByDesc('is_primary')->orderBy('sort_order');
     }
+    public function defaultImage()
+    {
+        return $this->hasOne(ProductImage::class)->where('is_default', true);
+    }
 
     public function cat_info()
     {
