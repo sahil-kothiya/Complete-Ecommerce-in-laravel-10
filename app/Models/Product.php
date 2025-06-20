@@ -40,7 +40,7 @@ class Product extends Model
     }
     public static function getProductBySlug($slug)
     {
-        return Product::with(['cat_info', 'rel_prods', 'getReview'])->where('slug', $slug)->first();
+        return Product::with(['cat_info', 'rel_prods.images', 'getReview'])->where('slug', $slug)->first();
     }
     public static function countActiveProduct()
     {
@@ -49,6 +49,11 @@ class Product extends Model
             return $data;
         }
         return 0;
+    }
+
+    public function getFirstImagePathAttribute()
+    {
+        return $this->images->first()->image_path ?? 'images/no-image.png';
     }
 
     public function carts()

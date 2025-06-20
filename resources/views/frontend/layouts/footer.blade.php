@@ -8,7 +8,7 @@
 					<!-- Single Widget -->
 					<div class="single-footer about">
 						<div class="logo">
-							<a href="index.html"><img src="{{asset('backend/img/logo2.png')}}" alt="#"></a>
+							<a href="index.html"><img src="{{asset('backend/img/logo2.webp')}}" alt="#"></a>
 						</div>
 						<p class="text">{{ $setting->short_des ?? '' }}</p>
 						<p class="call">
@@ -79,7 +79,7 @@
 					</div>
 					<div class="col-lg-6 col-12">
 						<div class="right">
-							<img src="{{asset('backend/img/payments.png')}}" alt="#">
+							<img src="{{asset('backend/img/payments.webp')}}" alt="#">
 						</div>
 					</div>
 				</div>
@@ -98,7 +98,7 @@
 <!-- Bootstrap JS -->
 <script src="{{asset('frontend/js/bootstrap.min.js')}}"></script>
 <!-- Color JS -->
-<script src="{{asset('frontend/js/colors.js')}}"></script>
+<!-- <script src="{{asset('frontend/js/colors.js')}}"></script> -->
 <!-- Slicknav JS -->
 <script src="{{asset('frontend/js/slicknav.min.js')}}"></script>
 <!-- Owl Carousel JS -->

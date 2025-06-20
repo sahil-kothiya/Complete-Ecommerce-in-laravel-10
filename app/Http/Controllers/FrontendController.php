@@ -30,6 +30,7 @@ class FrontendController extends Controller
 
     public function home()
     {
+        // $startTime = microtime(true);
         $homepage = RedisCacheManager::get('page', 'home');
 
         if (!$homepage) {
@@ -44,7 +45,7 @@ class FrontendController extends Controller
                 ->select('id', 'title', 'slug', 'photo')
                 ->get();
 
-            $categoryBanners = $categories->take(3); // small banners
+            $categoryBanners = $categories->take(3);
 
             $product_lists = Product::with(['images:id,image_path,product_id'])
                 ->where('status', 'active')
@@ -85,6 +86,11 @@ class FrontendController extends Controller
             );
 
             RedisCacheManager::put('page', 'home', $homepage, 3600); // cache for 1 hour
+            // $endTime = microtime(true);
+            // // Calculate and display the elapsed time
+            // $elapsedTime = $endTime - $startTime;
+            // echo "Elapsed Time: $elapsedTime seconds" . PHP_EOL;
+            // exit;
         }
 
         return view('frontend.index', $homepage);

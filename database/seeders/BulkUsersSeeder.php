@@ -15,8 +15,8 @@ class BulkUsersSeeder extends Seeder
         ini_set('max_execution_time', 0); // unlimited
         ini_set('memory_limit', '4G');
 
-        $faker = Faker::create();
-        $totalRecords = 1_000_000;
+        $totalRecords = 1_000_000; // 1 Million
+        // $totalRecords = 10000;
         $batchSize = 5000;
         $batches = $totalRecords / $batchSize;
         $now = Carbon::now();

@@ -21,11 +21,11 @@ class SettingsTableSeeder extends Seeder
 
  sunt in culpa qui officia deserunt mollit anim id est laborum. sed ut perspiciatis Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. sed ut perspi deserunt mollit anim id est laborum. sed ut perspi.",
             'short_des' => "Praesent dapibus, neque id cursus ucibus, tortor neque egestas augue, magna eros eu erat. Aliquam erat volutpat. Nam dui mi, tincidunt quis, accumsan porttitor, facilisis luctus, metus.",
-            'logo' => '/storage/photos/1/logo.png',
-            'photo' => '/storage/photos/1/blog3.jpg',
+            'logo' => '/storage/photos/1/logo.webp',
+            'photo' => '/storage/photos/1/blog3.webp',
             'address' => 'NO. 342 - London Oxford Street, 012 United Kingdom',
-            'phone' => '+060 (800) 801-582',
-            'email' => 'eshop@gmail.com',
+            'phone' => '+060 (700) 891-123',
+            'email' => 'ecommerce@gmail.com',
             'created_at' => now(),
             'updated_at' => Carbon::createFromFormat('Y-m-d H:i:s', '2020-08-14 07:19:09'),
         ]);

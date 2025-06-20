@@ -1,5 +1,5 @@
 <li>
-    <a href="javascript:void(0);">Category <i class="ti-angle-down"></i></a>
+    <a class="nav-link dropdown-toggle" href="{{ url('/category') }}">Category <i class="ti-angle-down"></i></a>
     <ul class="dropdown border-0 shadow">
         @foreach($categories as $cat_info)
         @if($cat_info->children->count())

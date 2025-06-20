@@ -2,58 +2,64 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Redis;
 
 class RedisCacheManager
 {
     /**
-     * Store a model in cache with a human-readable key.
+     * Store a model in Redis with manual TTL and serialization.
      */
     public static function put($type, $id, $data, $ttl = 3600)
     {
         $key = self::makeKey($type, $id);
-        Cache::store('redis')->put($key, $data, $ttl);
+        Redis::setex($key, $ttl, serialize($data));
     }
 
     /**
-     * Get a model from cache.
+     * Get a model from Redis with deserialization.
      */
     public static function get($type, $id)
     {
         $key = self::makeKey($type, $id);
-        return Cache::store('redis')->get($key);
+        $raw = Redis::get($key);
+        return $raw ? unserialize($raw) : null;
     }
 
     /**
-     * Remove a model from cache.
+     * Remove a model from Redis.
      */
     public static function forget($type, $id)
     {
         $key = self::makeKey($type, $id);
-        Cache::store('redis')->forget($key);
+        Redis::del($key);
     }
 
     /**
-     * Bulk load models from cache (for index pages).
+     * Bulk load models from Redis.
      */
     public static function many($type, $ids)
     {
+        $keys = array_map(fn($id) => self::makeKey($type, $id), $ids);
+        $values = Redis::mget($keys);
+
         $result = [];
-        foreach ($ids as $id) {
-            $result[$id] = self::get($type, $id);
+        foreach ($ids as $index => $id) {
+            $result[$id] = $values[$index] ? unserialize($values[$index]) : null;
         }
         return $result;
     }
 
     /**
-     * Generate a human-readable cache key.
+     * Generate a Redis-friendly human-readable key.
      */
     public static function makeKey($type, $id)
     {
         return strtolower($type) . ':' . $id;
     }
 
+    /**
+     * Flush all keys matching given prefixes using SCAN + DEL.
+     */
     public static function flushByPrefix(array $prefixes): void
     {
         foreach ($prefixes as $prefix) {

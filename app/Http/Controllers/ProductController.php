@@ -8,7 +8,9 @@ use App\Models\Category;
 use App\Models\Brand;
 use App\Models\ProductImage;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Intervention\Image\Facades\Image;
 
 class ProductController extends Controller
 {
@@ -19,7 +21,8 @@ class ProductController extends Controller
      */
     public function index()
     {
-        $products = Product::getAllProduct();
+        // $products = Product::getAllProduct();
+        $products = Product::with(['cat_info', 'sub_cat_info'])->orderBy('id', 'desc')->paginate(10);
         return view('backend.product.index', compact('products'));
     }
 
@@ -44,35 +47,55 @@ class ProductController extends Controller
     public function store(Request $request)
     {
         $validatedData = $request->validate([
-            'title' => 'required|string',
-            'summary' => 'required|string',
+            'title' => 'required|string|max:255',
+            'summary' => 'nullable|string',
             'description' => 'nullable|string',
-            'photo' => 'required|string',
-            'size' => 'nullable',
-            'stock' => 'required|numeric',
-            'cat_id' => 'required|exists:categories,id',
-            'brand_id' => 'nullable|exists:brands,id',
+            'photo' => 'required|string', // from FileManager, comma-separated
+            'size' => 'nullable|array',
+            'stock' => 'required|integer|min:0',
+            'cat_id' => 'nullable|exists:categories,id',
             'child_cat_id' => 'nullable|exists:categories,id',
-            'is_featured' => 'sometimes|in:1',
+            'brand_id' => 'nullable|exists:brands,id',
+            'is_featured' => 'sometimes|boolean',
             'status' => 'required|in:active,inactive',
             'condition' => 'required|in:default,new,hot',
-            'price' => 'required|numeric',
-            'discount' => 'nullable|numeric',
+            'price' => 'required|numeric|min:0',
+            'discount' => 'nullable|numeric|min:0',
         ]);
 
-        $imagePaths = array_filter(array_map('trim', explode(',', $validatedData['photo'])));
-        unset($validatedData['photo']); // no longer store this in products table
+        // 1. Parse photo URLs (from file manager)
+        $rawPaths = array_filter(array_map('trim', explode(',', $validatedData['photo'])));
+        unset($validatedData['photo']);
 
-        $validatedData['slug'] = generateUniqueSlug($request->title, Product::class);
-        $validatedData['is_featured'] = $request->input('is_featured', 0);
-        $validatedData['size'] = $request->has('size') ? implode(',', $request->input('size')) : '';
+        $webpPaths = [];
+        foreach ($rawPaths as $index => $url) {
+            $relativePath = str_replace(asset('storage') . '/', '', $url);
+            $storagePath = storage_path("app/public/{$relativePath}");
+
+            if (file_exists($storagePath)) {
+                $image = Image::make($storagePath)->encode('webp', 75);
+
+                $webpFilename = 'product_' . uniqid() . '_' . $index . '.webp';
+                $webpPath = 'public/products/' . $webpFilename;
+                Storage::put($webpPath, (string) $image);
+
+                $webpPaths[] = 'storage/products/' . $webpFilename;
+            }
+        }
+
+        // 2. Safe slug generation (unique)
+        $validatedData['slug'] = generateUniqueSlug($validatedData['title'], Product::class, 'slug');
+
+        // 3. Cast/prepare values based on indexed schema
+        $validatedData['is_featured'] = $request->boolean('is_featured');
+        $validatedData['size'] = $request->has('size') ? implode(',', $validatedData['size']) : 'M';
 
         DB::beginTransaction();
 
         try {
             $product = Product::create($validatedData);
 
-            foreach ($imagePaths as $index => $path) {
+            foreach ($webpPaths as $index => $path) {
                 ProductImage::create([
                     'product_id' => $product->id,
                     'image_path' => $path,
@@ -82,14 +105,14 @@ class ProductController extends Controller
             }
 
             DB::commit();
-
-            return redirect()->route('product.index')->with('success', 'Product Successfully added');
+            return redirect()->route('product.index')->with('success', 'Product added successfully with optimized WebP images.');
         } catch (\Throwable $e) {
             DB::rollBack();
             report($e);
-            return redirect()->route('product.index')->with('error', 'Error while adding product. Please try again!');
+            return redirect()->route('product.index')->with('error', 'Product creation failed.');
         }
     }
+
 
     /**
      * Display the specified resource.
@@ -125,49 +148,73 @@ class ProductController extends Controller
      * @param  int  $id
      * @return \Illuminate\Http\Response
      */
+
     public function update(Request $request, $id)
     {
         $product = Product::findOrFail($id);
 
         $validatedData = $request->validate([
-            'title' => 'required|string',
+            'title' => 'required|string|max:255',
             'summary' => 'required|string',
             'description' => 'nullable|string',
-            'photo' => 'required|string', // comma-separated paths
-            'size' => 'nullable',
-            'stock' => 'required|numeric',
+            'photo' => 'required|string',
+            'size' => 'nullable|array',
+            'stock' => 'required|integer|min:0',
             'cat_id' => 'required|exists:categories,id',
             'child_cat_id' => 'nullable|exists:categories,id',
-            'is_featured' => 'sometimes|in:1',
             'brand_id' => 'nullable|exists:brands,id',
+            'is_featured' => 'sometimes|boolean',
             'status' => 'required|in:active,inactive',
             'condition' => 'required|in:default,new,hot',
-            'price' => 'required|numeric',
-            'discount' => 'nullable|numeric',
+            'price' => 'required|numeric|min:0',
+            'discount' => 'nullable|numeric|min:0',
         ]);
 
-        // Extract and clean photo paths
-        $imagePaths = array_filter(array_map('trim', explode(',', $validatedData['photo'])));
-        unset($validatedData['photo']); // no longer directly stored in products table
+        $rawPaths = array_filter(array_map('trim', explode(',', $validatedData['photo'])));
+        unset($validatedData['photo']);
 
-        // Generate slug if title changed
-        if ($product->title !== $request->title) {
-            $validatedData['slug'] = generateUniqueSlug($request->title, Product::class, $id);
+        $webpPaths = [];
+
+        foreach ($rawPaths as $index => $url) {
+            $relativePath = str_replace(asset('storage') . '/', '', $url);
+            $storagePath = storage_path("app/public/{$relativePath}");
+
+            if (file_exists($storagePath)) {
+                $image = Image::make($storagePath)->encode('webp', 75);
+
+                $webpFilename = 'product_' . uniqid() . '_' . $index . '.webp';
+                $webpPath = 'public/products/' . $webpFilename;
+                Storage::put($webpPath, (string) $image);
+
+                $webpPaths[] = 'storage/products/' . $webpFilename;
+            }
         }
 
-        $validatedData['is_featured'] = $request->input('is_featured', 0);
-        $validatedData['size'] = $request->has('size') ? implode(',', $request->input('size')) : '';
+        // If title changed, regenerate slug
+        if ($product->title !== $validatedData['title']) {
+            $validatedData['slug'] = generateUniqueSlug($validatedData['title'], Product::class, 'slug', $product->id);
+        }
+
+        $validatedData['is_featured'] = $request->boolean('is_featured');
+        $validatedData['size'] = $request->has('size') ? implode(',', $validatedData['size']) : 'M';
 
         DB::beginTransaction();
 
         try {
             $product->update($validatedData);
 
-            // Remove old images
+            // 1. Fetch and delete old images from storage
+            $oldImages = ProductImage::where('product_id', $product->id)->get();
+            foreach ($oldImages as $img) {
+                $path = str_replace('storage/', 'public/', $img->image_path); // convert to Storage path
+                Storage::delete($path);
+            }
+
+            // 2. Delete old image records
             ProductImage::where('product_id', $product->id)->delete();
 
-            // Add new images
-            foreach ($imagePaths as $index => $path) {
+            // 3. Save new images
+            foreach ($webpPaths as $index => $path) {
                 ProductImage::create([
                     'product_id' => $product->id,
                     'image_path' => $path,
@@ -177,14 +224,14 @@ class ProductController extends Controller
             }
 
             DB::commit();
-
-            return redirect()->route('product.index')->with('success', 'Product Successfully updated');
+            return redirect()->route('product.index')->with('success', 'Product updated with WebP images and old files cleaned.');
         } catch (\Throwable $e) {
             DB::rollBack();
             report($e);
-            return redirect()->route('product.index')->with('error', 'Error while updating product. Please try again!');
+            return redirect()->route('product.index')->with('error', 'Update failed. Please try again.');
         }
     }
+
 
 
     /**
@@ -206,5 +253,18 @@ class ProductController extends Controller
             $status ? 'success' : 'error',
             $message
         );
+    }
+
+    function generateUniqueSlug(string $title, $model, string $column = 'slug'): string
+    {
+        $slug = Str::slug($title);
+        $original = $slug;
+        $i = 1;
+
+        while ($model::where($column, $slug)->exists()) {
+            $slug = $original . '-' . $i++;
+        }
+
+        return $slug;
     }
 }

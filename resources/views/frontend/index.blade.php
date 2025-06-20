@@ -10,10 +10,14 @@
         @endforeach
 
     </ol>
-    <div class="carousel-inner" role="listbox">
+    <div class="carousel-inner" role="group" aria-label="Homepage banner carousel">
         @foreach($banners as $key=>$banner)
-        <div class="carousel-item {{(($key==0)? 'active' : '')}}">
-            <img class="first-slide" src="{{$banner->photo}}" alt="First slide">
+        <div class="carousel-item {{(($key==0)? 'active' : '')}}" role="group" aria-roledescription="slide" aria-label="Slide {{ $key + 1 }} of {{ count($banners) }}">
+            @php
+            list($width, $height) = getimagesize(public_path($banner->photo));
+            @endphp
+            <img rel="preload" as="image" class="first-slide" src="{{ asset($banner->photo) }}" fetchpriority="high" alt="{{ $banner->title }}" loading="lazy" width="{{ $width }}" height="{{ $height }}">
+
             <div class="carousel-caption d-none d-md-block text-left">
                 <h1 class="wow fadeInDown">{{$banner->title}}</h1>
                 <p>{!! html_entity_decode($banner->description) !!}</p>
@@ -44,7 +48,7 @@
             <!-- Single Banner -->
             <div class="col-lg-4 col-md-6 col-12">
                 <div class="single-banner">
-                    <img src="{{ asset($cat->photo) }}" alt="{{ $cat->title }}">
+                    <img src="{{ asset($cat->photo) }}" alt="{{ $cat->title }}" loading="lazy">
                     <div class="content">
                         <h3>{{ $cat->title }}</h3>
                         <a href="{{ route('product-cat', $cat->slug) }}">Discover Now</a>
@@ -72,9 +76,9 @@
         <div class="row mb-4">
             <div class="col-12 text-center">
                 <ul class="nav nav-tabs filter-tope-group" id="myTab" role="tablist">
-                    <button class="btn how-active1" data-filter="*">All Products</button>
+                    <button class="btn how-active1" style="background-color: #343a40; color: #ffffff;" data-filter="*" role="tab">All Products</button>
                     @foreach($categories as $cat)
-                    <button class="btn" style="background:none;color:black;" data-filter=".{{ $cat->id }}">
+                    <button class="btn" style="background:none;color:black;" data-filter=".{{ $cat->id }}" role="tab">
                         {{ $cat->title }}
                     </button>
                     @endforeach
@@ -103,7 +107,7 @@
                                 <span class="out-of-stock">Sold Out</span>
                                 @break
                                 @case($product->condition == 'new')
-                                <span class="new">New</span>
+                                <span class="new" aria-label="This product is new">New</span>
                                 @break
                                 @case($product->condition == 'hot')
                                 <span class="hot">Hot</span>
@@ -258,18 +262,6 @@
                     </div>
                 </div>
                 <div class="row">
-                    @php
-                    use App\Models\Product;
-
-                    $product_lists = Product::with(['images' => function($q) {
-                    $q->orderBy('id');
-                    }])
-                    ->where('status', 'active')
-                    ->orderBy('id', 'DESC')
-                    ->limit(6)
-                    ->get();
-                    @endphp
-
                     @foreach($product_lists as $product)
                     <div class="col-md-4">
                         <!-- Start Single List  -->
@@ -520,7 +512,6 @@
 @endsection
 
 @push('styles')
-<script type='text/javascript' src='https://platform-api.sharethis.com/js/sharethis.js#property=5f2e5abf393162001291e431&product=inline-share-buttons' async='async'></script>
 <script type='text/javascript' src='https://platform-api.sharethis.com/js/sharethis.js#property=5f2e5abf393162001291e431&product=inline-share-buttons' async='async'></script>
 <style>
     /* Banner Sliding */

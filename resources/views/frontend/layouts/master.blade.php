@@ -1,10 +1,13 @@
 <!DOCTYPE html>
 <html lang="zxx">
+
 <head>
-	@include('frontend.layouts.head')	
+	@include('frontend.layouts.head')
+	<meta name="description" content="This is a brief description of the page content. Make sure it's concise and informative.">
 </head>
+
 <body class="js">
-	
+
 	<!-- Preloader -->
 	<div class="preloader">
 		<div class="preloader-inner">
@@ -15,14 +18,15 @@
 		</div>
 	</div>
 	<!-- End Preloader -->
-	
+
 	@include('frontend.layouts.notification')
 	<!-- Header -->
 	@include('frontend.layouts.header')
 	<!--/ End Header -->
 	@yield('main-content')
-	
+
 	@include('frontend.layouts.footer')
 
 </body>
+
 </html>

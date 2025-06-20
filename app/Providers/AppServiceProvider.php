@@ -29,6 +29,7 @@ use App\Observers\ReviewObserver;
 use App\Observers\SettingsObserver;
 use App\Observers\UserObserver;
 use App\Observers\WishlistObserver;
+use Illuminate\Support\Facades\Redis;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -58,35 +59,41 @@ class AppServiceProvider extends ServiceProvider
         /**
          * Global site settings (shared to all views)
          */
-        $settings = Cache::store('redis')->remember(
-            $prefix['home_prefix'] . 'settings',
-            $ttl['settings'],
-            fn() => Settings::first()
-        );
-        // dd($settings);
+        $settingsKey = $prefix['home_prefix'] . 'settings';
+        $cachedSettings = Redis::get($settingsKey);
+        if ($cachedSettings) {
+            $settings = unserialize($cachedSettings);
+        } else {
+            $settings = Settings::first();
+            Redis::set($settingsKey, serialize($settings), 'EX', $ttl['settings']);
+        }
         View::share('settings', $settings);
 
         /**
          * Authenticated user-specific wishlist/cart counts (for header)
          */
-        View::composer('*', function ($view) use ($ttl, $prefix) {
+        View::composer('*', function ($view) use ($ttl) {
             if (Auth::check()) {
                 $userId = Auth::id();
+                $wishlistKey = "user:{$userId}:wishlist:count";
+                $cartKey     = "user:{$userId}:cart:count";
 
-                $wishlistCountKey = "user:{$userId}:wishlist:count";
-                $cartCountKey     = "user:{$userId}:cart:count";
+                $wishlistCached = Redis::get($wishlistKey);
+                $cartCached     = Redis::get($cartKey);
 
-                $wishlistCount = Cache::store('redis')->remember(
-                    $wishlistCountKey,
-                    $ttl['wishlist'],
-                    fn() => Wishlist::where('user_id', $userId)->whereNull('cart_id')->count()
-                );
+                if ($wishlistCached !== null) {
+                    $wishlistCount = (int) $wishlistCached;
+                } else {
+                    $wishlistCount = Wishlist::where('user_id', $userId)->whereNull('cart_id')->count();
+                    Redis::set($wishlistKey, $wishlistCount, 'EX', $ttl['wishlist']);
+                }
 
-                $cartCount = Cache::store('redis')->remember(
-                    $cartCountKey,
-                    $ttl['cart'],
-                    fn() => Cart::where('user_id', $userId)->whereNull('order_id')->count()
-                );
+                if ($cartCached !== null) {
+                    $cartCount = (int) $cartCached;
+                } else {
+                    $cartCount = Cart::where('user_id', $userId)->whereNull('order_id')->count();
+                    Redis::set($cartKey, $cartCount, 'EX', $ttl['cart']);
+                }
 
                 View::share('wishlistCount', $wishlistCount);
                 View::share('cartCount', $cartCount);

@@ -17,7 +17,7 @@ class BannerSeeder extends Seeder
             [
                 'title'       => 'Lorem Ipsum is',
                 'slug'        => 'lorem-ipsum-is',
-                'photo'       => '/storage/photos/1/Banner/banner-01.jpg',
+                'photo'       => '/storage/photos/1/Banner/banner-01.webp',
                 'description' => '<h2><span style="font-weight: bold; color: rgb(99, 99, 99);">Up to 10%</span></h2>',
                 'status'      => 'active',
                 'created_at'  => '2020-08-14 07:17:38',
@@ -26,7 +26,7 @@ class BannerSeeder extends Seeder
             [
                 'title'       => 'Lorem Ipsum',
                 'slug'        => 'lorem-ipsum',
-                'photo'       => '/storage/photos/1/Banner/banner-07.jpg',
+                'photo'       => '/storage/photos/1/Banner/banner-07.webp',
                 'description' => '<p>Up to 90%</p>',
                 'status'      => 'active',
                 'created_at'  => '2020-08-14 07:20:23',
@@ -35,7 +35,7 @@ class BannerSeeder extends Seeder
             [
                 'title'       => 'Banner',
                 'slug'        => 'banner',
-                'photo'       => '/storage/photos/1/Banner/banner-06.jpg',
+                'photo'       => '/storage/photos/1/Banner/banner-06.webp',
                 'description' => '<h2><span style="color: rgb(156, 0, 255); font-size: 2rem; font-weight: bold;">Up to 40%</span><br></h2><h2><span style="color: rgb(156, 0, 255);"></span></h2>',
                 'status'      => 'active',
                 'created_at'  => '2020-08-18 02:16:59',
