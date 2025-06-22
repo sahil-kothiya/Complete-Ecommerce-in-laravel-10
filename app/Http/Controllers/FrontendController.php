@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\RedisHelper;
 use App\Models\Banner;
 use App\Models\Product;
 use App\Models\Category;
@@ -10,6 +11,7 @@ use App\Models\PostCategory;
 use App\Models\Post;
 use App\Models\Cart;
 use App\Models\Brand;
+use App\Models\Settings;
 use App\Services\RedisCacheManager;
 use App\User;
 use Auth;
@@ -19,6 +21,9 @@ use DB;
 use Hash;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Redis;
 
 class FrontendController extends Controller
 {
@@ -28,73 +33,332 @@ class FrontendController extends Controller
         return redirect()->route($request->user()->role);
     }
 
+    private const CACHE_PREFIX = 'cache:homepage:';
+    /**
+     * TTL configuration cache
+     */
+    private static ?array $ttlConfig = null;
+
     public function home()
     {
-        // $startTime = microtime(true);
-        $homepage = RedisCacheManager::get('page', 'home');
+        $ttl = $this->getTtlConfig();
 
-        if (!$homepage) {
-            // Cache miss: fetch fresh data
-            $banners = Banner::where('status', 'active')
-                ->select('id', 'title', 'description', 'photo')
-                ->orderBy('id', 'desc')
-                ->get();
+        // Define all cache keys
+        $cacheKeys = [
+            'categories' => self::CACHE_PREFIX . 'categories',
+            'banners' => self::CACHE_PREFIX . 'banners',
+            'products' => self::CACHE_PREFIX . 'product_lists',
+            'categoryBanners' => self::CACHE_PREFIX . 'category_banners'
+        ];
 
-            $categories = Category::where('status', 'active')
-                ->where('is_parent', 1)
-                ->select('id', 'title', 'slug', 'photo')
-                ->get();
+        // Try to get all data from Redis in one batch operation
+        $cachedData = RedisHelper::mget(array_values($cacheKeys));
 
-            $categoryBanners = $categories->take(3);
+        // Process each data type
+        $data = [];
 
-            $product_lists = Product::with(['images:id,image_path,product_id'])
-                ->where('status', 'active')
-                ->select('id', 'title', 'slug', 'price', 'discount', 'stock', 'condition', 'cat_id', 'size')
-                ->latest()
-                ->limit(60)
-                ->get();
+        // Categories
+        $data['categories'] = $cachedData[$cacheKeys['categories']]
+            ?? $this->getCategoriesData($cacheKeys['categories'], $ttl['categories']);
 
-            $featured = Product::with(['images:id,image_path,product_id', 'cat_info:id,title'])
-                ->where('is_featured', 1)
-                ->where('status', 'active')
-                ->select('id', 'title', 'slug', 'discount', 'cat_id')
-                ->orderBy('id', 'desc')
-                ->limit(1)
-                ->get();
+        // Banners
+        $data['banners'] = $cachedData[$cacheKeys['banners']]
+            ?? $this->getBannersData($cacheKeys['banners'], $ttl['banners']);
 
-            $latest_products = Product::with(['images:id,image_path,product_id'])
-                ->where('status', 'active')
-                ->select('id', 'title', 'slug', 'price', 'discount')
-                ->latest()
-                ->limit(6)
-                ->get();
+        // Products - simplified for homepage (60 products only)
+        $data['product_lists'] = $cachedData[$cacheKeys['products']]
+            ?? $this->getHomepageProductsData($cacheKeys['products'], $ttl['product_lists']);
 
-            $posts = Post::select('id', 'title', 'slug', 'photo', 'created_at')
-                ->latest()
-                ->limit(3)
-                ->get();
+        // Category Banners (derived from categories)
+        $data['categoryBanners'] = $cachedData[$cacheKeys['categoryBanners']]
+            ?? $this->getCategoryBannersData($cacheKeys['categoryBanners'], $data['categories'], $ttl['categories']);
 
-            // Store all in Redis
-            $homepage = compact(
-                'banners',
-                'categories',
-                'categoryBanners',
-                'product_lists',
-                'featured',
-                'latest_products',
-                'posts'
-            );
+        return view('frontend.index', $data);
+    }
 
-            RedisCacheManager::put('page', 'home', $homepage, 3600); // cache for 1 hour
-            // $endTime = microtime(true);
-            // // Calculate and display the elapsed time
-            // $elapsedTime = $endTime - $startTime;
-            // echo "Elapsed Time: $elapsedTime seconds" . PHP_EOL;
-            // exit;
+    /**
+     * Get TTL configuration with static caching
+     */
+    private function getTtlConfig(): array
+    {
+        if (self::$ttlConfig === null) {
+            self::$ttlConfig = config('cache_keys.ttl');
         }
 
-        return view('frontend.index', $homepage);
+        return self::$ttlConfig;
     }
+
+    /**
+     * Get categories data with optimized query
+     */
+    private function getCategoriesData(string $key, int $ttl)
+    {
+        return Cache::remember($key, $ttl, function () use ($key, $ttl) {
+            $categories = Category::select(['id', 'title', 'slug', 'parent_id', 'photo', 'is_parent'])
+                ->active()
+                ->where('is_parent', 1)
+                ->with([
+                    'children' => fn($q) => $q->active()
+                        ->select(['id', 'title', 'slug', 'parent_id'])
+                        ->orderBy('title')
+                ])
+                ->orderBy('title')
+                ->get();
+
+            // Store in Redis for faster access
+            RedisHelper::put($key, $categories, $ttl);
+
+            return $categories;
+        });
+    }
+
+    /**
+     * Get banners data with optimized query
+     */
+    private function getBannersData(string $key, int $ttl)
+    {
+        return Cache::remember($key, $ttl, function () use ($key, $ttl) {
+            $banners = Banner::where('status', 'active')
+                ->select(['id', 'title', 'description', 'photo'])
+                ->orderByDesc('id')
+                ->get();
+
+            // Store in Redis for faster access
+            RedisHelper::put($key, $banners, $ttl);
+
+            return $banners;
+        });
+    }
+
+    /**
+     * Get homepage products data - optimized for exactly 60 products
+     */
+    private function getHomepageProductsData(string $key, int $ttl)
+    {
+        return Cache::remember($key, $ttl, function () use ($key, $ttl) {
+            // Homepage needs exactly 60 products with all required relationships
+            $products = Product::select([
+                'id',
+                'title',
+                'slug',
+                'price',
+                'discount',
+                'stock',
+                'condition',
+                'cat_id',
+                'size',
+                'summary' // Added for modal quick view
+            ])
+                ->where('status', 'active')
+                ->with([
+                    'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
+                    'cat_info' => fn($q) => $q->select(['id', 'title']) // Load category relationship
+                ])
+                ->latest('id')
+                ->limit(60) // Fixed limit for homepage
+                ->get();
+
+            // Store in Redis
+            $stored = RedisHelper::put($key, $products, $ttl);
+
+            if (!$stored) {
+                Log::warning("Failed to store homepage products in Redis for key: {$key}");
+            }
+
+            return $products;
+        });
+    }
+
+    /**
+     * Get category banners data (derived from categories)
+     */
+    private function getCategoryBannersData(string $key, $categories, int $ttl)
+    {
+        if (!$categories) {
+            return collect();
+        }
+
+        return Cache::remember($key, $ttl, function () use ($key, $categories, $ttl) {
+            $categoryBanners = $categories->filter(fn($cat) => !empty($cat->photo));
+
+            // Store in Redis for faster access
+            RedisHelper::put($key, $categoryBanners, $ttl);
+
+            return $categoryBanners;
+        });
+    }
+
+    /**
+     * Batch cache warming method for homepage
+     */
+    public function warmUpHomepageCache(): array
+    {
+        $ttl = $this->getTtlConfig();
+        $results = [];
+
+        // Get Redis stats before warming
+        $statsBefore = RedisHelper::getCacheStats();
+
+        // Warm up all homepage data
+        $dataTypes = [
+            'categories' => fn() => $this->getCategoriesData(self::CACHE_PREFIX . 'categories', $ttl['categories']),
+            'banners' => fn() => $this->getBannersData(self::CACHE_PREFIX . 'banners', $ttl['banners']),
+            'products' => fn() => $this->getHomepageProductsData(self::CACHE_PREFIX . 'product_lists', $ttl['product_lists']),
+        ];
+
+        foreach ($dataTypes as $type => $callback) {
+            $startTime = microtime(true);
+            try {
+                $data = $callback();
+                $endTime = microtime(true);
+                $duration = round(($endTime - $startTime) * 1000, 2);
+
+                $results[$type] = [
+                    'status' => 'success',
+                    'duration_ms' => $duration,
+                    'records' => is_countable($data) ? count($data) : 'N/A'
+                ];
+            } catch (\Exception $e) {
+                $results[$type] = [
+                    'status' => 'failed',
+                    'error' => $e->getMessage()
+                ];
+                Log::error("Cache warming failed for {$type}: " . $e->getMessage());
+            }
+        }
+
+        // Get Redis stats after warming
+        $statsAfter = RedisHelper::getCacheStats();
+
+        $results['redis_stats'] = [
+            'memory_before' => $statsBefore['used_memory_human'] ?? 'N/A',
+            'memory_after' => $statsAfter['used_memory_human'] ?? 'N/A'
+        ];
+
+        return $results;
+    }
+
+    /**
+     * Clear homepage cache
+     */
+    public function clearHomepageCache(): bool
+    {
+        $keys = [
+            self::CACHE_PREFIX . 'categories',
+            self::CACHE_PREFIX . 'banners',
+            self::CACHE_PREFIX . 'product_lists',
+            self::CACHE_PREFIX . 'category_banners'
+        ];
+
+        try {
+            // Clear from Redis
+            RedisHelper::forgetMany($keys);
+
+            // Clear from Laravel cache
+            foreach ($keys as $key) {
+                Cache::forget($key);
+            }
+
+            Log::info('Homepage cache cleared successfully');
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Failed to clear homepage cache: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get cache health status
+     */
+    public function getCacheHealth(): array
+    {
+        $keys = [
+            'categories' => self::CACHE_PREFIX . 'categories',
+            'banners' => self::CACHE_PREFIX . 'banners',
+            'products' => self::CACHE_PREFIX . 'product_lists',
+            'category_banners' => self::CACHE_PREFIX . 'category_banners'
+        ];
+
+        $health = [];
+        foreach ($keys as $name => $key) {
+            $exists = RedisHelper::exists($key);
+            $health[$name] = [
+                'cached' => $exists,
+                'key' => $key
+            ];
+        }
+
+        $health['redis_stats'] = RedisHelper::getCacheStats();
+
+        return $health;
+    }
+    // public function home()
+    // {
+    //     // $startTime = microtime(true);
+    //     $homepage = RedisCacheManager::get('page', 'home');
+
+    //     if (!$homepage) {
+    //         // Cache miss: fetch fresh data
+    //         $banners = Banner::where('status', 'active')
+    //             ->select('id', 'title', 'description', 'photo')
+    //             ->orderBy('id', 'desc')
+    //             ->get();
+
+    //         $categories = Category::where('status', 'active')
+    //             ->where('is_parent', 1)
+    //             ->select('id', 'title', 'slug', 'photo')
+    //             ->get();
+
+    //         $categoryBanners = $categories->take(3);
+
+    //         $product_lists = Product::with(['images:id,image_path,product_id'])
+    //             ->where('status', 'active')
+    //             ->select('id', 'title', 'slug', 'price', 'discount', 'stock', 'condition', 'cat_id', 'size')
+    //             ->latest()
+    //             ->limit(60)
+    //             ->get();
+
+    //         $featured = Product::with(['images:id,image_path,product_id', 'cat_info:id,title'])
+    //             ->where('is_featured', 1)
+    //             ->where('status', 'active')
+    //             ->select('id', 'title', 'slug', 'discount', 'cat_id')
+    //             ->orderBy('id', 'desc')
+    //             ->limit(1)
+    //             ->get();
+
+    //         $latest_products = Product::with(['images:id,image_path,product_id'])
+    //             ->where('status', 'active')
+    //             ->select('id', 'title', 'slug', 'price', 'discount')
+    //             ->latest()
+    //             ->limit(6)
+    //             ->get();
+
+    //         $posts = Post::select('id', 'title', 'slug', 'photo', 'created_at')
+    //             ->latest()
+    //             ->limit(3)
+    //             ->get();
+
+    //         // Store all in Redis
+    //         $homepage = compact(
+    //             'banners',
+    //             'categories',
+    //             'categoryBanners',
+    //             'product_lists',
+    //             'featured',
+    //             'latest_products',
+    //             'posts'
+    //         );
+
+    //         RedisCacheManager::put('page', 'home', $homepage, 3600); // cache for 1 hour
+    //         // $endTime = microtime(true);
+    //         // // Calculate and display the elapsed time
+    //         // $elapsedTime = $endTime - $startTime;
+    //         // echo "Elapsed Time: $elapsedTime seconds" . PHP_EOL;
+    //         // exit;
+    //     }
+
+    //     return view('frontend.index', $homepage);
+    // }
 
 
     public function aboutUs()

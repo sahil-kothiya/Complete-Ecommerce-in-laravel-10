@@ -199,10 +199,11 @@
 
                     </div>
                     <div class="row">
-                        <div class="col-md-12 justify-content-center d-flex">
-                            {{$products->appends($_GET)->links()}}
+                        <div class="col-md-12 d-flex justify-content-center">
+                            {{ $products->appends($_GET)->links() }}
                         </div>
                     </div>
+
 
                 </div>
             </div>
@@ -432,3 +433,56 @@ swal('error',response.msg,'error').then(function(){
     })
 </script>
 @endpush
+<style>
+    .pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 20px 0;
+        list-style: none;
+    }
+
+    .pagination li {
+        display: inline-block;
+    }
+
+    .pagination li a,
+    .pagination li span {
+        display: inline-block;
+        padding: 8px 14px;
+        font-size: 14px;
+        color: #333;
+        background-color: #fff;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        text-decoration: none;
+        transition: all 0.3s ease;
+        min-width: 36px;
+        text-align: center;
+    }
+
+    .pagination li a:hover,
+    .pagination li span:hover {
+        background-color: #f7941d;
+        color: #fff;
+        border-color: #f7941d;
+    }
+
+    .pagination li.active span,
+    .pagination li.active a {
+        background-color: #f7941d;
+        color: #fff;
+        border-color: #f7941d;
+    }
+
+    /* Optional: override Bootstrap or default styles */
+    .pagination .disabled span,
+    .pagination .disabled a {
+        cursor: not-allowed;
+        background-color: #f9f9f9;
+        color: #ccc;
+        border-color: #eee;
+    }
+</style>

@@ -88,8 +88,6 @@
         display: -webkit-box;
     }
 
-    <style>
-
     /* Handle nested dropdown submenu */
     .dropdown-submenu>.dropdown-menu {
         display: none;
@@ -115,7 +113,5 @@
         clip: rect(0, 0, 0, 0);
         border: 0;
     }
-</style>
-
 </style>
 @stack('styles')

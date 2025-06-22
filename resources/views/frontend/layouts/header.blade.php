@@ -9,12 +9,12 @@
                         <ul class="list-main">
                             <li>
                                 <i class="ti-headphone-alt"></i>
-                                {{ $settings->phone ?? '' }}
+                                {{ $settings->phone}}
                             </li>
 
                             <li>
                                 <i class="ti-email"></i>
-                                {{ $settings->email ?? '' }}
+                                {{ $settings->email}}
                             </li>
                         </ul>
                     </div>

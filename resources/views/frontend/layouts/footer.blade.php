@@ -10,10 +10,10 @@
 						<div class="logo">
 							<a href="index.html"><img src="{{asset('backend/img/logo2.webp')}}" alt="#"></a>
 						</div>
-						<p class="text">{{ $setting->short_des ?? '' }}</p>
+						<p class="text">{{ $settings->short_des ?? '' }}</p>
 						<p class="call">
 							Got Question? Call us 24/7
-							<span><a href="tel:{{ $setting->phone ?? '' }}">{{ $setting->phone ?? '' }}</a></span>
+							<span><a href="tel:{{ $settings->phone ?? '' }}">{{ $settings->phone ?? '' }}</a></span>
 						</p>
 
 					</div>
@@ -74,7 +74,7 @@
 				<div class="row">
 					<div class="col-lg-6 col-12">
 						<div class="left">
-							<p>Copyright © {{date('Y')}} <a href="https://github.com/Prajwal100" target="_blank">Prajwal Rai</a> - All Rights Reserved.</p>
+							<p>Copyright © {{date('Y')}} All Rights Reserved.</p>
 						</div>
 					</div>
 					<div class="col-lg-6 col-12">

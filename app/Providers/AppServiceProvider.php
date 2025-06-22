@@ -5,99 +5,276 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Auth;
 
-use App\Models\Product;
-use App\Models\Category;
-use App\Models\Banner;
-use App\Models\Post;
-use App\Models\Wishlist;
-use App\Models\Cart;
-use App\Models\Order;
-use App\Models\ProductReview;
-use App\Models\Settings;
+use App\Helpers\RedisHelper;
+
+use App\Models\{
+    Settings,
+    Wishlist,
+    Cart,
+    Product,
+    Category,
+    Banner,
+    Post,
+    Order,
+    ProductReview
+};
 use App\User;
 
-use App\Observers\ProductObserver;
-use App\Observers\CategoryObserver;
-use App\Observers\BannerObserver;
-use App\Observers\CartObserver;
-use App\Observers\OrderObserver;
-use App\Observers\PostObserver;
-use App\Observers\ReviewObserver;
-use App\Observers\SettingsObserver;
-use App\Observers\UserObserver;
-use App\Observers\WishlistObserver;
-use Illuminate\Support\Facades\Redis;
+use App\Observers\{
+    ProductObserver,
+    CategoryObserver,
+    BannerObserver,
+    CartObserver,
+    OrderObserver,
+    PostObserver,
+    ReviewObserver,
+    SettingsObserver,
+    UserObserver,
+    WishlistObserver
+};
 
 class AppServiceProvider extends ServiceProvider
 {
-    public function register()
+    /**
+     * Model-Observer mappings
+     */
+    private const OBSERVERS = [
+        Product::class => ProductObserver::class,
+        Category::class => CategoryObserver::class,
+        Banner::class => BannerObserver::class,
+        Post::class => PostObserver::class,
+        Settings::class => SettingsObserver::class,
+        User::class => UserObserver::class,
+        Cart::class => CartObserver::class,
+        Wishlist::class => WishlistObserver::class,
+        ProductReview::class => ReviewObserver::class,
+        Order::class => OrderObserver::class,
+    ];
+
+    /**
+     * Backend routes to skip
+     */
+    private const SKIP_ROUTES = ['admin*', 'api*'];
+
+    /**
+     * Cache TTL configuration
+     */
+    private static ?array $ttlConfig = null;
+
+    public function register(): void
     {
-        //
+        // Singleton for TTL configuration to avoid repeated config calls
+        $this->app->singleton('cache.ttl', function () {
+            return Config::get('cache_keys.ttl');
+        });
     }
 
-    public function boot()
+    public function boot(): void
     {
-        // Register model observers
-        Product::observe(ProductObserver::class);
-        Category::observe(CategoryObserver::class);
-        Banner::observe(BannerObserver::class);
-        Post::observe(PostObserver::class);
-        Settings::observe(SettingsObserver::class);
-        User::observe(UserObserver::class);
-        Cart::observe(CartObserver::class);
-        Wishlist::observe(WishlistObserver::class);
-        ProductReview::observe(ReviewObserver::class);
-        Order::observe(OrderObserver::class); // Optional
+        $this->registerObservers();
 
-        // Load cache TTL and prefix config
-        $ttl    = Config::get('cache_keys.ttl');
-        $prefix = Config::get('cache_keys');
-
-        /**
-         * Global site settings (shared to all views)
-         */
-        $settingsKey = $prefix['home_prefix'] . 'settings';
-        $cachedSettings = Redis::get($settingsKey);
-        if ($cachedSettings) {
-            $settings = unserialize($cachedSettings);
-        } else {
-            $settings = Settings::first();
-            Redis::set($settingsKey, serialize($settings), 'EX', $ttl['settings']);
+        // Skip processing for backend routes - early return for performance
+        if ($this->shouldSkipRoutes()) {
+            return;
         }
-        View::share('settings', $settings);
 
-        /**
-         * Authenticated user-specific wishlist/cart counts (for header)
-         */
-        View::composer('*', function ($view) use ($ttl) {
-            if (Auth::check()) {
-                $userId = Auth::id();
-                $wishlistKey = "user:{$userId}:wishlist:count";
-                $cartKey     = "user:{$userId}:cart:count";
+        $this->shareGlobalData();
+        $this->setupUserSpecificData();
+    }
 
-                $wishlistCached = Redis::get($wishlistKey);
-                $cartCached     = Redis::get($cartKey);
+    /**
+     * Register all model observers
+     */
+    private function registerObservers(): void
+    {
+        foreach (self::OBSERVERS as $model => $observer) {
+            $model::observe($observer);
+        }
+    }
 
-                if ($wishlistCached !== null) {
-                    $wishlistCount = (int) $wishlistCached;
-                } else {
-                    $wishlistCount = Wishlist::where('user_id', $userId)->whereNull('cart_id')->count();
-                    Redis::set($wishlistKey, $wishlistCount, 'EX', $ttl['wishlist']);
+    /**
+     * Check if current route should be skipped - optimized with static cache
+     */
+    private function shouldSkipRoutes(): bool
+    {
+        static $shouldSkip = null;
+
+        if ($shouldSkip === null) {
+            $request = request();
+            $shouldSkip = false;
+
+            foreach (self::SKIP_ROUTES as $pattern) {
+                if ($request->is($pattern)) {
+                    $shouldSkip = true;
+                    break;
                 }
-
-                if ($cartCached !== null) {
-                    $cartCount = (int) $cartCached;
-                } else {
-                    $cartCount = Cart::where('user_id', $userId)->whereNull('order_id')->count();
-                    Redis::set($cartKey, $cartCount, 'EX', $ttl['cart']);
-                }
-
-                View::share('wishlistCount', $wishlistCount);
-                View::share('cartCount', $cartCount);
             }
+        }
+
+        return $shouldSkip;
+    }
+
+    /**
+     * Share global data across all views with batch Redis operations
+     */
+    private function shareGlobalData(): void
+    {
+        $ttl = $this->getTtlConfig();
+        $settingsKey = 'cache:homepage:settings';
+
+        // Try Redis first, then Laravel cache, then DB
+        $settings = $this->getCachedSettings($settingsKey, $ttl['settings']);
+
+        if ($settings) {
+            View::share('settings', $settings);
+        }
+    }
+
+    /**
+     * Get TTL configuration with static caching
+     */
+    private function getTtlConfig(): array
+    {
+        if (self::$ttlConfig === null) {
+            self::$ttlConfig = app('cache.ttl');
+        }
+
+        return self::$ttlConfig;
+    }
+
+    /**
+     * Get settings from cache with optimized fallback chain
+     */
+    private function getCachedSettings(string $key, int $ttl): ?Settings
+    {
+        // Try Redis first (fastest)
+        $settings = RedisHelper::get($key);
+
+        if ($settings !== null) {
+            return $settings;
+        }
+
+        // Try Laravel cache (medium speed)
+        $settings = Cache::get($key);
+
+        if ($settings !== null) {
+            // Store in Redis for next time
+            RedisHelper::put($key, $settings, $ttl);
+            return $settings;
+        }
+
+        // Last resort: Database query (slowest)
+        $settings = Settings::select([
+            'short_des',
+            'photo',
+            'address',
+            'phone',
+            'email',
+            'logo'
+        ])->first();
+
+        if ($settings) {
+            // Store in both caches
+            RedisHelper::put($key, $settings, $ttl);
+            Cache::put($key, $settings, $ttl);
+        }
+
+        return $settings;
+    }
+
+    /**
+     * Setup user-specific data with optimized caching
+     */
+    private function setupUserSpecificData(): void
+    {
+        View::composer('*', function ($view) {
+            if (!Auth::check()) {
+                return;
+            }
+
+            $userId = Auth::id();
+
+            // Use static cache to avoid repeated config calls
+            static $ttl = null;
+            if ($ttl === null) {
+                $ttl = $this->getTtlConfig();
+            }
+
+            $counts = $this->getUserCounts($userId, $ttl);
+            $view->with($counts);
         });
+    }
+
+    /**
+     * Get user's wishlist and cart counts with batch Redis operations
+     */
+    private function getUserCounts(int $userId, array $ttl): array
+    {
+        $wishlistKey = "user:{$userId}:wishlist:count";
+        $cartKey = "user:{$userId}:cart:count";
+
+        // Try to get both counts from Redis in one operation
+        $cachedCounts = RedisHelper::mget([$wishlistKey, $cartKey]);
+
+        $result = [];
+
+        // Handle wishlist count
+        if ($cachedCounts[$wishlistKey] !== null) {
+            $result['wishlistCount'] = $cachedCounts[$wishlistKey];
+        } else {
+            $result['wishlistCount'] = Cache::remember(
+                $wishlistKey,
+                $ttl['wishlist'],
+                function () use ($userId, $wishlistKey, $ttl) {
+                    $count = Wishlist::where('user_id', $userId)
+                        ->whereNull('cart_id')
+                        ->count();
+
+                    // Store in Redis too
+                    RedisHelper::put($wishlistKey, $count, $ttl['wishlist']);
+                    return $count;
+                }
+            );
+        }
+
+        // Handle cart count
+        if ($cachedCounts[$cartKey] !== null) {
+            $result['cartCount'] = $cachedCounts[$cartKey];
+        } else {
+            $result['cartCount'] = Cache::remember(
+                $cartKey,
+                $ttl['cart'],
+                function () use ($userId, $cartKey, $ttl) {
+                    $count = Cart::where('user_id', $userId)
+                        ->whereNull('order_id')
+                        ->count();
+
+                    // Store in Redis too
+                    RedisHelper::put($cartKey, $count, $ttl['cart']);
+                    return $count;
+                }
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Warm up cache for critical data (call this from a command/job)
+     */
+    public function warmUpCache(): void
+    {
+        $ttl = $this->getTtlConfig();
+        $prefix = 'cache:homepage:';
+
+        // Warm up settings
+        $settingsKey = $prefix . 'settings';
+        $this->getCachedSettings($settingsKey, $ttl['settings']);
+
+        // You can add more cache warming here
+        // Example: categories, banners, etc.
     }
 }
