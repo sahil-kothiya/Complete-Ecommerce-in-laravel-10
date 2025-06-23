@@ -768,15 +768,15 @@
 }
 
 .header.shop .search-bar input {
-    height: 48px;
+    height: 50px;
     background: #fff0;
     color: #666;
     border-radius: 0;
     border: none;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 400;
-    padding: 0 25px 0 20px;
-    width: 328px
+    padding: 0 20px 0 20px;
+    width: 262px
 }
 
 .header.shop .search-bar .btnn {

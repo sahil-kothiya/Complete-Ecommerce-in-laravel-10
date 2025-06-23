@@ -77,7 +77,7 @@ Route::controller(FrontendController::class)->group(function () {
     Route::post('/contact/message', [MessageController::class, 'store'])->name('contact.store');
     Route::get('product-detail/{slug}', 'productDetail')->name('product-detail');
     Route::match(['get', 'post'], '/search', 'productSearch')->name('product.search');
-    Route::get('/autocomplete', 'autocomplete')->name('autocomplete');
+    // Route::get('/autocomplete', 'autocomplete')->name('autocomplete');
     Route::get('/product-cat/{slug}', 'productCat')->name('product-cat');
     Route::get('/product-sub-cat/{slug}/{sub_slug}', 'productSubCat')->name('product-sub-cat');
     Route::get('/product-brand/{slug}', 'productBrand')->name('product-brand');
@@ -92,6 +92,10 @@ Route::controller(FrontendController::class)->group(function () {
     Route::get('blog-tag/{slug}', 'blogByTag')->name('blog.tag');
     Route::post('/subscribe', 'subscribe')->name('subscribe');
 });
+
+Route::get('/search', [FrontendController::class, 'productSearch'])->name('product.search');
+Route::get('/autocomplete', [FrontendController::class, 'autocomplete'])->name('autocomplete');
+
 
 // Cart Routes
 Route::middleware('user')->group(function () {

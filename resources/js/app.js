@@ -30,3 +30,25 @@ Vue.component('example-component', require('./components/ExampleComponent.vue').
 const app = new Vue({
     el: '#app',
 });
+
+function updateTime() {
+    const now = new Date();
+    const options = {
+        timeZone: 'Asia/Kolkata', // IST
+        hour12: true,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    };
+    const timeString = now.toLocaleString('en-US', options);
+    $('#current-time').text(timeString);
+}
+
+$(document).ready(function () {
+    // Initialize clock
+    updateTime();
+    setInterval(updateTime, 1000); // Update every second
+});

@@ -1,12 +1,16 @@
-<!-- Meta Tag -->
-@yield('meta')
-<!-- Title Tag  -->
-<title>@yield('title')</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="@yield('meta_description', 'Your one-stop shop for quality products')">
+<meta name="keywords" content="@yield('meta_keywords', 'e-commerce, shopping, products')">
+<meta name="author" content="Your Company Name">
+<title>@yield('title', 'E-Shop')</title>
+
 <!-- Favicon -->
-<link rel="icon" type="image/png" href="images/favicon.webp">
-<!-- Web Font -->
-<link href="https://fonts.googleapis.com/css?family=Poppins:200i,300,300i,400,400i,500,500i,600,600i,700,700i,800,800i,900,900i&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" href="{{ asset('images/favicon.webp') }}">
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 
 <!-- StyleSheet -->
 <link rel="manifest" href="/manifest.json">
@@ -210,3 +214,5 @@
     }
 </style>
 @stack('styles')
+
+@yield('meta')
