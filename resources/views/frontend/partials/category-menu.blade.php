@@ -1,7 +1,7 @@
 <li>
     <a class="nav-link dropdown-toggle" href="#">Category <i class="ti-angle-down"></i></a>
     <ul class="dropdown border-0 shadow">
-        @foreach($categories as $cat_info)
+        @foreach(Helper::getAllCategory() as $cat_info)
         @if($cat_info->children->count())
         <li>
             <a href="{{ route('product-cat', $cat_info->slug) }}">{{ $cat_info->title }}</a>

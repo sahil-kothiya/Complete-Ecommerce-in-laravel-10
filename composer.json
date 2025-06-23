@@ -10,10 +10,12 @@
     "require": {
         "php": "^8.1",
         "barryvdh/laravel-dompdf": "^2.0",
+        "elasticsearch/elasticsearch": "7.17",
         "guzzlehttp/guzzle": "^7.2",
         "intervention/image": "^2.7",
         "laravel/framework": "^10.0",
         "laravel/sanctum": "^3.2",
+        "laravel/scout": "^10.15",
         "laravel/socialite": "^5.6",
         "laravel/tinker": "^2.8",
         "laravel/ui": "^4.2",
@@ -77,7 +79,8 @@
         "preferred-install": "dist",
         "sort-packages": true,
         "allow-plugins": {
-            "pestphp/pest-plugin": true
+            "pestphp/pest-plugin": true,
+            "php-http/discovery": true
         }
     },
     "minimum-stability": "stable",

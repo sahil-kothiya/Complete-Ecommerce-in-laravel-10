@@ -12,6 +12,7 @@ use App\Models\Post;
 use App\Models\Cart;
 use App\Models\Brand;
 use App\Models\Settings;
+use App\Services\ProductSearchService;
 use App\Services\RedisCacheManager;
 use App\User;
 use Auth;
@@ -27,6 +28,127 @@ use Illuminate\Support\Facades\Redis;
 
 class FrontendController extends Controller
 {
+    private ProductSearchService $searchService;
+
+    public function __construct(ProductSearchService $searchService)
+    {
+        $this->searchService = $searchService;
+    }
+    /**
+     * Enhanced product search with Elasticsearch
+     */
+
+    public function productSearch(Request $request)
+    {
+        $query = $request->input('search', '');
+        $perPage = 9;
+
+        // Get recent products (cached)
+        $recent_products = Product::where('status', 'active')
+            ->orderBy('id', 'DESC')
+            ->limit(3)
+            ->get();
+
+        if (empty($query)) {
+            $products = Product::where('status', 'active')
+                ->with(['images', 'cat_info'])
+                ->paginate($perPage);
+
+            return view('frontend.pages.product-grids')
+                ->with('products', $products)
+                ->with('recent_products', $recent_products)
+                ->with('search_query', $query);
+        }
+
+        try {
+            // Use enhanced search service
+            $searchResult = $this->searchService->search($query, $perPage, $request->input('page', 1));
+
+            // Convert to paginator for blade compatibility
+            $products = new \Illuminate\Pagination\LengthAwarePaginator(
+                collect($searchResult['products']),
+                $searchResult['total'],
+                $perPage,
+                $request->input('page', 1),
+                [
+                    'path' => $request->url(),
+                    'pageName' => 'page',
+                ]
+            );
+            $products->appends($request->except('page'));
+
+            Log::info("Search performed using: " . $searchResult['source']);
+        } catch (\Exception $e) {
+            Log::error('Search error: ' . $e->getMessage());
+
+            // Fallback to original search
+            $products = Product::where('title', 'ILIKE', "%{$query}%")
+                ->where('status', 'active')
+                ->orderBy('id', 'DESC')
+                ->paginate($perPage);
+        }
+
+        return view('frontend.pages.product-grids')
+            ->with('products', $products)
+            ->with('recent_products', $recent_products)
+            ->with('search_query', $query);
+    }
+
+    /**
+     * AJAX autocomplete endpoint
+     */
+    public function autocomplete(Request $request)
+    {
+        $query = $request->input('q', '');
+
+        // Remove the dd() - this was causing the issue!
+        Log::info('Autocomplete query: ' . $query);
+
+        if (strlen($query) < 2) {
+            return response()->json([
+                'success' => false,
+                'suggestions' => []
+            ]);
+        }
+
+        try {
+            // If you have search service, use it
+            if (isset($this->searchService)) {
+                $suggestions = $this->searchService->getAutocomplete($query, 10);
+            } else {
+                // Fallback to direct database query
+                $products = Product::where('status', 'active')
+                    ->where('title', 'ILIKE', "%{$query}%")
+                    ->select('id', 'title', 'slug', 'price', 'discount', 'photo')
+                    ->limit(10)
+                    ->get();
+
+                $suggestions = $products->map(function ($product) {
+                    return [
+                        'id' => $product->id,
+                        'title' => $product->title,
+                        'slug' => $product->slug,
+                        'price' => $product->price,
+                        'discount' => $product->discount ?? 0,
+                        'photo' => $product->photo ? explode(',', $product->photo)[0] : null
+                    ];
+                });
+            }
+
+            return response()->json([
+                'success' => true,
+                'suggestions' => $suggestions
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Autocomplete error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'suggestions' => [],
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
 
     public function index(Request $request)
     {
@@ -292,74 +414,19 @@ class FrontendController extends Controller
 
         return $health;
     }
-    // public function home()
+
+    // public function productSearch(Request $request)
     // {
-    //     // $startTime = microtime(true);
-    //     $homepage = RedisCacheManager::get('page', 'home');
-
-    //     if (!$homepage) {
-    //         // Cache miss: fetch fresh data
-    //         $banners = Banner::where('status', 'active')
-    //             ->select('id', 'title', 'description', 'photo')
-    //             ->orderBy('id', 'desc')
-    //             ->get();
-
-    //         $categories = Category::where('status', 'active')
-    //             ->where('is_parent', 1)
-    //             ->select('id', 'title', 'slug', 'photo')
-    //             ->get();
-
-    //         $categoryBanners = $categories->take(3);
-
-    //         $product_lists = Product::with(['images:id,image_path,product_id'])
-    //             ->where('status', 'active')
-    //             ->select('id', 'title', 'slug', 'price', 'discount', 'stock', 'condition', 'cat_id', 'size')
-    //             ->latest()
-    //             ->limit(60)
-    //             ->get();
-
-    //         $featured = Product::with(['images:id,image_path,product_id', 'cat_info:id,title'])
-    //             ->where('is_featured', 1)
-    //             ->where('status', 'active')
-    //             ->select('id', 'title', 'slug', 'discount', 'cat_id')
-    //             ->orderBy('id', 'desc')
-    //             ->limit(1)
-    //             ->get();
-
-    //         $latest_products = Product::with(['images:id,image_path,product_id'])
-    //             ->where('status', 'active')
-    //             ->select('id', 'title', 'slug', 'price', 'discount')
-    //             ->latest()
-    //             ->limit(6)
-    //             ->get();
-
-    //         $posts = Post::select('id', 'title', 'slug', 'photo', 'created_at')
-    //             ->latest()
-    //             ->limit(3)
-    //             ->get();
-
-    //         // Store all in Redis
-    //         $homepage = compact(
-    //             'banners',
-    //             'categories',
-    //             'categoryBanners',
-    //             'product_lists',
-    //             'featured',
-    //             'latest_products',
-    //             'posts'
-    //         );
-
-    //         RedisCacheManager::put('page', 'home', $homepage, 3600); // cache for 1 hour
-    //         // $endTime = microtime(true);
-    //         // // Calculate and display the elapsed time
-    //         // $elapsedTime = $endTime - $startTime;
-    //         // echo "Elapsed Time: $elapsedTime seconds" . PHP_EOL;
-    //         // exit;
-    //     }
-
-    //     return view('frontend.index', $homepage);
+    //     $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
+    //     $products = Product::orwhere('title', 'like', '%' . $request->search . '%')
+    //         ->orwhere('slug', 'like', '%' . $request->search . '%')
+    //         ->orwhere('description', 'like', '%' . $request->search . '%')
+    //         ->orwhere('summary', 'like', '%' . $request->search . '%')
+    //         ->orwhere('price', 'like', '%' . $request->search . '%')
+    //         ->orderBy('id', 'DESC')
+    //         ->paginate('9');
+    //     return view('frontend.pages.product-grids')->with('products', $products)->with('recent_products', $recent_products);
     // }
-
 
     public function aboutUs()
     {
@@ -474,6 +541,7 @@ class FrontendController extends Controller
 
         return view('frontend.pages.product-lists')->with('products', $products)->with('recent_products', $recent_products);
     }
+
     public function productFilter(Request $request)
     {
         $data = $request->all();
@@ -520,18 +588,6 @@ class FrontendController extends Controller
         } else {
             return redirect()->route('product-lists', $catURL . $brandURL . $priceRangeURL . $showURL . $sortByURL);
         }
-    }
-    public function productSearch(Request $request)
-    {
-        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
-        $products = Product::orwhere('title', 'like', '%' . $request->search . '%')
-            ->orwhere('slug', 'like', '%' . $request->search . '%')
-            ->orwhere('description', 'like', '%' . $request->search . '%')
-            ->orwhere('summary', 'like', '%' . $request->search . '%')
-            ->orwhere('price', 'like', '%' . $request->search . '%')
-            ->orderBy('id', 'DESC')
-            ->paginate('9');
-        return view('frontend.pages.product-grids')->with('products', $products)->with('recent_products', $recent_products);
     }
 
     public function productBrand(Request $request)

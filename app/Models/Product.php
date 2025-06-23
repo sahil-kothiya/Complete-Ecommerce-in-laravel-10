@@ -9,6 +9,31 @@ class Product extends Model
 {
     protected $fillable = ['title', 'slug', 'summary', 'description', 'cat_id', 'child_cat_id', 'price', 'brand_id', 'discount', 'status', 'photo', 'size', 'stock', 'is_featured', 'condition'];
 
+    /**
+     * Get the indexable data array for the model.
+     */
+    public function toSearchableArray()
+    {
+        return [
+            'id' => $this->id,
+            'title' => $this->title,
+            'slug' => $this->slug,
+            'price' => $this->price,
+            'discount' => $this->discount,
+            'stock' => $this->stock,
+            'status' => $this->status,
+            'created_at' => $this->created_at->format('Y-m-d H:i:s'),
+        ];
+    }
+
+    /**
+     * Get the index name for the model.
+     */
+    public function searchableAs()
+    {
+        return config('elasticsearch.index');
+    }
+
     public function images()
     {
         return $this->hasMany(ProductImage::class)->orderByDesc('is_primary')->orderBy('sort_order');

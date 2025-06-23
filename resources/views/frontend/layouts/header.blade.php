@@ -60,12 +60,15 @@
                     <div class="search-top">
                         <div class="top-search"><a href="#0"><i class="ti-search"></i></a></div>
                         <!-- Search Form -->
-                        <div class="search-top">
+                        {{-- <div class="search-top">
                             <form class="search-form">
                                 <input type="text" placeholder="Search here..." name="search">
                                 <button value="search" type="submit"><i class="ti-search"></i></button>
                             </form>
-                        </div>
+                        </div> --}}
+
+
+
                         <!--/ End Search Form -->
                     </div>
                     <!--/ End Search Form -->
@@ -74,28 +77,48 @@
                 <div class="col-lg-8 col-md-7 col-12">
                     <div class="search-bar-top">
                         <div class="search-bar">
+
+                            <!-- Fixed: Valid <select> rendering for categories -->
                             <select>
-                                <option>All Category</option>
-                                @foreach($categories as $parent)
-                                <li>{{ $parent->title }}
-                                    @if($parent->children->isNotEmpty())
-                                    <ul>
-                                        @foreach($parent->children as $child)
-                                        <li>{{ $child->title }}</li>
-                                        @endforeach
-                                    </ul>
-                                    @endif
-                                </li>
+                                <option value="">All Categories</option>
+                                @foreach(Helper::getAllCategory() as $parent)
+                                <option value="{{ $parent->slug }}">{{ $parent->title }}</option>
+                                @if($parent->children->isNotEmpty())
+                                @foreach($parent->children as $child)
+                                <option value="{{ $child->slug }}">— {{ $child->title }}</option>
+                                @endforeach
+                                @endif
                                 @endforeach
                             </select>
-                            <form method="POST" action="{{route('product.search')}}">
-                                @csrf
-                                <input name="search" placeholder="Search Products Here....." type="search">
-                                <button class="btnn" type="submit"><i class="ti-search"></i></button>
+
+                            <!-- Working Search Form -->
+                            <form action="{{ route('product.search') }}" method="GET" id="search-form">
+                                <div class="search-container" style="position: relative;">
+                                    <input
+                                        type="text"
+                                        name="search"
+                                        id="search-input"
+                                        placeholder="Search Products Here....."
+                                        value="{{ request('search') }}"
+                                        autocomplete="off"
+                                        class="form-control">
+
+                                    <!-- Submit Button (styled) -->
+                                    <button class="btnn" type="submit">
+                                        <i class="ti-search"></i>
+                                    </button>
+
+                                    <!-- Autocomplete Dropdown -->
+                                    <div id="autocomplete-dropdown" class="autocomplete-dropdown" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; z-index: 99; display: none;">
+                                        <ul id="autocomplete-list" style="list-style: none; margin: 0; padding: 0;"></ul>
+                                    </div>
+                                </div>
                             </form>
+
                         </div>
                     </div>
                 </div>
+
                 <div class="col-lg-2 col-md-3 col-12">
                     <div class="right-bar">
                         <!-- Search Form -->

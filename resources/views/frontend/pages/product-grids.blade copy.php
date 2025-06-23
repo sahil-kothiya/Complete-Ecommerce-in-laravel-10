@@ -32,10 +32,8 @@
                         <div class="single-widget category">
                             <h3 class="title">Categories</h3>
                             <ul class="categor-list">
-                                @php
-                                $category = App\Models\Category::getAllParentWithChild();
-                                @endphp
-                                @foreach($category as $cat_info)
+                                @if($categories)
+                                @foreach($categories as $cat_info)
                                 @if($cat_info->children && $cat_info->children->count() > 0)
                                 <li>
                                     <a href="{{ route('product-cat', $cat_info->slug) }}">{{ $cat_info->title }}</a>
@@ -49,6 +47,7 @@
                                 <li><a href="{{ route('product-cat', $cat_info->slug) }}">{{ $cat_info->title }}</a></li>
                                 @endif
                                 @endforeach
+                                @endif
                             </ul>
                         </div>
                         <!--/ End Single Widget -->
