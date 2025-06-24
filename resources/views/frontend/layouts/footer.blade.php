@@ -6,7 +6,6 @@
 				<div class="col-lg-5 col-md-6 col-12">
 					<div class="single-footer about">
 						<a href="{{ route('home') }}" class="logo">
-							<img src="{{ asset('frontend/images/logo2.webp') }}" alt="Footer Logo" loading="lazy">
 						</a>
 						<p class="text">{{ $settings->short_des ?? 'Your one-stop shop for quality products.' }}</p>
 						<p class="call">Got Question? Call us 24/7 <a href="tel:{{ $settings->phone ?? '' }}">{{ $settings->phone ?? '' }}</a></p>

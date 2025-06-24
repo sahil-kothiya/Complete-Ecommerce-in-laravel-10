@@ -2,17 +2,24 @@
 @section('main-content')
 <!-- Slider -->
 @if($banners?->count())
-<section id="gslider" class="carousel slide" data-bs-ride="carousel" aria-label="Homepage banner carousel">
+<section id="gslider" class="carousel slide" data-ride="carousel" aria-label="Homepage banner carousel" data-interval="2000">
+    <!-- Carousel Indicators -->
     <ol class="carousel-indicators">
         @foreach($banners as $key => $banner)
-        <li data-bs-target="#gslider" data-bs-slide-to="{{ $key }}" class="{{ $key === 0 ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}"></li>
+        <li data-target="#gslider"
+            data-slide-to="{{ $key }}"
+            class="{{ $key === 0 ? 'active' : '' }}"
+            aria-label="Slide {{ $key + 1 }}"></li>
         @endforeach
     </ol>
+
+    <!-- Carousel Inner -->
     <div class="carousel-inner">
         @foreach($banners as $key => $banner)
         <div class="carousel-item {{ $key === 0 ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}">
             <img
                 src="{{ asset($banner->photo ?? 'images/placeholder-banner.jpg') }}"
+                class="d-block w-100"
                 alt="{{ $banner->title }}"
                 loading="{{ $key === 0 ? 'eager' : 'lazy' }}"
                 width="1200"
@@ -20,19 +27,25 @@
             <div class="carousel-caption d-none d-md-block text-left">
                 <h1>{{ $banner->title }}</h1>
                 <p>{!! $banner->description !!}</p>
-                <a class="btn btn-lg" href="{{ route('product-grids') }}">Shop Now <i class="fa fa-arrow-right"></i></a>
+                <a class="btn btn-lg btn-primary" href="{{ route('product-grids') }}">
+                    Shop Now <i class="fa fa-arrow-right"></i>
+                </a>
             </div>
         </div>
         @endforeach
     </div>
-    <button class="carousel-control-prev" type="button" data-bs-target="#gslider" data-bs-slide="prev" aria-label="Previous slide">
-        <span class="carousel-control-prev-icon"></span>
-    </button>
-    <button class="carousel-control-next" type="button" data-bs-target="#gslider" data-bs-slide="next" aria-label="Next slide">
-        <span class="carousel-control-next-icon"></span>
-    </button>
+
+    <!-- Carousel Controls -->
+    <a class="carousel-control-prev" href="#gslider" role="button" data-slide="prev" aria-label="Previous slide">
+        <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+    </a>
+    <a class="carousel-control-next" href="#gslider" role="button" data-slide="next" aria-label="Next slide">
+        <span class="carousel-control-next-icon" aria-hidden="true"></span>
+    </a>
 </section>
 @endif
+
+
 
 <!-- Category Banners -->
 @if($categoryBanners?->count())
@@ -63,7 +76,7 @@
 <section class="product-area section">
     <div class="container">
         <div class="section-title text-center">
-            <h2>Trending Items</h2>
+            <h2>Top Products</h2>
         </div>
         @if($categories?->count())
         <div class="row mb-4">
