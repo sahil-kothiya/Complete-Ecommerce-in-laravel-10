@@ -89,13 +89,13 @@
         <div class="container">
             <nav class="navbar navbar-expand-lg">
                 <div class="navbar-collapse">
-                    <ul class="nav main-menu menu navbar-nav">
+                    <ul class="nav main-menu menu navbar-nav mk-ct">
                         <li class="{{ request()->is('home') ? 'active' : '' }}"><a href="{{ route('home') }}">Home</a></li>
                         <li class="{{ request()->is('about-us') ? 'active' : '' }}"><a href="{{ route('about-us') }}">About Us</a></li>
                         <li class="{{ request()->is('product-grids', 'product-lists') ? 'active' : '' }}"><a href="{{ route('product-grids') }}">Products</a></li>
                         @include('frontend.partials.category-menu')
                         <li class="{{ request()->is('blog') ? 'active' : '' }}"><a href="{{ route('blog') }}">Blog</a></li>
-                        <li class="{{ request()->is('contact') ? 'active' : '' }}"><a href="{{ route('contact') }}">Contact Us</a></li>
+                        <li class="{{ request()->is('contact') ? 'active' : '' }} cnt-us"><a href="{{ route('contact') }}">Contact Us</a></li>
                     </ul>
                 </div>
             </nav>

@@ -1,5 +1,5 @@
 <li>
-    <a class="nav-link dropdown-toggle" href="#">Category <i class="ti-angle-down"></i></a>
+    <a class="nav-link dropdown-toggle" href="#">Category</a>
     <ul class="dropdown border-0 shadow">
         @foreach(Helper::getAllCategory() as $cat_info)
         @if($cat_info->children->count())

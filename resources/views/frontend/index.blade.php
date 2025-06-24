@@ -2,7 +2,7 @@
 @section('main-content')
 <!-- Slider -->
 @if($banners?->count())
-<section id="gslider" class="carousel slide" data-ride="carousel" aria-label="Homepage banner carousel" data-interval="2000">
+<section id="gslider" class="carousel slide" data-ride="carousel" aria-label="Homepage banner carousel" data-interval="5000">
     <!-- Carousel Indicators -->
     <ol class="carousel-indicators">
         @foreach($banners as $key => $banner)
@@ -45,8 +45,6 @@
 </section>
 @endif
 
-
-
 <!-- Category Banners -->
 @if($categoryBanners?->count())
 <section class="small-banner section">
@@ -82,9 +80,9 @@
         <div class="row mb-4">
             <div class="col-12 text-center">
                 <ul class="nav filter-tope-group" id="categoryFilters" role="tablist">
-                    <button class="btn active" data-filter="*">All Products</button>
+                    <button class="btn filter-btn active" data-filter="*">All Products</button>
                     @foreach($categories as $cat)
-                    <button class="btn" data-filter=".category-{{ $cat->id }}">{{ $cat->title }}</button>
+                    <button class="btn filter-btn" data-filter=".category-{{ $cat->id }}">{{ $cat->title }}</button>
                     @endforeach
                 </ul>
             </div>
@@ -240,6 +238,21 @@
 
 @push('styles')
 <style>
+    .filter-tope-group .filter-btn {
+        background-color: transparent;
+        color: black;
+        border: 1px solid black;
+        padding: 8px 16px;
+        border-radius: 4px;
+        transition: all 0.3s;
+        cursor: pointer;
+    }
+
+    .filter-tope-group .filter-btn.active {
+        background-color: black;
+        color: white;
+    }
+
     /* Slider */
     #gslider .carousel-inner {
         background: #000;
@@ -263,11 +276,11 @@
         color: #F7941D;
     }
 
-    #gslider .carousel-caption p {
+    /* #gslider .carousel-caption p {
         font-size: 18px;
         color: white;
         margin: 28px 0;
-    }
+    } */
 
     #gslider .carousel-indicators {
         bottom: 70px;
@@ -283,22 +296,17 @@
 
     .filter-tope-group button {
         background: none;
-        border: 1px solid #ddd;
+        border: 1px solid black;
         padding: 8px 16px;
         border-radius: 4px;
         transition: all 0.3s;
     }
 
-    .filter-tope-group button:hover {
+    /* .filter-tope-group button:hover {
         background: #f8f9fa;
         border-color: #F7941D;
-    }
+    } */
 
-    .filter-tope-group button.active {
-        background: #F7941D;
-        color: white;
-        border-color: #F7941D;
-    }
 
     /* Product Cards */
     .single-product {
@@ -353,6 +361,33 @@
         color: #dc3545;
     }
 
+    .section-title h2 span {
+        background: transparent;
+        padding: 0 10px;
+    }
+
+
+    .section-title h2 {
+        background: none !important;
+        display: inline-block;
+        font-weight: 700;
+        color: #333;
+        font-size: 28px;
+        position: relative;
+        padding-bottom: 10px;
+    }
+
+    .section-title h2::after {
+        content: '';
+        display: block;
+        width: 40px;
+        height: 3px;
+        /* background-color: #F7941D; */
+        margin: 10px auto 0;
+        border-radius: 2px;
+    }
+
+
     /* Responsive */
     @media (max-width: 768px) {
         #gslider .carousel-caption h1 {
@@ -376,6 +411,16 @@
 
 <script>
     $(document).ready(function() {
+        document.addEventListener("DOMContentLoaded", function() {
+            const filterButtons = document.querySelectorAll(".filter-tope-group .filter-btn");
+
+            filterButtons.forEach(btn => {
+                btn.addEventListener("click", () => {
+                    filterButtons.forEach(b => b.classList.remove("active"));
+                    btn.classList.add("active");
+                });
+            });
+        });
         $('.isotope-grid').isotope({
             itemSelector: '.isotope-item',
             layoutMode: 'fitRows',

@@ -192,6 +192,19 @@
         font-style: italic;
     }
 
+    .navbar-collapse.mk-ct {
+        align-items: center;
+        /* padding: 0% 0% 0% 15%; */
+    }
+
+    .cnt-us {
+        padding-left: 6%;
+    }
+
+    ul.nav.main-menu.menu.navbar-nav>li {
+        margin: 0% 1% 0% 6%;
+    }
+
     /* Responsive adjustments */
     @media (max-width: 768px) {
         .autocomplete-dropdown {
