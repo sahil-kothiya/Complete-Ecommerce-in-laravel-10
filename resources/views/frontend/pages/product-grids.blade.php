@@ -76,7 +76,7 @@
                     @if($products->hasPages())
                     <div class="row">
                         <div class="col-12 d-flex justify-content-center">
-                            {{ $products->appends(request()->query())->links() }}
+                            {{ $products->appends(request()->query())->links('vendor.pagination.bootstrap-4') }}
                         </div>
                     </div>
                     @endif

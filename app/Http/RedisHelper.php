@@ -98,6 +98,54 @@ class RedisHelper
         }
     }
 
+    public static function getMemoryUsage(): array
+    {
+        try {
+            $info = Redis::info('memory');
+
+            return [
+                'used_memory' => $info['used_memory'] ?? 0,
+                'used_memory_human' => $info['used_memory_human'] ?? 'N/A',
+                'used_memory_rss' => $info['used_memory_rss'] ?? 0,
+                'used_memory_rss_human' => $info['used_memory_rss_human'] ?? 'N/A',
+                'used_memory_peak' => $info['used_memory_peak'] ?? 0,
+                'used_memory_peak_human' => $info['used_memory_peak_human'] ?? 'N/A',
+                'memory_fragmentation_ratio' => $info['mem_fragmentation_ratio'] ?? 'N/A',
+            ];
+        } catch (\Exception $e) {
+            Log::error("Redis MEMORY_USAGE error: " . $e->getMessage());
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Get keys matching a pattern
+     */
+    public static function keys(string $pattern): array
+    {
+        try {
+            return Redis::keys($pattern) ?: [];
+        } catch (\Exception $e) {
+            Log::error("Redis KEYS error for pattern {$pattern}: " . $e->getMessage());
+            return [];
+        }
+    }
+
+
+    /**
+     * Get TTL for a key
+     */
+    public static function ttl(string $key): ?int
+    {
+        try {
+            $ttl = Redis::ttl($key);
+            return $ttl >= 0 ? $ttl : null;
+        } catch (\Exception $e) {
+            Log::error("Redis TTL error for key {$key}: " . $e->getMessage());
+            return null;
+        }
+    }
+
     /**
      * Store large data in chunks
      */
@@ -318,6 +366,31 @@ class RedisHelper
         } catch (\Exception $e) {
             Log::error("Redis forgetChunkedData error for key {$key}: " . $e->getMessage());
             return false;
+        }
+    }
+
+    /**
+     * Remember pattern - get from cache or execute callback and cache result
+     */
+    public static function remember(string $key, int $ttl, callable $callback)
+    {
+        try {
+            // Try to get from cache first
+            $cached = self::get($key);
+
+            if ($cached !== null) {
+                return $cached;
+            }
+
+            // Execute callback and cache result
+            $value = $callback();
+            self::put($key, $value, $ttl);
+
+            return $value;
+        } catch (\Exception $e) {
+            Log::error("Redis REMEMBER error for key {$key}: " . $e->getMessage());
+            // If Redis fails, just execute the callback
+            return $callback();
         }
     }
 
