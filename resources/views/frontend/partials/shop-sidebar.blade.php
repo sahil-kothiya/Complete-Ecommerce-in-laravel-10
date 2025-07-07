@@ -1,7 +1,7 @@
 {{-- resources/views/frontend/partials/shop-sidebar.blade.php --}}
 
 <!-- Categories Widget -->
-<div class="single-widget category">
+<!-- <div class="single-widget category">
     <h3 class="title">Categories</h3>
     <ul class="categor-list">
         @php
@@ -29,7 +29,7 @@
         </li>
         @endforeach
     </ul>
-</div>
+</div> -->
 
 <!-- Price Filter Widget -->
 <div class="single-widget range">
@@ -86,11 +86,11 @@
 </div>
 
 <!-- Brands Widget -->
-<div class="single-widget category">
+<!-- <div class="single-widget category">
     <h3 class="title">Brands</h3>
     <ul class="categor-list">
         @foreach(\Illuminate\Support\Facades\DB::table('brands')->where('status', 'active')->orderBy('title')->get() as $brand)
         <li><a href="{{ route('product-brand', $brand->slug) }}">{{ $brand->title }}</a></li>
         @endforeach
     </ul>
-</div>
+</div> -->

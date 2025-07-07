@@ -190,67 +190,64 @@ class ProductImageSeederForFirst60 extends Seeder
         "ff3310a1-c17a-40e6-a454-afdb689629f4.webp",
     ];
 
-     public function run(): void
+    public function run(): void
     {
-        if (count($this->images) < 3) {
-            $this->command->error("❌ At least 3 images required.");
+        // Temporarily disable triggers on product_images table
+        DB::statement('ALTER TABLE product_images DISABLE TRIGGER ALL;');
+
+        // Truncate table
+        DB::statement('TRUNCATE TABLE product_images RESTART IDENTITY CASCADE;');
+
+        $totalProducts = DB::table('products')->count();
+        $batchSize = 1000;
+
+        $images = collect($this->images); // Must contain exactly 180 images
+
+        if ($images->count() !== 180) {
+            $this->command->error('❌ You must provide exactly 180 images (60 sets of 3).');
             return;
         }
 
-        // ✅ Disable FK and truncate first, outside chunk
-        DB::statement('SET session_replication_role = replica;');
-        DB::statement('TRUNCATE TABLE product_images RESTART IDENTITY CASCADE;');
+        $imageSets = $images->chunk(3)->values();
 
-        $totalImages = count($this->images);
-        $imageIndex = 0;
-        $productCounter = 0;
-        $batchSize = 5000;
+        $this->command->info("🛠 Assigning images to $totalProducts products in batches of $batchSize...");
 
-        // ✅ Use DB::cursor() instead of chunk() to avoid memory bloat
-        $products = DB::table('products')->orderBy('id')->cursor();
+        $offset = 0;
 
-        $batch = [];
+        while ($offset < $totalProducts) {
+            $products = DB::table('products')
+                ->orderBy('id')
+                ->offset($offset)
+                ->limit($batchSize)
+                ->get();
 
-        foreach ($products as $product) {
-            $img1 = $this->images[$imageIndex++ % $totalImages];
-            $img2 = $this->images[$imageIndex++ % $totalImages];
-            $img3 = $this->images[$imageIndex++ % $totalImages];
+            if ($products->isEmpty()) break;
 
-            $batch[] = [
-                'product_id' => $product->id,
-                'image_path' => 'storage/photos/1/Products/' . $img1,
-                'is_primary' => 1,
-                'sort_order' => 0,
-            ];
-            $batch[] = [
-                'product_id' => $product->id,
-                'image_path' => 'storage/photos/1/Products/' . $img2,
-                'is_primary' => 0,
-                'sort_order' => 1,
-            ];
-            $batch[] = [
-                'product_id' => $product->id,
-                'image_path' => 'storage/photos/1/Products/' . $img3,
-                'is_primary' => 0,
-                'sort_order' => 2,
-            ];
+            $insertData = [];
 
-            $productCounter++;
+            foreach ($products as $product) {
+                $setIndex = ($product->id - 1) % 60;
+                $imageSet = $imageSets->get($setIndex);
 
-            if ($productCounter % $batchSize === 0) {
-                DB::table('product_images')->insert($batch);
-                echo "✅ Seeded {$productCounter} products...\n";
-                $batch = []; // free memory
+                foreach ($imageSet as $imgIndex => $imageName) {
+                    $insertData[] = [
+                        'product_id' => $product->id,
+                        'image_path' => 'storage/photos/1/Products/' . $imageName,
+                        'is_primary' => $imgIndex === 0 ? 1 : 0,
+                        'sort_order' => $imgIndex,
+                    ];
+                }
             }
+
+            DB::table('product_images')->insert($insertData);
+            $this->command->info("✅ Inserted images for products offset: $offset");
+
+            $offset += $batchSize;
         }
 
-        // Insert remaining records
-        if (!empty($batch)) {
-            DB::table('product_images')->insert($batch);
-        }
+        // Re-enable triggers
+        DB::statement('ALTER TABLE product_images ENABLE TRIGGER ALL;');
 
-        DB::statement('SET session_replication_role = DEFAULT;');
-
-        $this->command->info("🎉 Done: Seeded {$productCounter} products with images.");
+        $this->command->info("🎉 Done. 3 images per product inserted using 180 base images.");
     }
 }

@@ -56,7 +56,7 @@
 					<p>Copyright © {{ date('Y') }} All Rights Reserved. Current Time: <span id="current-time"></span></p>
 				</div>
 				<div class="col-lg-6 col-12">
-					<img src="{{ asset('frontend/images/payments.webp') }}" alt="Payment Methods" loading="lazy">
+					<!-- <img src="{{ asset('frontend/images/payments.webp') }}" alt="Payment Methods" loading="lazy"> -->
 				</div>
 			</div>
 		</div>
@@ -64,9 +64,10 @@
 </footer>
 
 <!-- Jquery -->
-<script src="{{asset('frontend/js/jquery.min.js')}}"></script>
+<script src="{{ asset('frontend/js/jquery.min.js') }}"></script>
 <script src="{{asset('frontend/js/jquery-migrate-3.0.0.js')}}"></script>
 <script src="{{asset('frontend/js/jquery-ui.min.js')}}"></script>
+<script src="{{asset('frontend/js/sharethis.js')}}"></script>
 <!-- Popper JS -->
 <script src="{{asset('frontend/js/popper.min.js')}}"></script>
 <!-- Bootstrap JS -->

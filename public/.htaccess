@@ -1,3 +1,10 @@
+# ==============================================================================
+# OPTIMIZED .HTACCESS FOR LARAVEL WITH AGGRESSIVE CACHE PERFORMANCE
+# ==============================================================================
+
+# ----------------------------------------------------------------------
+# URL Rewriting & Laravel Front Controller
+# ----------------------------------------------------------------------
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes
@@ -9,30 +16,72 @@
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
-    # Redirect Trailing Slashes (except folders)
+    # Redirect Trailing Slashes (except directories)
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} (.+)/$
     RewriteRule ^ %1 [L,R=301]
 
-    # Force HTTPS (optional, enable if needed)
-    # RewriteCond %{HTTPS} off
-    # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+    # Serve pre-compressed files if available
+    RewriteCond %{HTTP:Accept-Encoding} gzip
+    RewriteCond %{REQUEST_FILENAME}\.gz -f
+    RewriteRule ^(.*)$ $1.gz [QSA,L]
 
-    # Front Controller for Laravel
+    # Laravel Front Controller
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
 </IfModule>
 
 # ----------------------------------------------------------------------
-# Compression: Brotli First, Gzip Fallback
+# MIME Types
+# ----------------------------------------------------------------------
+<IfModule mod_mime.c>
+    # Modern image formats
+    AddType image/webp .webp
+    AddType image/avif .avif
+    
+    # Font types
+    AddType font/woff2 .woff2
+    AddType font/woff .woff
+    AddType application/font-woff .woff
+    AddType application/font-woff2 .woff2
+    AddType application/vnd.ms-fontobject .eot
+    AddType font/opentype .otf
+    AddType application/x-font-opentype .otf
+    AddType image/svg+xml .svg
+    AddType application/x-font-ttf .ttf
+    AddType application/font-sfnt .ttf
+    
+    # JavaScript and CSS
+    AddType text/css .css
+    AddType application/javascript .js
+    AddType text/javascript .js
+</IfModule>
+
+# ----------------------------------------------------------------------
+# Compression: Brotli First, Then Gzip
 # ----------------------------------------------------------------------
 <IfModule mod_brotli.c>
-    AddOutputFilterByType BROTLI_COMPRESS text/html text/plain text/xml text/css application/javascript application/json font/woff2 image/svg+xml
+    AddOutputFilterByType BROTLI_COMPRESS text/html text/plain text/xml text/css
+    AddOutputFilterByType BROTLI_COMPRESS text/javascript application/javascript application/json
+    AddOutputFilterByType BROTLI_COMPRESS application/xml application/rss+xml
+    AddOutputFilterByType BROTLI_COMPRESS image/svg+xml
+    AddOutputFilterByType BROTLI_COMPRESS font/woff2 font/woff font/ttf font/otf
 </IfModule>
 
 <IfModule mod_deflate.c>
-    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css application/javascript application/json font/woff2 image/svg+xml
+    # Text-based content
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css
+    AddOutputFilterByType DEFLATE text/javascript application/javascript application/json
+    AddOutputFilterByType DEFLATE application/xml application/rss+xml application/xhtml+xml
+    
+    # Images and fonts
+    AddOutputFilterByType DEFLATE image/svg+xml image/x-icon
+    AddOutputFilterByType DEFLATE font/woff2 font/woff font/ttf font/otf
+    AddOutputFilterByType DEFLATE application/vnd.ms-fontobject
+    AddOutputFilterByType DEFLATE application/x-font-opentype application/x-font-ttf
+    
+    # Legacy browser compatibility
     BrowserMatch ^Mozilla/4 gzip-only-text/html
     BrowserMatch ^Mozilla/4\.0[678] no-gzip
     BrowserMatch \bMSIE !no-gzip !gzip-only-text/html
@@ -40,43 +89,131 @@
 </IfModule>
 
 # ----------------------------------------------------------------------
-# MIME Types
-# ----------------------------------------------------------------------
-<IfModule mod_mime.c>
-    AddType image/webp .webp
-</IfModule>
-
-# ----------------------------------------------------------------------
-# Cache Expiry + Cache-Control Headers
+# Cache Control & Expiration Headers - AGGRESSIVE CACHING
 # ----------------------------------------------------------------------
 <IfModule mod_expires.c>
     ExpiresActive On
-
-    # Long-term cache (immutable assets)
+    
+    # Images - 1 year (your biggest files)
     ExpiresByType image/webp "access plus 1 year"
+    ExpiresByType image/avif "access plus 1 year"
     ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/jpg "access plus 1 year"
     ExpiresByType image/png "access plus 1 year"
     ExpiresByType image/gif "access plus 1 year"
     ExpiresByType image/svg+xml "access plus 1 year"
     ExpiresByType image/x-icon "access plus 1 year"
-    ExpiresByType text/css "access plus 1 month"
-    ExpiresByType text/javascript "access plus 1 month"
-    ExpiresByType application/javascript "access plus 1 month"
+    
+    # Fonts - 1 year (static assets)
     ExpiresByType font/woff2 "access plus 1 year"
     ExpiresByType font/woff "access plus 1 year"
     ExpiresByType font/ttf "access plus 1 year"
+    ExpiresByType font/otf "access plus 1 year"
+    ExpiresByType application/font-woff "access plus 1 year"
+    ExpiresByType application/font-woff2 "access plus 1 year"
+    ExpiresByType application/vnd.ms-fontobject "access plus 1 year"
+    ExpiresByType application/x-font-opentype "access plus 1 year"
+    ExpiresByType application/x-font-ttf "access plus 1 year"
+    
+    # CSS and JavaScript - 6 months (can change more frequently)
+    ExpiresByType text/css "access plus 6 months"
+    ExpiresByType text/javascript "access plus 6 months"
+    ExpiresByType application/javascript "access plus 6 months"
+    
+    # Documents - 1 month
+    ExpiresByType application/pdf "access plus 1 month"
+    ExpiresByType application/json "access plus 1 week"
+    
+    # Default fallback
+    ExpiresDefault "access plus 1 month"
 </IfModule>
 
 <IfModule mod_headers.c>
-    # Static assets - strong cache
-    <FilesMatch "\.(ico|jpe?g|png|gif|webp|svg|css|js|woff2?|ttf)$">
+    # Static assets - AGGRESSIVE caching with immutable flag
+    <FilesMatch "\.(ico|jpe?g|png|gif|webp|avif|svg|woff2?|ttf|otf|eot)$">
         Header set Cache-Control "public, max-age=31536000, immutable"
+        Header set Vary "Accept-Encoding"
+        Header unset ETag
     </FilesMatch>
-
-    # Dynamic content - no cache
+    
+    # CSS and JS - Long cache but allow revalidation
+    <FilesMatch "\.(css|js)$">
+        Header set Cache-Control "public, max-age=15552000, must-revalidate"
+        Header set Vary "Accept-Encoding"
+        Header unset ETag
+    </FilesMatch>
+    
+    # Dynamic content - prevent caching
     <FilesMatch "\.(php|html?)$">
-        Header set Cache-Control "no-store, no-cache, must-revalidate"
+        Header set Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate"
         Header set Pragma "no-cache"
-        Header set Expires 0
+        Header set Expires "0"
+    </FilesMatch>
+    
+    # Security headers
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    
+    # Remove server signature
+    Header unset Server
+    Header unset X-Powered-By
+    
+    # Preload critical resources
+    Header add Link "</css/bootstrap.css>; rel=preload; as=style"
+    Header add Link "</js/jquery.min.js>; rel=preload; as=script"
+    Header add Link "</fonts/fontawesome-webfont.woff2>; rel=preload; as=font; type=font/woff2; crossorigin"
+</IfModule>
+
+# ----------------------------------------------------------------------
+# Security & Performance Rules
+# ----------------------------------------------------------------------
+
+# Prevent access to sensitive files
+<FilesMatch "\.(env|log|sql|git|htaccess|htpasswd)$">
+    Require all denied
+</FilesMatch>
+
+# Disable server signature
+ServerTokens Prod
+
+# Remove ETags for better caching (we use Last-Modified instead)
+<IfModule mod_headers.c>
+    <FilesMatch "\.(css|js|png|jpg|jpeg|gif|webp|svg|woff2?|ttf)$">
+        Header unset ETag
     </FilesMatch>
 </IfModule>
+
+# File ETags - Use only modification time and size
+FileETag MTime Size
+
+# ----------------------------------------------------------------------
+# Specific Rules for Your Largest Files
+# ----------------------------------------------------------------------
+
+# Target your specific large files
+<Files "nicesellect.js">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+</Files>
+
+<Files "bootstrap.css">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+</Files>
+
+<Files "jquery.min.js">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+</Files>
+
+<Files "fontawesome-webfont.woff2">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+</Files>
+
+# Banner images
+<FilesMatch "banner-\d+\.webp$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+</FilesMatch>
+
+# Product images (UUID pattern)
+<FilesMatch "[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.webp$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+</FilesMatch>

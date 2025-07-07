@@ -17,6 +17,8 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\ManageHomepageCache::class,
         \App\Console\Commands\IndexProducts::class,
         \App\Console\Commands\ReindexProducts::class,
+        \App\Console\Commands\MinifyAssets::class,
+        \App\Console\Commands\OptimizeImages::class,
     ];
 
     /**

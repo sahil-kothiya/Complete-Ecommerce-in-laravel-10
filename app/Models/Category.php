@@ -63,10 +63,20 @@ class Category extends Model
         return self::with('children')->active()->where('is_parent', 1)->orderBy('title')->get();
     }
 
+    // public static function getProductByCat($slug)
+    // {   
+    //     return self::with('products')->where('slug', $slug)->first();
+    // }
+
     public static function getProductByCat($slug)
-    {
-        return self::with('products')->where('slug', $slug)->first();
-    }
+{
+    return self::where('slug', $slug)
+        ->with(['products' => function ($query) {
+            $query->where('status', 'active')->paginate(12); // or ->limit(12)
+        }])
+        ->first();
+}
+
 
     public static function getProductBySubCat($slug)
     {

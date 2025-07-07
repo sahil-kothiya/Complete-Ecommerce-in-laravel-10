@@ -248,7 +248,6 @@ class FrontendController extends Controller
                 ->latest('id')
                 ->limit(60)
                 ->get();
-
             if (!RedisHelper::put($key, $products, $ttl)) {
                 Log::warning("Failed to store homepage products in Redis for key: {$key}");
             }
@@ -1109,15 +1108,19 @@ class FrontendController extends Controller
      * @return \Illuminate\View\View
      */
     public function productCat(Request $request)
-    {
-        $products = Category::getProductByCat($request->slug);
-        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
-        $view = request()->is('e-shop.loc/product-grids') ? 'product-grids' : 'product-lists';
+{
+    $category = Category::where('slug', $request->slug)->firstOrFail();
 
-        return view("frontend.pages.{$view}")
-            ->with('products', $products->products)
-            ->with('recent_products', $recent_products);
-    }
+    $products = Product::where('status', 'active')
+        ->where('cat_id', $category->id)
+        ->paginate($request->show ?? 12); // dynamic pagination (from select box)
+
+    $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
+    // $view = request()->is('e-shop.loc/product-grids') ? 'product-grids' : 'product-lists';
+
+    return view("frontend.pages.product-grids", compact('products', 'recent_products'));
+}
+
 
     /**
      * Displays products by subcategory.

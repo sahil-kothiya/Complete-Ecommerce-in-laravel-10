@@ -35,6 +35,7 @@ use App\Observers\{
     UserObserver,
     WishlistObserver
 };
+use App\Services\ResponseCacheService;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -70,6 +71,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton('cache.ttl', function () {
             return Config::get('cache_keys.ttl');
         });
+        $this->app->singleton(ResponseCacheService::class);
     }
 
     public function boot(): void
@@ -168,6 +170,7 @@ class AppServiceProvider extends ServiceProvider
 
         // Last resort: Database query (slowest)
         $settings = Settings::select([
+            'description',
             'short_des',
             'photo',
             'address',
