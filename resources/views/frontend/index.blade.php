@@ -65,6 +65,7 @@
                         @foreach($product_lists->take(12) as $product)
                         <div class="product-card-container">
                             @include('frontend.partials.product-card', ['product' => $product])
+                            @include('frontend.partials.product-modal', ['product' => $product])
                         </div>
                         @endforeach
                     </div>
@@ -89,6 +90,7 @@
                         @foreach($product_lists->filter(fn($item) => $item->cat_info?->title === "Kid's")->take(12) as $product)
                         <div class="product-card-container category-kids">
                             @include('frontend.partials.product-card', ['product' => $product])
+                            @include('frontend.partials.product-modal', ['product' => $product])
                         </div>
                         @endforeach
                     </div>
@@ -113,6 +115,7 @@
                         @foreach($product_lists->filter(fn($item) => $item->cat_info?->title === "Women's Fashion")->take(12) as $product)
                         <div class="product-card-container category-women">
                             @include('frontend.partials.product-card', ['product' => $product])
+                            @include('frontend.partials.product-modal', ['product' => $product])
                         </div>
                         @endforeach
                     </div>
@@ -137,6 +140,7 @@
                         @foreach($product_lists->filter(fn($item) => $item->cat_info?->title === "Men's Fashion")->take(12) as $product)
                         <div class="product-card-container category-men">
                             @include('frontend.partials.product-card', ['product' => $product])
+                            @include('frontend.partials.product-modal', ['product' => $product])
                         </div>
                         @endforeach
                     </div>

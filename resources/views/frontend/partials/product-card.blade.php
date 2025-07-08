@@ -5,24 +5,24 @@
                 <div class="slider-track d-flex h-100">
                     @foreach($product->images as $img)
                     @php
-                        $pathInfo = pathinfo($img->image_path);
-                        $directory = $pathInfo['dirname'];
-                        $filename = $pathInfo['filename'];
-                        $extension = $pathInfo['extension'];
-                        
-                        // Generate srcset for responsive images
-                        $srcset = [];
-                        $sizes = [160, 235, 320, 480];
-                        foreach ($sizes as $size) {
-                            $responsivePath = "{$directory}/{$filename}_{$size}x{$size}.webp";
-                            if (file_exists(public_path($responsivePath))) {
-                                $srcset[] = asset($responsivePath) . " {$size}w";
-                            }
-                        }
-                        
-                        // Add original as fallback
-                        $srcset[] = asset($img->image_path) . " 370w";
-                        $srcsetString = implode(', ', $srcset);
+                    $pathInfo = pathinfo($img->image_path);
+                    $directory = $pathInfo['dirname'];
+                    $filename = $pathInfo['filename'];
+                    $extension = $pathInfo['extension'];
+
+                    // Generate srcset for responsive images
+                    $srcset = [];
+                    $sizes = [160, 235, 320, 480];
+                    foreach ($sizes as $size) {
+                    $responsivePath = "{$directory}/{$filename}_{$size}x{$size}.webp";
+                    if (file_exists(public_path($responsivePath))) {
+                    $srcset[] = asset($responsivePath) . " {$size}w";
+                    }
+                    }
+
+                    // Add original as fallback
+                    $srcset[] = asset($img->image_path) . " 370w";
+                    $srcsetString = implode(', ', $srcset);
                     @endphp
                     <img
                         src="{{ asset($img->image_path) }}"
@@ -45,8 +45,8 @@
             @elseif($product->condition === 'new')
             <span class="badge badge-success badge-status">New</span>
             @elseif($product->stock <= 0)
-            <span class="badge badge-danger badge-status">Sold Out</span>
-            @endif
+                <span class="badge badge-danger badge-status">Sold Out</span>
+                @endif
         </div>
 
         <div class="card-body d-flex flex-column px-3 py-2">
@@ -75,10 +75,13 @@
                 <div class="d-flex justify-content-between small text-muted">
                     <a href="{{ route('add-to-wishlist', $product->slug) }}"><i class="ti-heart"></i> Wishlist</a>
                     <!-- Fixed: Added href attribute to make it crawlable -->
-                    <a href="{{ route('product-detail', $product->slug) }}"
+                    <!-- <a href="{{ route('product-detail', $product->slug) }}"
                         data-toggle="modal"
                         data-target="#productModal{{ $product->id }}"
                         onclick="event.preventDefault();">
+                        <i class="ti-eye"></i> Quick View
+                    </a> -->
+                    <a href="#" onclick="event.preventDefault(); $('#productModal{{ $product->id }}').modal('show');">
                         <i class="ti-eye"></i> Quick View
                     </a>
                 </div>
@@ -189,6 +192,14 @@
                 index = 0;
                 slide(); // back to first image
             });
+        });
+
+        $('#productModal{{ $product->id }}').on('hidden.bs.modal', function() {
+            this.setAttribute('inert', '');
+        });
+
+        $('#productModal{{ $product->id }}').on('show.bs.modal', function() {
+            this.removeAttribute('inert');
         });
     });
 </script>

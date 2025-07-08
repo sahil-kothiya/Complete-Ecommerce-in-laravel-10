@@ -26,9 +26,6 @@
 						<div class="col-lg-8 col-12">
 							<div class="form-main">
 								<div class="title">
-									@php
-										$settings=DB::table('settings')->get();
-									@endphp
 									<h4>Get in touch</h4>
 									<h3>Write us a message @auth @else<span style="font-size:12px;" class="text-danger">[You need to login first]</span>@endauth</h3>
 								</div>
@@ -80,21 +77,21 @@
 									<i class="fa fa-phone"></i>
 									<h4 class="title">Call us Now:</h4>
 									<ul>
-										<li>@foreach($settings as $data) {{$data->phone}} @endforeach</li>
+										<li>{{$settings->phone}}</li>
 									</ul>
 								</div>
 								<div class="single-info">
 									<i class="fa fa-envelope-open"></i>
 									<h4 class="title">Email:</h4>
 									<ul>
-										<li><a href="mailto:info@yourwebsite.com">@foreach($settings as $data) {{$data->email}} @endforeach</a></li>
+										<li><a href="mailto:info@yourwebsite.com">{{$settings->email}}</a></li>
 									</ul>
 								</div>
 								<div class="single-info">
 									<i class="fa fa-location-arrow"></i>
 									<h4 class="title">Our Address:</h4>
 									<ul>
-										<li>@foreach($settings as $data) {{$data->address}} @endforeach</li>
+										<li>{{$settings->address}}</li>
 									</ul>
 								</div>
 							</div>

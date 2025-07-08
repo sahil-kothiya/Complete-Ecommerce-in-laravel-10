@@ -5,10 +5,13 @@
     </div>
     <ul class="shopping-list">
         @foreach(Helper::getAllProductFromWishlist() as $data)
-        @php $photo = explode(',', $data->product['photo'])[0]; @endphp
+        @php
+        $firstImage = $data->product->images->first(); // Get first related image
+        $imagePath = $firstImage ? asset($firstImage->image_path) : asset('default.jpg'); // Use asset() for correct URL
+        @endphp
         <li>
             <a href="{{ route('wishlist-delete', $data->id) }}" class="remove" title="Remove this item"><i class="fa fa-remove"></i></a>
-            <a class="cart-img" href="#"><img src="{{ $photo }}" alt="{{ $data->product['title'] }}" loading="lazy"></a>
+            <a class="cart-img" href="#"><img src="{{ $imagePath }}" alt="{{ $data->product['title'] }}" loading="lazy"></a>
             <h4><a href="{{ route('product-detail', $data->product['slug']) }}" target="_blank">{{ $data->product['title'] }}</a></h4>
             <p class="quantity">{{ $data->quantity }} x <span class="amount">${{ number_format($data->price, 2) }}</span></p>
         </li>
