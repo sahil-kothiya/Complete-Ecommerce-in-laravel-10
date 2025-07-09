@@ -84,7 +84,7 @@ class AppServiceProvider extends ServiceProvider
         }
 
         $this->shareGlobalData();
-        $this->setupUserSpecificData();
+        // $this->setupUserSpecificData();
     }
 
     /**

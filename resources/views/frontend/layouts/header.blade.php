@@ -66,14 +66,14 @@
                         <div class="sinlge-bar shopping">
                             <a href="{{ route('wishlist') }}" class="single-icon" aria-label="Wishlist">
                                 <i class="fa fa-heart-o"></i>
-                                <span class="total-count">{{ $wishlistCount ?? 0 }}</span>
+                                <span class="total-count">{{ Helper::wishlistCount() ?? 0 }}</span>
                             </a>
                             @include('frontend.partials.wishlist-dropdown')
                         </div>
                         <div class="sinlge-bar shopping">
                             <a href="{{ route('cart') }}" class="single-icon" aria-label="Cart">
                                 <i class="ti-bag"></i>
-                                <span class="total-count">{{ $cartCount ?? 0 }}</span>
+                                <span class="total-count">{{ Helper::cartCount() ?? 0 }}</span>
                             </a>
                             @include('frontend.partials.cart-dropdown')
                         </div>
