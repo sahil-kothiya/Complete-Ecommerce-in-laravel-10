@@ -67,22 +67,24 @@
                 @endif
             </div>
 
+            @php
+            $inWishlist = Helper::isProductInWishlist($product->slug);
+            @endphp
+
             <div class="mt-auto">
                 <a href="{{ route('add-to-cart', $product->slug) }}"
-                    class="btn btn-sm btn-block btn-dark text-uppercase mb-2 {{ $product->stock <= 0 ? 'disabled' : '' }}">
+                    class="btn btn-sm btn-block btn-dark text-uppercase mb-3 text-center {{ $product->stock <= 0 ? 'disabled' : '' }}">
+                    <i class="ti-shopping-cart mr-1"></i>
                     {{ $product->stock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
                 </a>
-                <div class="d-flex justify-content-between small text-muted">
-                    <a href="{{ route('add-to-wishlist', $product->slug) }}"><i class="ti-heart"></i> Wishlist</a>
-                    <!-- Fixed: Added href attribute to make it crawlable -->
-                    <!-- <a href="{{ route('product-detail', $product->slug) }}"
-                        data-toggle="modal"
-                        data-target="#productModal{{ $product->id }}"
-                        onclick="event.preventDefault();">
-                        <i class="ti-eye"></i> Quick View
-                    </a> -->
-                    <a href="#" onclick="event.preventDefault(); $('#productModal{{ $product->id }}').modal('show');">
-                        <i class="ti-eye"></i> Quick View
+
+                <div class="d-flex justify-content-between align-items-center small text-muted px-1">
+                    <a href="{{ route('add-to-wishlist', $product->slug) }}" class="text-decoration-none">
+                        <i class="ti-heart mr-1" style="color: {{ $inWishlist ? 'red' : '#6c757d' }}"></i> Wishlist
+                    </a>
+                    <a href="#" class="text-decoration-none text-muted hover-text-dark"
+                        onclick="event.preventDefault(); $('#productModal{{ $product->id }}').modal('show');">
+                        <i class="ti-eye mr-1"></i> Quick View
                     </a>
                 </div>
             </div>

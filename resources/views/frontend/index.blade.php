@@ -3,24 +3,55 @@
 
 <!-- Slider -->
 @if($banners?->count())
+@php
+    $firstBanner = $banners[0];
+    $firstPhoto = $firstBanner->photo ?? 'images/placeholder-banner.jpg';
+    $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
+@endphp
+
+{{-- Preload First Banner Image --}}
+@push('head')
+    <link rel="preload" as="image" href="{{ asset($firstWebp) }}" type="image/webp" fetchpriority="high">
+    <link rel="preload" as="image" href="{{ asset($firstPhoto) }}" type="image/{{ pathinfo($firstPhoto, PATHINFO_EXTENSION) }}" fetchpriority="high">
+@endpush
+
 <section id="gslider" class="carousel slide" data-ride="carousel" aria-label="Homepage banner carousel" data-interval="3000">
     <ol class="carousel-indicators">
         @foreach($banners as $key => $banner)
-        <li data-target="#gslider" data-slide-to="{{ $key }}" class="{{ $key === 0 ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}"></li>
+            <li data-target="#gslider" data-slide-to="{{ $key }}" class="{{ $key === 0 ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}"></li>
         @endforeach
     </ol>
+
     <div class="carousel-inner">
         @foreach($banners as $key => $banner)
-        <div class="carousel-item {{ $key === 0 ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}">
-            <img src="{{ asset($banner->photo ?? 'images/placeholder-banner.jpg') }}" class="d-block w-100" alt="{{ $banner->title }}" loading="{{ $key === 0 ? 'eager' : 'lazy' }}" width="1200" height="550">
-            <div class="carousel-caption d-none d-md-block text-left">
-                <h1>{{ $banner->title }}</h1>
-                <p>{!! $banner->description !!}</p>
-                <a class="btn btn-lg btn-primary" href="{{ route('product-grids') }}">Shop Now <i class="fa fa-arrow-right"></i></a>
+            @php
+                $photo = $banner->photo ?? 'images/placeholder-banner.jpg';
+                $webp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $photo);
+                $isFirst = $key === 0;
+            @endphp
+
+            <div class="carousel-item {{ $isFirst ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}">
+                <picture>
+                    <source srcset="{{ asset($webp) }}" type="image/webp">
+                    <img src="{{ asset($photo) }}"
+                         class="d-block w-100"
+                         alt="{{ $banner->title }}"
+                         width="1200" height="550"
+                         loading="{{ $isFirst ? 'eager' : 'lazy' }}"
+                         fetchpriority="{{ $isFirst ? 'high' : 'low' }}">
+                </picture>
+
+                <div class="carousel-caption d-none d-md-block text-left">
+                    <h1>{{ $banner->title }}</h1>
+                    <p>{!! $banner->description !!}</p>
+                    <a class="btn btn-lg btn-primary" href="{{ route('product-grids') }}">
+                        Shop Now <i class="fa fa-arrow-right"></i>
+                    </a>
+                </div>
             </div>
-        </div>
         @endforeach
     </div>
+
     <a class="carousel-control-prev" href="#gslider" role="button" data-slide="prev" aria-label="Previous slide">
         <span class="carousel-control-prev-icon" aria-hidden="true"></span>
     </a>

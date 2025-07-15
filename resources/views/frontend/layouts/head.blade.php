@@ -41,7 +41,7 @@
 <link rel="stylesheet" href="{{asset('frontend/css/reset.min.css')}}">
 <link rel="stylesheet" href="{{asset('frontend/css/style.min.css')}}">
 <link rel="stylesheet" href="{{asset('frontend/css/responsive.css')}}">
-<!-- <script type='text/javascript' src='https://platform-api.sharethis.com/js/sharethis.js#property=5f2e5abf393162001291e431&product=inline-share-buttons' async='async'></script> -->
+<!-- <script type='text/javascript' src='https://platform-api.sharethis.com/js/sharethis.js#property=5f2e5abf393162001291e431&product=inline-share-buttons' async='async' defer></script> -->
 <style>
     /* Multilevel dropdown */
     .dropdown-submenu {
@@ -202,7 +202,7 @@
     }
 
     ul.nav.main-menu.menu.navbar-nav>li {
-        margin: 0% 1% 0% 6%;
+        margin: 0% 6% 0% 6%;
     }
 
     /* Responsive adjustments */

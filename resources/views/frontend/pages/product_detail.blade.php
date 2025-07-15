@@ -197,6 +197,7 @@
 														@auth
 														<form class="form" method="post" action="{{route('review.store',$product_detail->slug)}}">
 															@csrf
+															<input type="hidden" name="slug" value="{{$product_detail->slug}}">
 															<div class="row">
 																<div class="col-lg-12 col-12">
 																	<div class="rating_box">
@@ -305,6 +306,28 @@
 @endsection
 @push('styles')
 <style>
+	.star-rating__wrap {
+		direction: rtl;
+		display: inline-flex;
+	}
+
+	.star-rating__input {
+		display: none;
+	}
+
+	.star-rating__ico {
+		font-size: 24px;
+		color: #ccc;
+		cursor: pointer;
+		transition: color 0.2s;
+	}
+
+	.star-rating__input:checked~.star-rating__ico,
+	.star-rating__ico:hover,
+	.star-rating__ico:hover~.star-rating__ico {
+		color: orange;
+	}
+
 	/* Rating */
 	.rating_box {
 		display: inline-flex;
@@ -352,6 +375,22 @@
 </style>
 @endpush
 @push('scripts')
+<script>
+	document.querySelectorAll('.star-rating__input').forEach(radio => {
+		radio.addEventListener('change', function() {
+			let allLabels = document.querySelectorAll('.star-rating__ico');
+			allLabels.forEach(label => label.classList.remove('fa-star'));
+			allLabels.forEach(label => label.classList.add('fa-star-o'));
+
+			let val = parseInt(this.value);
+			for (let i = 1; i <= val; i++) {
+				document.querySelector('label[for="star-rating-' + i + '"]').classList.add('fa-star');
+				document.querySelector('label[for="star-rating-' + i + '"]').classList.remove('fa-star-o');
+			}
+		});
+	});
+</script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert.min.js"></script>
 
 {{-- <script>

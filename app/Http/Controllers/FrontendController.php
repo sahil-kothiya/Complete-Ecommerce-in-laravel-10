@@ -12,6 +12,7 @@ use App\Models\PostTag;
 use App\Models\Product;
 use App\Services\ProductSearchService;
 use App\User;
+use Helper;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
@@ -26,6 +27,8 @@ use Spatie\Newsletter\Facades\Newsletter;
 
 class FrontendController extends Controller
 {
+    private const RECENT_PRODUCTS_CACHE_PREFIX = 'cache:recent_products:';
+
     private ProductSearchService $searchService;
     private const HOMEPAGE_CACHE_PREFIX = 'cache:homepage:';
     private const PRODUCT_GRIDS_CACHE_PREFIX = 'cache:product_grids:';
@@ -1108,19 +1111,180 @@ class FrontendController extends Controller
      * @return \Illuminate\View\View
      */
     public function productCat(Request $request)
-{
-    $category = Category::where('slug', $request->slug)->firstOrFail();
+    {
+        $startTime = microtime(true);
+        $category = Category::where('slug', $request->slug)->firstOrFail();
+        $ttl = $this->getTtlConfig();
 
-    $products = Product::where('status', 'active')
-        ->where('cat_id', $category->id)
-        ->paginate($request->show ?? 12); // dynamic pagination (from select box)
+        // Simple cache key generation
+        $show = $request->show ?? 12;
+        $page = $request->page ?? 1;
+        $sortBy = $request->sortBy ?? '';
+        $price = $request->price ?? '';
 
-    $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
-    // $view = request()->is('e-shop.loc/product-grids') ? 'product-grids' : 'product-lists';
+        // Create cache key for complete page
+        $cacheKey = self::PRODUCT_GRIDS_CACHE_PREFIX . "category_{$category->id}_show_{$show}_page_{$page}_sort_{$sortBy}_price_{$price}";
 
-    return view("frontend.pages.product-grids", compact('products', 'recent_products'));
-}
+        // Try to get from cache first
+        $cachedData = RedisHelper::get($cacheKey);
 
+        if ($cachedData && is_array($cachedData)) {
+            Log::info("Product category served from cache in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
+            return view('frontend.pages.product-grids', $cachedData);
+        }
+
+        // If not cached, fetch fresh data
+        $data = $this->fetchCategoryPageData($category, $show, $page, $sortBy, $price, $ttl);
+        // dd($data);
+        // Cache the complete page data
+        if (!RedisHelper::put($cacheKey, $data, $ttl['product_lists'])) {
+            Log::warning("Failed to cache category page data for key: {$cacheKey}");
+        }
+
+        Log::info("Product category served fresh in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
+        return view('frontend.pages.product-grids', $data);
+    }
+
+    private function fetchCategoryPageData($category, $show, $page, $sortBy, $price, $ttl)
+    {
+        // Get recent products with caching
+        $recentProductsKey = self::RECENT_PRODUCTS_CACHE_PREFIX . 'latest_3';
+        $recentProducts = RedisHelper::get($recentProductsKey);
+
+        if (!$recentProducts) {
+            $recentProducts = $this->getRecentProductsData($recentProductsKey, $ttl['product_lists']);
+        }
+
+        // Build category products query
+        $productsQuery = Product::where('status', 'active')
+            ->where('cat_id', $category->id)
+            ->select([
+                'id',
+                'title',
+                'slug',
+                'price',
+                'discount',
+                'stock',
+                'condition',
+                'cat_id',
+                'size',
+                'summary'
+            ])
+            ->with([
+                'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
+                'cat_info' => fn($q) => $q->select(['id', 'title'])
+            ]);
+
+        // Apply sorting
+        if ($sortBy) {
+            switch ($sortBy) {
+                case 'title':
+                    $productsQuery->orderBy('title', 'ASC');
+                    break;
+                case 'price':
+                    $productsQuery->orderBy('price', 'ASC');
+                    break;
+                case 'price_desc':
+                    $productsQuery->orderBy('price', 'DESC');
+                    break;
+                default:
+                    $productsQuery->orderBy('id', 'DESC');
+            }
+        } else {
+            $productsQuery->orderBy('id', 'DESC');
+        }
+
+        // Apply price filter
+        if ($price && str_contains($price, '-')) {
+            $priceRange = explode('-', $price);
+            if (count($priceRange) === 2 && is_numeric($priceRange[0]) && is_numeric($priceRange[1])) {
+                $productsQuery->whereBetween('price', [(float)$priceRange[0], (float)$priceRange[1]]);
+            }
+        }
+
+        // Get paginated products
+        $products = $productsQuery->paginate($show, ['*'], 'page', $page);
+
+        // Transform products to include calculated discount prices and wishlist status
+        $products->getCollection()->transform(function ($product) {
+            // Calculate discounted price
+            if ($product->discount > 0) {
+                $product->discounted_price = $product->price - ($product->price * $product->discount / 100);
+            } else {
+                $product->discounted_price = $product->price;
+            }
+
+            // Check if product is in wishlist (assuming Helper::isProductInWishlist exists)
+            if (class_exists('Helper') && method_exists('Helper', 'isProductInWishlist')) {
+                $product->in_wishlist = Helper::isProductInWishlist($product->slug);
+            } else {
+                $product->in_wishlist = false;
+            }
+
+            return $product;
+        });
+
+        return [
+            'products' => $products,
+            'recent_products' => $recentProducts,
+            'category' => $category, // Add category data for breadcrumbs/page title
+            'show' => $show,
+            'sortBy' => $sortBy,
+            'price' => $price
+        ];
+    }
+
+    private function getRecentProductsData(string $key, int $ttl)
+    {
+        return Cache::remember($key, $ttl, function () use ($key, $ttl) {
+            $recentProducts = Product::where('status', 'active')
+                ->select([
+                    'id',
+                    'title',
+                    'slug',
+                    'price',
+                    'discount',
+                    'stock',
+                    'condition',
+                    'cat_id',
+                    'size',
+                    'summary'
+                ])
+                ->with([
+                    'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
+                    'cat_info' => fn($q) => $q->select(['id', 'title'])
+                ])
+                ->orderBy('id', 'DESC')
+                ->limit(3)
+                ->get();
+
+            // Transform recent products to include calculated prices and wishlist status
+            $recentProducts->transform(function ($product) {
+                // Calculate discounted price
+                if ($product->discount > 0) {
+                    $product->discounted_price = $product->price - ($product->price * $product->discount / 100);
+                } else {
+                    $product->discounted_price = $product->price;
+                }
+
+                // Check if product is in wishlist
+                if (class_exists('Helper') && method_exists('Helper', 'isProductInWishlist')) {
+                    $product->in_wishlist = Helper::isProductInWishlist($product->slug);
+                } else {
+                    $product->in_wishlist = false;
+                }
+
+                return $product;
+            });
+
+            // Store in Redis with error handling
+            if (!RedisHelper::put($key, $recentProducts, $ttl)) {
+                Log::warning("Failed to store recent products in Redis for key: {$key}");
+            }
+
+            return $recentProducts;
+        });
+    }
 
     /**
      * Displays products by subcategory.

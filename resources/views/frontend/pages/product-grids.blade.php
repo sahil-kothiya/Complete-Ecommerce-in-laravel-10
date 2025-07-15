@@ -64,7 +64,8 @@
                     <!-- Products Grid -->
                     <div class="row">
                         @forelse($products as $product)
-                        @include('frontend.partials.product-card', compact('product'))
+                        @include('frontend.partials.product-card', ['product' => $product])
+                        @include('frontend.partials.product-modal', ['product' => $product])
                         @empty
                         <div class="col-12">
                             <h4 class="text-warning text-center py-5">No products found.</h4>
@@ -363,6 +364,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert.min.js"></script>
 <script>
     $(document).ready(function() {
+        $('select.nice-select').niceSelect();
         // Price range slider
         if ($("#slider-range").length > 0) {
             const maxValue = parseInt($("#slider-range").data('max')) || 500;

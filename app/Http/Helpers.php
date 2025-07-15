@@ -154,6 +154,16 @@ class Helper
         }
     }
 
+    public static function isProductInWishlist($productSlug)
+    {
+        if (!auth()->check()) return false;
+
+        return \App\Models\Wishlist::where('user_id', auth()->id())
+            ->whereHas('product', function ($query) use ($productSlug) {
+                $query->where('slug', $productSlug);
+            })->exists();
+    }
+
     // Total price with shipping and coupon
     public static function grandPrice($id, $user_id)
     {
