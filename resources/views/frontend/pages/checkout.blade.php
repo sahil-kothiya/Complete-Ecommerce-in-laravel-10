@@ -558,7 +558,7 @@
     $(document).ready(function() {
         $("select.select2").select2();
     });
-    $('select.nice-select').niceSelect();
+    // $('select.nice-select').niceSelect();
 </script>
 <script>
     function showMe(box) {

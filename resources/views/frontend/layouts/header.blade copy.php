@@ -38,52 +38,68 @@
                 </div>
 
                 <div class="col-lg-8 col-md-7 col-12">
-                    <div class="search-bar-wrapper py-3 px-3 position-relative">
-                        <form action="{{ route('product.search') }}" method="GET" class="form-inline search-bar-form justify-content-center" autocomplete="off">
+                    <div class="search-bar-wrapper py-3 px-3">
+                        <form action="{{ route('product.search') }}" method="GET" class="form-inline search-bar-form justify-content-center">
                             <div class="input-group mb-0 w-100 w-md-auto">
-                                <input type="text"
-                                    name="search"
-                                    id="search-input"
-                                    class="form-control search-input"
-                                    placeholder="Search Products..."
-                                    value="{{ request('search') }}"
-                                    aria-label="Search products"
-                                    aria-autocomplete="list"
-                                    aria-controls="autocomplete-list"
-                                    aria-expanded="false"
-                                    role="combobox"
-                                    autocomplete="off">
+
+                                {{-- <!-- Category Dropdown (Hidden) -->
+                            <div class="input-group-prepend">
+                                <select name="category" class="custom-select category-select" aria-label="Category filter">
+                                    <option value="">All Categories</option>
+                                    @foreach(Helper::getAllCategory() as $parent)
+                                        <option value="{{ $parent->slug }}">{{ $parent->title }}</option>
+                                @if($parent->children->isNotEmpty())
+                                @foreach($parent->children as $child)
+                                <option value="{{ $child->slug }}">— {{ $child->title }}</option>
+                                @endforeach
+                                @endif
+                                @endforeach
+                                </select>
                             </div>
-                            <div id="autocomplete-dropdown" class="autocomplete-dropdown position-absolute w-100 bg-white shadow-sm border rounded mt-1 d-none">
-                                <ul id="autocomplete-list" class="list-group list-group-flush m-0"></ul>
+                            --}}
+
+                            <!-- Search Input -->
+                            <input type="text" name="search" id="search-input" class="form-control search-input" placeholder="Search Products..." value="{{ request('search') }}" autocomplete="off" aria-label="Search products">
+
+                            {{-- <!-- Submit Button (Hidden) -->
+                            <div class="input-group-append">
+                                <button class="btn btn-primary search-btn" type="submit" aria-label="Search">
+                                    <i class="ti-search"></i>
+                                </button>
                             </div>
-                        </form>
+                            --}}
                     </div>
+
+                    <!-- Autocomplete dropdown -->
+                    <div id="autocomplete-dropdown" class="autocomplete-dropdown" hidden>
+                        <ul id="autocomplete-list" class="list-group"></ul>
+                    </div>
+                    </form>
                 </div>
+            </div>
 
-
-                <div class="col-lg-2 col-md-3 col-12">
-                    <div class="right-bar">
-                        @auth
-                        <div class="sinlge-bar shopping">
-                            <a href="{{ route('wishlist') }}" class="single-icon" aria-label="Wishlist">
-                                <i class="fa fa-heart-o"></i>
-                                <span class="total-count">{{ Helper::wishlistCount() ?? 0 }}</span>
-                            </a>
-                            @include('frontend.partials.wishlist-dropdown')
-                        </div>
-                        <div class="sinlge-bar shopping">
-                            <a href="{{ route('cart') }}" class="single-icon" aria-label="Cart">
-                                <i class="ti-bag"></i>
-                                <span class="total-count">{{ Helper::cartCount() ?? 0 }}</span>
-                            </a>
-                            @include('frontend.partials.cart-dropdown')
-                        </div>
-                        @endauth
+            <div class="col-lg-2 col-md-3 col-12">
+                <div class="right-bar">
+                    @auth
+                    <div class="sinlge-bar shopping">
+                        <a href="{{ route('wishlist') }}" class="single-icon" aria-label="Wishlist">
+                            <i class="fa fa-heart-o"></i>
+                            <span class="total-count">{{ Helper::wishlistCount() ?? 0 }}</span>
+                        </a>
+                        @include('frontend.partials.wishlist-dropdown')
                     </div>
+                    <div class="sinlge-bar shopping">
+                        <a href="{{ route('cart') }}" class="single-icon" aria-label="Cart">
+                            <i class="ti-bag"></i>
+                            <span class="total-count">{{ Helper::cartCount() ?? 0 }}</span>
+                        </a>
+                        @include('frontend.partials.cart-dropdown')
+                    </div>
+                    @endauth
                 </div>
             </div>
         </div>
+    </div>
     </div>
 
     <!-- Main Menu -->

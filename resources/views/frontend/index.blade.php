@@ -3,52 +3,51 @@
 
 <!-- Slider -->
 @if($banners?->count())
+
 @php
-    $firstBanner = $banners[0];
-    $firstPhoto = $firstBanner->photo ?? 'images/placeholder-banner.jpg';
-    $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
+$firstBanner = $banners->first();
+$firstPhoto = $firstBanner?->photo ?? 'images/placeholder-banner.jpg';
+$firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
 @endphp
 
-{{-- Preload First Banner Image --}}
-@push('head')
-    <link rel="preload" as="image" href="{{ asset($firstWebp) }}" type="image/webp" fetchpriority="high">
-    <link rel="preload" as="image" href="{{ asset($firstPhoto) }}" type="image/{{ pathinfo($firstPhoto, PATHINFO_EXTENSION) }}" fetchpriority="high">
-@endpush
+<!-- Preload First Banner Images for LCP -->
+<link rel="preload" as="image" href="{{ asset($firstWebp) }}" type="image/webp">
+<link rel="preload" as="image" href="{{ asset($firstPhoto) }}" type="image/{{ pathinfo($firstPhoto, PATHINFO_EXTENSION) }}">
 
-<section id="gslider" class="carousel slide" data-ride="carousel" aria-label="Homepage banner carousel" data-interval="3000">
+<section id="gslider" class="carousel slide" data-ride="carousel" data-interval="3000">
     <ol class="carousel-indicators">
         @foreach($banners as $key => $banner)
-            <li data-target="#gslider" data-slide-to="{{ $key }}" class="{{ $key === 0 ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}"></li>
+        <li data-target="#gslider" data-slide-to="{{ $key }}" class="{{ $key === 0 ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}"></li>
         @endforeach
     </ol>
 
     <div class="carousel-inner">
         @foreach($banners as $key => $banner)
-            @php
-                $photo = $banner->photo ?? 'images/placeholder-banner.jpg';
-                $webp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $photo);
-                $isFirst = $key === 0;
-            @endphp
+        @php
+        $photo = $banner->photo ?? 'images/placeholder-banner.jpg';
+        $webp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $photo);
+        $isFirst = $key === 0;
+        @endphp
 
-            <div class="carousel-item {{ $isFirst ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}">
-                <picture>
-                    <source srcset="{{ asset($webp) }}" type="image/webp">
-                    <img src="{{ asset($photo) }}"
-                         class="d-block w-100"
-                         alt="{{ $banner->title }}"
-                         width="1200" height="550"
-                         loading="{{ $isFirst ? 'eager' : 'lazy' }}"
-                         fetchpriority="{{ $isFirst ? 'high' : 'low' }}">
-                </picture>
+        <div class="carousel-item {{ $isFirst ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}">
+            <picture>
+                <source srcset="{{ asset($webp) }}" type="image/webp">
+                <img src="{{ asset($photo) }}"
+                    class="d-block w-100"
+                    alt="{{ $banner->title }}"
+                    width="1200" height="550"
+                    loading="{{ $isFirst ? 'eager' : 'lazy' }}"
+                    fetchpriority="{{ $isFirst ? 'high' : 'low' }}">
+            </picture>
 
-                <div class="carousel-caption d-none d-md-block text-left">
-                    <h1>{{ $banner->title }}</h1>
-                    <p>{!! $banner->description !!}</p>
-                    <a class="btn btn-lg btn-primary" href="{{ route('product-grids') }}">
-                        Shop Now <i class="fa fa-arrow-right"></i>
-                    </a>
-                </div>
+            <div class="carousel-caption d-none d-md-block text-left">
+                <h1>{{ $banner->title }}</h1>
+                <p>{!! $banner->description !!}</p>
+                <a class="btn btn-lg btn-primary" href="{{ route('product-grids') }}">
+                    Shop Now <i class="fa fa-arrow-right"></i>
+                </a>
             </div>
+        </div>
         @endforeach
     </div>
 
@@ -59,6 +58,7 @@
         <span class="carousel-control-next-icon" aria-hidden="true"></span>
     </a>
 </section>
+
 @endif
 
 <!-- Category Banners -->
@@ -252,29 +252,57 @@
         border-radius: 2px;
     }
 
-    /* Slider */
+    /* ==========================
+   Slider Wrapper
+========================== */
+    #gslider {
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Slider Inner Container */
     #gslider .carousel-inner {
-        background: #000;
         height: 550px;
+        min-height: 550px;
+        position: relative;
     }
 
-    #gslider img {
+    /* Carousel Items */
+    .carousel-item {
+        height: 550px;
+        position: relative;
+        background-color: #f9f9f9;
+        /* fallback to prevent black flash */
+        transition: transform 0.6s ease-in-out;
+        /* Bootstrap slide transition */
+    }
+
+    /* Main Image Styling */
+    .carousel-item img {
         width: 100%;
-        height: 550px;
+        height: 100%;
         object-fit: cover;
+        display: block;
         opacity: 0.85;
+        z-index: 1;
     }
 
+    /* ==========================
+   Caption Styles
+========================== */
     #gslider .carousel-caption {
+        position: absolute;
         bottom: 50%;
         transform: translateY(50%);
         text-align: left;
+        z-index: 2;
     }
 
     #gslider .carousel-caption h1 {
         font-size: 48px;
         font-weight: bold;
         color: #F7941D;
+        margin-bottom: 10px;
     }
 
     #gslider .carousel-caption p {
@@ -283,9 +311,32 @@
         margin: 20px 0;
     }
 
+    /* ==========================
+   Carousel Indicators
+========================== */
     #gslider .carousel-indicators {
         bottom: 20px;
+        z-index: 3;
     }
+
+    /* ==========================
+   Controls (Prev / Next Arrows)
+========================== */
+    .carousel-control-prev,
+    .carousel-control-next {
+        z-index: 4;
+        opacity: 1 !important;
+        width: 5%;
+    }
+
+    .carousel-control-prev-icon,
+    .carousel-control-next-icon {
+        background-color: rgba(0, 0, 0, 0.4);
+        border-radius: 50%;
+        padding: 10px;
+        background-size: 100% 100%;
+    }
+
 
     /* Product Cards */
     .product-card-container {
@@ -438,11 +489,6 @@
 @push('scripts')
 <script>
     $(document).ready(function() {
-        // Initialize carousel
-        $('#gslider').carousel({
-            interval: 3000
-        });
-
         // Smooth scroll to sections
         $('a[href*="#"]').on('click', function(e) {
             e.preventDefault();
@@ -477,7 +523,9 @@
             $.ajax({
                 url: '{{ route("autocomplete") }}',
                 method: 'GET',
-                data: { q: query },
+                data: {
+                    q: query
+                },
                 dataType: 'json',
                 success: function(response) {
                     if (response.success && response.suggestions?.length) {

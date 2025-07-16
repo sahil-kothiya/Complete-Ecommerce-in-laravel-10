@@ -364,7 +364,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert.min.js"></script>
 <script>
     $(document).ready(function() {
-        $('select.nice-select').niceSelect();
+        // $('select.nice-select').niceSelect();
         // Price range slider
         if ($("#slider-range").length > 0) {
             const maxValue = parseInt($("#slider-range").data('max')) || 500;

@@ -1,313 +1,217 @@
 # ==============================================================================
-# OPTIMIZED .HTACCESS FOR LARAVEL 10 WITH MAXIMUM PERFORMANCE
+# OPTIMIZED .HTACCESS FOR LARAVEL 10 – LIGHTHOUSE FRIENDLY (NO DUPLICATES)
 # ==============================================================================
 
-# ----------------------------------------------------------------------
-# URL Rewriting & Laravel 10 Front Controller
-# ----------------------------------------------------------------------
-<IfModule mod_rewrite.c>
 <IfModule mod_negotiation.c>
-Options -MultiViews -Indexes
+    Options -MultiViews -Indexes
 </IfModule>
 
-RewriteEngine On
+<IfModule mod_rewrite.c>
+    RewriteEngine On
 
-# Handle Authorization Header (for APIs and Laravel Sanctum)
-RewriteCond % { HTTP:Authorization } .
-RewriteRule .* - [E=HTTP_AUTHORIZATION:% { HTTP:Authorization }]
+    # Handle Authorization Header
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
-# Force HTTPS (recommended for Laravel 10)
-RewriteCond % { HTTPS } off
-RewriteCond % { HTTP:X-Forwarded-Proto } !https
-RewriteRule ^(.*)$ https://% { HTTP_HOST }% { REQUEST_URI } [L, R=301]
+    # Force HTTPS
+    RewriteCond %{HTTPS} off
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-# Redirect Trailing Slashes (except directories)
-RewriteCond % { REQUEST_FILENAME } !-d
-RewriteCond % { REQUEST_URI } (.+)/$
-RewriteRule ^ %1 [L, R=301]
+    # Redirect Trailing Slashes (if not a directory)
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [L,R=301]
 
-# Serve pre-compressed files if available (for Vite builds)
-RewriteCond % { HTTP:Accept-Encoding } br
-RewriteCond % { REQUEST_FILENAME }\.br -f
-RewriteRule ^(.*)$ $1.br [QSA, L]
+    # Serve Precompressed Assets
+    RewriteCond %{HTTP:Accept-Encoding} br
+    RewriteCond %{REQUEST_FILENAME}\.br -f
+    RewriteRule ^(.*)$ $1.br [QSA,L]
 
-RewriteCond % { HTTP:Accept-Encoding } gzip
-RewriteCond % { REQUEST_FILENAME }\.gz -f
-RewriteRule ^(.*)$ $1.gz [QSA, L]
+    RewriteCond %{HTTP:Accept-Encoding} gzip
+    RewriteCond %{REQUEST_FILENAME}\.gz -f
+    RewriteRule ^(.*)$ $1.gz [QSA,L]
 
-# Laravel 10 Front Controller
-RewriteCond % { REQUEST_FILENAME } !-d
-RewriteCond % { REQUEST_FILENAME } !-f
-RewriteRule ^ index.php [L]
+    # Laravel Front Controller
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L]
 </IfModule>
 
-# ----------------------------------------------------------------------
-# MIME Types (Updated for Laravel 10 & Vite)
-# ----------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# MIME TYPES
+# ------------------------------------------------------------------------------
 <IfModule mod_mime.c>
-# Modern image formats
-AddType image/webp .webp
-AddType image/avif .avif
-AddType image/jxl .jxl
-    
-# Font types
-AddType font/woff2 .woff2
-AddType font/woff .woff
-AddType font/ttf .ttf
-AddType font/otf .otf
-AddType application/vnd.ms-fontobject .eot
-AddType image/svg+xml .svg
-    
-# JavaScript and CSS (ES modules support)
-AddType text/css .css
-AddType application/javascript .js
-AddType application/javascript .mjs
-AddType text/javascript .js
-    
-# JSON and other data formats
-AddType application/json .json
-AddType application/ld+json .jsonld
-AddType application/manifest+json .webmanifest
-    
-# Source maps for debugging
-AddType application/json .map
+    AddType image/webp .webp
+    AddType image/avif .avif
+    AddType image/jxl .jxl
+    AddType image/svg+xml .svg
+    AddType font/woff2 .woff2
+    AddType font/woff .woff
+    AddType font/ttf .ttf
+    AddType font/otf .otf
+    AddType application/javascript .js
+    AddType application/javascript .mjs
+    AddType application/json .json
+    AddType application/manifest+json .webmanifest
+    AddType application/ld+json .jsonld
+    AddType application/json .map
 </IfModule>
 
-# ----------------------------------------------------------------------
-# Compression: Brotli First, Then Gzip (Optimized for Laravel 10)
-# ----------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# COMPRESSION: BROTLI THEN GZIP
+# ------------------------------------------------------------------------------
 <IfModule mod_brotli.c>
-AddOutputFilterByType BROTLI_COMPRESS text/html text/plain text/xml text/css
-AddOutputFilterByType BROTLI_COMPRESS text/javascript application/javascript application/json
-AddOutputFilterByType BROTLI_COMPRESS application/xml application/rss+xml application/xhtml+xml
-AddOutputFilterByType BROTLI_COMPRESS image/svg+xml
-AddOutputFilterByType BROTLI_COMPRESS font/woff2 font/woff font/ttf font/otf
-AddOutputFilterByType BROTLI_COMPRESS application/manifest+json
-AddOutputFilterByType BROTLI_COMPRESS application/ld+json
-    
-# Quality settings for better compression
-BrotliCompressionQuality 6
-BrotliCompressionWindow 22
+    AddOutputFilterByType BROTLI_COMPRESS text/html text/plain text/xml text/css
+    AddOutputFilterByType BROTLI_COMPRESS application/json application/javascript
+    AddOutputFilterByType BROTLI_COMPRESS application/xml application/rss+xml image/svg+xml
+    AddOutputFilterByType BROTLI_COMPRESS font/woff2 font/woff font/ttf font/otf
+    BrotliCompressionQuality 6
+    BrotliCompressionWindow 22
 </IfModule>
 
 <IfModule mod_deflate.c>
-# Text-based content
-AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css
-AddOutputFilterByType DEFLATE text/javascript application/javascript application/json
-AddOutputFilterByType DEFLATE application/xml application/rss+xml application/xhtml+xml
-AddOutputFilterByType DEFLATE application/manifest+json application/ld+json
-    
-# Images and fonts
-AddOutputFilterByType DEFLATE image/svg+xml image/x-icon
-AddOutputFilterByType DEFLATE font/woff2 font/woff font/ttf font/otf
-AddOutputFilterByType DEFLATE application/vnd.ms-fontobject
-    
-# Legacy browser compatibility
-BrowserMatch ^Mozilla/4 gzip-only-text/html
-BrowserMatch ^Mozilla/4\.0[678] no-gzip
-BrowserMatch \bMSIE !no-gzip !gzip-only-text/html
-Header append Vary User-Agent
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css
+    AddOutputFilterByType DEFLATE application/json application/javascript
+    AddOutputFilterByType DEFLATE application/xml application/rss+xml image/svg+xml
+    AddOutputFilterByType DEFLATE font/woff2 font/woff font/ttf font/otf
+    BrowserMatch ^Mozilla/4 gzip-only-text/html
+    BrowserMatch ^Mozilla/4\.0[678] no-gzip
+    BrowserMatch \bMSIE !no-gzip !gzip-only-text/html
+    Header append Vary User-Agent
 </IfModule>
 
-# ----------------------------------------------------------------------
-# Cache Control & Expiration Headers - AGGRESSIVE CACHING
-# ----------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# CACHING & EXPIRES
+# ------------------------------------------------------------------------------
 <IfModule mod_expires.c>
-ExpiresActive On
-    
-# Images - 1 year (versioned assets)
-ExpiresByType image/webp "access plus 1 year"
-ExpiresByType image/avif "access plus 1 year"
-ExpiresByType image/jxl "access plus 1 year"
-ExpiresByType image/jpeg "access plus 1 year"
-ExpiresByType image/jpg "access plus 1 year"
-ExpiresByType image/png "access plus 1 year"
-ExpiresByType image/gif "access plus 1 year"
-ExpiresByType image/svg+xml "access plus 1 year"
-ExpiresByType image/x-icon "access plus 1 year"
-    
-# Fonts - 1 year (static assets)
-ExpiresByType font/woff2 "access plus 1 year"
-ExpiresByType font/woff "access plus 1 year"
-ExpiresByType font/ttf "access plus 1 year"
-ExpiresByType font/otf "access plus 1 year"
-ExpiresByType application/vnd.ms-fontobject "access plus 1 year"
-    
-# CSS and JavaScript - 1 year (Vite handles versioning)
-ExpiresByType text/css "access plus 1 year"
-ExpiresByType text/javascript "access plus 1 year"
-ExpiresByType application/javascript "access plus 1 year"
-    
-# Manifests and JSON data
-ExpiresByType application/manifest+json "access plus 1 week"
-ExpiresByType application/json "access plus 1 week"
-ExpiresByType application/ld+json "access plus 1 week"
-    
-# Documents
-ExpiresByType application/pdf "access plus 1 month"
-    
-# Default fallback
-ExpiresDefault "access plus 1 month"
+    ExpiresActive On
+    ExpiresByType text/css "access plus 1 year"
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType image/webp "access plus 1 year"
+    ExpiresByType image/avif "access plus 1 year"
+    ExpiresByType image/jxl "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+    ExpiresByType font/woff "access plus 1 year"
+    ExpiresByType font/ttf "access plus 1 year"
+    ExpiresByType application/pdf "access plus 1 month"
+    ExpiresByType application/json "access plus 1 week"
+    ExpiresDefault "access plus 1 month"
 </IfModule>
 
 <IfModule mod_headers.c>
-# Static assets - AGGRESSIVE caching with immutable flag
-<FilesMatch "\.(ico|jpe?g|png|gif|webp|avif|jxl|svg|woff2?|ttf|otf|eot)$">
-Header set Cache-Control "public, max-age=31536000, immutable"
-Header set Vary "Accept-Encoding"
-Header unset ETag
-</FilesMatch>
-    
-# CSS and JS - Long cache (Vite handles versioning)
-<FilesMatch "\.(css|js|mjs)$">
-Header set Cache-Control "public, max-age=31536000, immutable"
-Header set Vary "Accept-Encoding"
-Header unset ETag
-</FilesMatch>
-    
-# Source maps - shorter cache
-<FilesMatch "\.map$">
-Header set Cache-Control "public, max-age=86400"
-</FilesMatch>
-    
-# Dynamic content - prevent caching
-<FilesMatch "\.(php|html?)$">
-Header set Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate"
-Header set Pragma "no-cache"
-Header set Expires "0"
-</FilesMatch>
-    
-# Enhanced Security Headers for Laravel 10
-Header always set X-Content-Type-Options "nosniff"
-Header always set X-Frame-Options "SAMEORIGIN"
-Header always set Referrer-Policy "strict-origin-when-cross-origin"
-Header always set X-XSS-Protection "1; mode=block"
-Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
-    
-# Content Security Policy (adjust as needed)
-Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'"
-    
-# Remove server signature
-Header unset Server
-Header unset X-Powered-By
-    
-# DNS prefetch control
-Header set X-DNS-Prefetch-Control "on"
-    
-# Preload critical resources (adjust paths as needed)
-Header add Link "</build/assets/app.css>; rel=preload; as=style"
-Header add Link "</build/assets/app.js>; rel=preload; as=script"
+    # Long cache for static assets
+    <FilesMatch "\.(ico|jpe?g|png|gif|webp|avif|jxl|svg|woff2?|ttf|otf|eot|css|js|mjs)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+        Header unset ETag
+    </FilesMatch>
+
+    # Maps
+    <FilesMatch "\.map$">
+        Header set Cache-Control "public, max-age=86400"
+    </FilesMatch>
+
+    # Dynamic content (no cache)
+    <FilesMatch "\.(php|html?)$">
+        Header set Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
+
+    # Security Headers
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set X-DNS-Prefetch-Control "on"
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'"
+    Header unset Server
+    Header unset X-Powered-By
+
+    # Preload main Vite assets
+    Header add Link "</build/assets/app.css>; rel=preload; as=style"
+    Header add Link "</build/assets/app.js>; rel=preload; as=script"
+
+    # Keep-Alive
+    Header set Connection "Keep-Alive"
 </IfModule>
 
-# ----------------------------------------------------------------------
-# Security & Performance Rules (Laravel 10 Optimized)
-# ----------------------------------------------------------------------
-
-# Prevent access to sensitive files
+# ------------------------------------------------------------------------------
+# PROTECT SENSITIVE FILES & DIRECTORIES
+# ------------------------------------------------------------------------------
 <FilesMatch "\.(env|log|sql|git|htaccess|htpasswd|yaml|yml|lock|json)$">
-<RequireAll>
-Require all denied
-</RequireAll>
+    <RequireAll>
+        Require all denied
+    </RequireAll>
 </FilesMatch>
 
-# Protect Laravel directories
 <IfModule mod_alias.c>
-RedirectMatch 403 /\.git
-RedirectMatch 403 /\.env
-RedirectMatch 403 /composer\.
-RedirectMatch 403 /bootstrap/
-RedirectMatch 403 /config/
-RedirectMatch 403 /database/
-RedirectMatch 403 /routes/
-RedirectMatch 403 /storage/(?!app/public)
-RedirectMatch 403 /tests/
-RedirectMatch 403 /vendor/
+    RedirectMatch 403 /\.git
+    RedirectMatch 403 /\.env
+    RedirectMatch 403 /composer\.
+    RedirectMatch 403 /bootstrap/
+    RedirectMatch 403 /config/
+    RedirectMatch 403 /database/
+    RedirectMatch 403 /routes/
+    RedirectMatch 403 /storage/(?!app/public)
+    RedirectMatch 403 /tests/
+    RedirectMatch 403 /vendor/
 </IfModule>
 
-# Disable server signature
-ServerTokens Prod
-
-# Remove ETags for better caching (we use versioned assets)
-<IfModule mod_headers.c>
-<FilesMatch "\.(css|js|mjs|png|jpg|jpeg|gif|webp|avif|svg|woff2?|ttf)$">
-Header unset ETag
-</FilesMatch>
-</IfModule>
-
-# File ETags - Use only modification time and size
+# Disable ETags
 FileETag MTime Size
 
-# ----------------------------------------------------------------------
-# Laravel 10 & Vite Specific Optimizations
-# ----------------------------------------------------------------------
-
-# Handle Vite build assets (adjust path as needed)
+# ------------------------------------------------------------------------------
+# LARAVEL + VITE ASSETS
+# ------------------------------------------------------------------------------
 <Directory "/build/assets">
-<FilesMatch "\.(css|js|mjs|png|jpg|jpeg|gif|webp|avif|svg|woff2?|ttf|otf|eot|ico)$">
-Header set Cache-Control "public, max-age=31536000, immutable"
-Header unset ETag
-</FilesMatch>
+    <FilesMatch "\.(css|js|mjs|png|jpg|jpeg|gif|webp|avif|svg|woff2?|ttf|otf|eot|ico)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+        Header unset ETag
+    </FilesMatch>
 </Directory>
 
-# Hot Module Replacement (HMR) for development
-<IfModule mod_rewrite.c>
-RewriteCond % { HTTP:Upgrade } websocket [NC]
-RewriteCond % { HTTP:Connection } upgrade [NC]
-RewriteRule ^/?(.*) "ws://localhost:5173/$1" [P, L]
-</IfModule>
-
-# API routes optimization
-<LocationMatch "^/api">
-Header set Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate"
-Header set Pragma "no-cache"
-Header set Expires "0"
-</LocationMatch>
-
-# ----------------------------------------------------------------------
-# Performance Optimizations
-# ----------------------------------------------------------------------
-
-# Enable Keep-Alive
-<IfModule mod_headers.c>
-Header set Connection "Keep-Alive"
-</IfModule>
-
-# Optimize file uploads (adjust as needed)
-<IfModule mod_rewrite.c>
-# Increase upload limits for Laravel
-php_value upload_max_filesize 20M
-php_value post_max_size 20M
-php_value max_execution_time 300
-php_value max_input_time 300
-</IfModule>
-
-# Prevent hotlinking (adjust domain as needed)
-<IfModule mod_rewrite.c>
-RewriteCond % { HTTP_REFERER } !^$
-RewriteCond % { HTTP_REFERER } !^https?://(www\.)?yourdomain\.com [NC]
-RewriteRule \.(jpg | jpeg | png | gif | webp | avif)$ - [F, L]
-</IfModule>
-
-# ----------------------------------------------------------------------
-# Modern Browser Features
-# ----------------------------------------------------------------------
-
-# Early Hints support
-<IfModule mod_http2.c>
-H2Push on
-H2PushPriority * after
-H2PushPriority text/css before
-H2PushPriority application/javascript interleaved
-</IfModule>
-
-# Service Worker support
+# ------------------------------------------------------------------------------
+# SERVICE WORKER & MANIFEST
+# ------------------------------------------------------------------------------
 <FilesMatch "sw\.js$">
-Header set Cache-Control "no-cache, no-store, must-revalidate"
-Header set Service-Worker-Allowed "/"
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Service-Worker-Allowed "/"
 </FilesMatch>
 
-# Web App Manifest
 <FilesMatch "\.webmanifest$">
-Header set Content-Type "application/manifest+json"
-Header set Cache-Control "public, max-age=604800"
+    Header set Content-Type "application/manifest+json"
+    Header set Cache-Control "public, max-age=604800"
 </FilesMatch>
+
+# ------------------------------------------------------------------------------
+# HOT MODULE REPLACEMENT (DEV ONLY)
+# ------------------------------------------------------------------------------
+<IfModule mod_rewrite.c>
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteCond %{HTTP:Connection} upgrade [NC]
+    RewriteRule ^/?(.*) "ws://localhost:5173/$1" [P,L]
+</IfModule>
+
+# ------------------------------------------------------------------------------
+# OPTIONAL: PREVENT HOTLINKING (adjust domain)
+# ------------------------------------------------------------------------------
+<IfModule mod_rewrite.c>
+    RewriteCond %{HTTP_REFERER} !^$
+    RewriteCond %{HTTP_REFERER} !^https?://(www\.)?yourdomain\.com [NC]
+    RewriteRule \.(jpg|jpeg|png|gif|webp|avif)$ - [F,L]
+</IfModule>
+
+# ------------------------------------------------------------------------------
+# OPTIONAL: INCREASE PHP LIMITS FOR UPLOAD
+# ------------------------------------------------------------------------------
+<IfModule mod_php.c>
+    php_value upload_max_filesize 20M
+    php_value post_max_size 20M
+    php_value max_execution_time 300
+    php_value max_input_time 300
+</IfModule>
