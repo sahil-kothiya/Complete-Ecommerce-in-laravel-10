@@ -11,7 +11,7 @@ try {
     window.$ = window.jQuery = require('jquery');
 
     require('bootstrap');
-} catch (e) {}
+} catch (e) { }
 
 /**
  * We'll load the axios HTTP library which allows us to easily issue requests
@@ -46,11 +46,13 @@ import Echo from 'laravel-echo';
 
 window.Pusher = require('pusher-js');
 
+window.Pusher = Pusher;
+
 window.Echo = new Echo({
     broadcaster: 'pusher',
     key: process.env.MIX_PUSHER_APP_KEY,
     cluster: process.env.MIX_PUSHER_APP_CLUSTER,
     forceTLS: true,
-    authEndpoint : baseURL+'/broadcasting/auth',
+    authEndpoint: baseURL + '/broadcasting/auth',
     encrypted: true
 });

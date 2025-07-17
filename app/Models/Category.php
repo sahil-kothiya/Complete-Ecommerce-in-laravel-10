@@ -69,14 +69,13 @@ class Category extends Model
     // }
 
     public static function getProductByCat($slug)
-{
-    return self::where('slug', $slug)
-        ->with(['products' => function ($query) {
-            $query->where('status', 'active')->paginate(12); // or ->limit(12)
-        }])
-        ->first();
-}
-
+    {
+        return self::where('slug', $slug)
+            ->with(['products' => function ($query) {
+                $query->where('status', 'active')->paginate(12); // or ->limit(12)
+            }])
+            ->first();
+    }
 
     public static function getProductBySubCat($slug)
     {
@@ -86,5 +85,10 @@ class Category extends Model
     public static function countActiveCategory()
     {
         return self::active()->count();
+    }
+
+    public function discounts()
+    {
+        return $this->belongsToMany(Discount::class, 'category_discount');
     }
 }

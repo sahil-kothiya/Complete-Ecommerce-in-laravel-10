@@ -132,6 +132,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
         'banner' => App\Http\Controllers\BannerController::class,
         'brand' => App\Http\Controllers\BrandController::class,
         'category' => App\Http\Controllers\CategoryController::class,
+        'discount' => App\Http\Controllers\DiscountController::class,
         'product' => App\Http\Controllers\ProductController::class,
         'post-category' => App\Http\Controllers\PostCategoryController::class,
         'post-tag' => App\Http\Controllers\PostTagController::class,

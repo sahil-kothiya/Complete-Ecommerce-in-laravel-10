@@ -261,7 +261,7 @@
 															@if($data->user_info['photo'])
 															<img src="{{$data->user_info['photo']}}" alt="{{$data->user_info['photo']}}">
 															@else
-															<img src="{{asset('backend/img/avatar.png')}}" alt="Profile.jpg">
+															<img src="{{asset('backend/img/avatar.webp')}}" alt="Profile.jpg">
 															@endif
 														</div>
 														<div class="rating-des">

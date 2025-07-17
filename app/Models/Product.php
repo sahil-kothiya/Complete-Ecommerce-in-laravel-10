@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Cart;
+use App\Services\DiscountService;
 
 class Product extends Model
 {
@@ -94,5 +95,15 @@ class Product extends Model
     public function brand()
     {
         return $this->hasOne(Brand::class, 'id', 'brand_id');
+    }
+
+    public function discounts()
+    {
+        return $this->belongsToMany(Discount::class, 'product_discount');
+    }
+
+    public function getDiscountedPriceAttribute(): float
+    {
+        return app(DiscountService::class)->getCachedDiscountedPrice($this);
     }
 }
