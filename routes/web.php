@@ -77,7 +77,7 @@ Route::post('/subscribe', [FrontendController::class, 'subscribe'])->name('subsc
 Route::get('/cart', fn() => view('frontend.pages.cart'))->name('cart');
 Route::get('/wishlist', fn() => view('frontend.pages.wishlist'))->name('wishlist');
 
-Route::middleware('user')->group(function () {
+Route::middleware('auth')->group(function () {
     Route::get('/add-to-cart/{slug}', [CartController::class, 'addToCart'])->name('add-to-cart');
     Route::post('/add-to-cart', [CartController::class, 'singleAddToCart'])->name('single-add-to-cart');
     Route::get('/checkout', [CartController::class, 'checkout'])->name('checkout');

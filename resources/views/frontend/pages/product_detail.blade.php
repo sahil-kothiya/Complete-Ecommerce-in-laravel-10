@@ -82,10 +82,71 @@
 									<a href="#" class="total-review">({{$product_detail['getReview']->count()}}) Review</a>
 								</div>
 								@php
-								$after_discount=($product_detail->price-(($product_detail->price*$product_detail->discount)/100));
-								@endphp
-								<p class="price"><span class="discount">${{number_format($after_discount,2)}}</span><s>${{number_format($product_detail->price,2)}}</s> </p>
-								<p class="description">{!!($product_detail->summary)!!}</p>
+								// Step 1: Original price
+								$productBasePrice = $product_detail->price;
+								$firstLevelDiscountedPrice = $productBasePrice;
+
+								// Step 2: Apply product-level discount
+								$productLevelDiscount = $product_detail->discount ?? 0;
+								if ($productLevelDiscount > 0) {
+								$firstLevelDiscountedPrice = $productBasePrice - ($productBasePrice * $productLevelDiscount / 100);
+								}
+
+								// Step 3: Apply time-based discount
+								$discount = $discountService->getEffectiveDiscount($product_detail);
+								$finalPrice = $firstLevelDiscountedPrice;
+
+								$campaignDiscountValue = 0;
+								$campaignDiscountType = null;
+
+								if ($discount) {
+								$campaignDiscountValue = $discount['value'];
+								$campaignDiscountType = $discount['type'];
+								$finalPrice = $discountService->calculateDiscountedPrice($firstLevelDiscountedPrice, $discount);
+								}
+
+								// Compute total percentage discount for UX (optional)
+								$isDiscounted = $finalPrice < $productBasePrice;
+									@endphp
+
+									{{-- Final Price Display --}}
+									<p class="price">
+
+									@if ($isDiscounted)
+									<span class="discount text-danger font-weight-bold"
+										title="Base Discount: {{ $productLevelDiscount }}%
+              {{ $campaignDiscountType ? ', Campaign: ' . $campaignDiscountValue . ($campaignDiscountType == 'percentage' ? '%' : '$') : '' }}">
+										${{ number_format($finalPrice, 2) }}
+									</span>
+									<br>
+
+									{{-- Show crossed price if product-level discount exists --}}
+									@if($productLevelDiscount > 0 || $campaignDiscountValue > 0)
+									<small>
+										<s class="text-muted">${{ number_format($productBasePrice, 2) }}</s>
+									</small>
+									@endif
+									@else
+									<span>${{ number_format($finalPrice, 2) }}</span>
+									@endif
+
+									</p>
+
+									{{-- Discount Breakdown Text (optional for clarity) --}}
+									@if ($productLevelDiscount > 0 || $campaignDiscountValue > 0)
+									<p class="mb-0 text-muted small">
+										@if ($productLevelDiscount > 0)
+										• Product Discount: {{ $productLevelDiscount }}%<br>
+										@endif
+										@if ($campaignDiscountType)
+										• Campaign Discount: {{ $campaignDiscountValue }}{{ $campaignDiscountType === 'percentage' ? '%' : '$' }}
+										@endif
+									</p>
+									@endif
+
+									{{-- Product Summary --}}
+									<p class="description">{!! $product_detail->summary !!}</p>
+
 							</div>
 							<!--/ End Description -->
 							<!-- Color -->
@@ -261,7 +322,7 @@
 															@if($data->user_info['photo'])
 															<img src="{{$data->user_info['photo']}}" alt="{{$data->user_info['photo']}}">
 															@else
-															<img src="{{asset('backend/img/avatar.webp')}}" alt="Profile.jpg">
+															<img src="{{asset('backend/img/avatar.png')}}" alt="Profile.jpg">
 															@endif
 														</div>
 														<div class="rating-des">

@@ -8,6 +8,8 @@ use App\Models\Order;
 use App\Models\Wishlist;
 use App\Models\Shipping;
 use App\Models\Cart;
+use App\Services\DiscountService;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
 // use Auth;
@@ -114,20 +116,96 @@ class Helper
             return 0;
         }
     }
-    // Total amount cart
-    public static function totalCartPrice($user_id = '')
+
+    public static function totalCartPrice($user_id = null)
     {
-        if (Auth::check()) {
-            if ($user_id == "") $user_id = auth()->user()->id;
-            return Cart::where('user_id', $user_id)->where('order_id', null)->sum('amount');
-        } else {
-            return 0;
+        if (!Auth::check()) return 0;
+
+        $user_id = $user_id ?? auth()->id();
+        $cartItems = Cart::where('user_id', $user_id)
+            ->whereNull('order_id')
+            ->with('product.cat_info.discounts')
+            ->get();
+
+        $total = 0;
+
+        foreach ($cartItems as $item) {
+            $product = $item->product;
+            $price = $item->amount;
+            $discountValue = 0;
+
+            $category = $product->cat_info;
+
+            if ($category) {
+                $activeDiscount = $category->discounts()
+                    ->where('is_active', true)
+                    ->where('starts_at', '<=', now())
+                    ->where('ends_at', '>=', now())
+                    ->first();
+
+                if ($activeDiscount) {
+                    if ($activeDiscount->type === 'percentage') {
+                        $discountValue = $price * ($activeDiscount->value / 100);
+                    } else {
+                        $discountValue = $activeDiscount->value;
+                    }
+                }
+            }
+
+            $total += ($price - $discountValue);
         }
+
+        return round($total, 2);
     }
+
+    public static function totalCartPriceWithBreakdown($user_id = '')
+    {
+        if (!Auth::check()) return ['total' => 0, 'saved' => 0];
+
+        if ($user_id == '') {
+            $user_id = auth()->user()->id;
+        }
+
+        $carts = Cart::with(['product.cat_info.discounts'])->where('user_id', $user_id)->whereNull('order_id')->get();
+        $discountService = app(DiscountService::class);
+
+        $total = 0;
+        $saved = 0;
+
+        foreach ($carts as $cart) {
+            $product = $cart->product;
+            $original = $cart->price;
+            $discount = $discountService->getEffectiveDiscount($product);
+
+            $discounted = $original;
+
+            if ($discount) {
+                $discounted = $discountService->calculateDiscountedPrice($original, $discount);
+                $saved += ($original - $discounted) * $cart->quantity;
+            }
+
+            $total += $discounted * $cart->quantity;
+        }
+
+        return [
+            'total' => round($total, 2),
+            'saved' => round($saved, 2),
+        ];
+    }
+
+    // Total amount cart
+    // public static function totalCartPrice($user_id = '')
+    // {
+    //     if (Auth::check()) {
+    //         if ($user_id == "") $user_id = auth()->user()->id;
+    //         return Cart::where('user_id', $user_id)->where('order_id', null)->sum('amount');
+    //     } else {
+    //         return 0;
+    //     }
+    // }
     // Wishlist Count
     public static function wishlistCount($user_id = '')
     {
-
         if (Auth::check()) {
             if ($user_id == "") $user_id = auth()->user()->id;
             return Wishlist::where('user_id', $user_id)->where('cart_id', null)->sum('quantity');

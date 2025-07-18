@@ -22,6 +22,8 @@
 <!-- <link rel="stylesheet" href="{{asset('frontend/css/magnific-popup.min.css')}}"> -->
 <!-- Font Awesome -->
 <!-- <link rel="stylesheet" href="{{asset('frontend/css/font-awesome.css')}}"> -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+
 <!-- Fancybox -->
 <!-- <link rel="stylesheet" href="{{asset('frontend/css/jquery.fancybox.min.css')}}"> -->
 <!-- Themify Icons -->

@@ -61,6 +61,17 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
 
 @endif
 
+<!-- Discount Highlight for Kids Holiday Offer -->
+<a href="{{ route('product-cat', 'kids') }}" style="text-decoration: none;">
+    <section class="discount-highlight" style="width: 100%; background: linear-gradient(135deg, #F7941D 0%, #e67e22 100%); color: white; padding: 16px 0; text-align: center; margin: 20px 0;">
+        <div class="container">
+            <p style="margin: 0; font-size: 18px; font-weight: 500;">
+                🎉 Kids' Holiday Offer: Up to 30% Off on Kids' Collection!
+            </p>
+        </div>
+    </section>
+</a>
+
 <!-- Category Banners -->
 @if($categoryBanners?->count())
 <section class="small-banner section">

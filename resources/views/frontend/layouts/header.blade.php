@@ -61,7 +61,6 @@
                     </div>
                 </div>
 
-
                 <div class="col-lg-2 col-md-3 col-12">
                     <div class="right-bar">
                         @auth
@@ -82,6 +81,7 @@
                         @endauth
                     </div>
                 </div>
+
             </div>
         </div>
     </div>

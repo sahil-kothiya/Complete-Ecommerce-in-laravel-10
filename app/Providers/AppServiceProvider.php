@@ -35,6 +35,7 @@ use App\Observers\{
     UserObserver,
     WishlistObserver
 };
+use App\Services\DiscountService;
 use App\Services\ResponseCacheService;
 
 class AppServiceProvider extends ServiceProvider
@@ -72,6 +73,9 @@ class AppServiceProvider extends ServiceProvider
             return Config::get('cache_keys.ttl');
         });
         $this->app->singleton(ResponseCacheService::class);
+        // $this->app->singleton(DiscountService::class, function () {
+        //     return new DiscountService();
+        // });
     }
 
     public function boot(): void
@@ -85,6 +89,10 @@ class AppServiceProvider extends ServiceProvider
 
         $this->shareGlobalData();
         // $this->setupUserSpecificData();
+
+        View::composer('*', function ($view) {
+            $view->with('discountService', app(DiscountService::class));
+        });
     }
 
     /**

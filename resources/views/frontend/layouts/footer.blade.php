@@ -108,3 +108,38 @@
 <!-- <script src="{{asset('frontend/js/active.js')}}"></script> -->
 
 @stack('scripts')
+<script>
+	$(document).ready(function() {
+		$('.btn-number').click(function(e) {
+			e.preventDefault();
+			const button = $(this);
+			const type = button.data('type');
+			const field = button.data('field');
+			const input = $("input[name='" + field + "']");
+			let currentVal = parseInt(input.val());
+
+			if (!isNaN(currentVal)) {
+				const min = parseInt(input.attr('data-min')) || 1;
+				const max = parseInt(input.attr('data-max')) || 100;
+
+				if (type === 'minus') {
+					if (currentVal > min) {
+						input.val(currentVal - 1).change();
+					}
+				} else if (type === 'plus') {
+					if (currentVal < max) {
+						input.val(currentVal + 1).change();
+					}
+				}
+
+				// Update button states after value change
+				currentVal = parseInt(input.val());
+				const minusBtn = $(".btn-number[data-type='minus'][data-field='" + field + "']");
+				const plusBtn = $(".btn-number[data-type='plus'][data-field='" + field + "']");
+
+				minusBtn.prop('disabled', currentVal <= min);
+				plusBtn.prop('disabled', currentVal >= max);
+			}
+		});
+	});
+</script>

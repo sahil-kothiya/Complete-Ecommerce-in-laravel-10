@@ -5,9 +5,8 @@
 <div class="card">
 	<h5 class="card-header">Add Discount</h5>
 	<div class="card-body">
-		<form method="POST" action="{{ route('discount.store') }}">
+		<form id="discountForm" method="POST" action="{{ route('discount.store') }}">
 			@csrf
-
 			<div class="form-group">
 				<label for="title" class="col-form-label">Title <span class="text-danger">*</span></label>
 				<input id="title" type="text" name="title" placeholder="Enter title"
@@ -51,6 +50,20 @@
 				<input id="ends_at" type="datetime-local" name="ends_at"
 					value="{{ old('ends_at') }}" class="form-control">
 				@error('ends_at')
+				<span class="text-danger">{{ $message }}</span>
+				@enderror
+			</div>
+
+			<div class="form-group">
+				<label for="categories">Apply to Categories</label>
+				<select name="categories[]" class="form-control" multiple>
+					@foreach($categories as $category)
+					<option value="{{ $category->id }}" {{ (collect(old('categories'))->contains($category->id)) ? 'selected' : '' }}>
+						{{ $category->title }}
+					</option>
+					@endforeach
+				</select>
+				@error('categories')
 				<span class="text-danger">{{ $message }}</span>
 				@enderror
 			</div>
@@ -101,6 +114,74 @@
 		});
 
 		updateMax(); // Initialize on page load
+
+		// jQuery Validation for Add Discount Form
+		$('#discountForm').validate({
+			rules: {
+				title: {
+					required: true,
+					maxlength: 255
+				},
+				type: {
+					required: true
+				},
+				value: {
+					required: true,
+					number: true,
+					min: 0,
+					// max is dynamic, enforced manually
+				},
+				starts_at: {
+					required: true,
+					date: true
+				},
+				ends_at: {
+					required: true,
+					date: true
+				},
+				'categories[]': {
+					required: true
+				}
+			},
+			messages: {
+				title: {
+					required: "Please enter a title.",
+					maxlength: "Title must be less than 255 characters."
+				},
+				type: {
+					required: "Please select a discount type."
+				},
+				value: {
+					required: "Please enter a discount value.",
+					number: "Please enter a valid number.",
+					min: "Value must be at least 0."
+				},
+				starts_at: {
+					required: "Please select the start time."
+				},
+				ends_at: {
+					required: "Please select the end time."
+				},
+				'categories[]': {
+					required: "Please select at least one category."
+				}
+			},
+			errorElement: 'span',
+			errorPlacement: function(error, element) {
+				if (element.prop('type') === 'checkbox') {
+					error.insertAfter(element.next('label'));
+				} else {
+					error.addClass('text-danger');
+					error.insertAfter(element);
+				}
+			},
+			highlight: function(element) {
+				$(element).addClass('is-invalid');
+			},
+			unhighlight: function(element) {
+				$(element).removeClass('is-invalid');
+			}
+		});
 	});
 </script>
 @endpush

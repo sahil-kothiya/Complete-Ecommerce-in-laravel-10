@@ -1,6 +1,7 @@
 @extends('frontend.layouts.master')
 @section('title','Cart Page')
 @section('main-content')
+
 <!-- Breadcrumbs -->
 <div class="breadcrumbs">
 	<div class="container">
@@ -68,27 +69,54 @@
 									</p>
 									<p class="product-des">{!! $cart['summary'] !!}</p>
 								</td>
-								<td class="price" data-title="Price"><span>${{ number_format($cart['price'], 2) }}</span></td>
-								<td class="qty" data-title="Qty">
-									<div class="input-group">
-										<div class="button minus">
-											<button type="button" class="btn btn-primary btn-number" disabled="disabled" data-type="minus" data-field="quant[{{ $key }}]">
-												<i class="ti-minus"></i>
-											</button>
+
+								@php
+								$discount = $discountService->getEffectiveDiscount($cart->product);
+								$originalPrice = $cart['price'];
+								$discountedPrice = $originalPrice;
+								$isDiscounted = false;
+
+								if ($discount) {
+								$discountedPrice = $discountService->calculateDiscountedPrice($originalPrice, $discount);
+								$isDiscounted = $discountedPrice < $originalPrice;
+									}
+
+									$total=$discountedPrice * $cart->quantity;
+									@endphp
+
+									<td class="price" data-title="Price">
+										@if($isDiscounted)
+										<span class="text-danger font-weight-bold">${{ number_format($discountedPrice, 2) }}</span><br>
+										<small><del class="text-muted">${{ number_format($originalPrice, 2) }}</del></small>
+										@else
+										<span>${{ number_format($originalPrice, 2) }}</span>
+										@endif
+									</td>
+
+									<td class="qty" data-title="Qty">
+										<div class="input-group">
+											<div class="button minus">
+												<button type="button" class="btn btn-primary btn-number" data-type="minus" data-field="quant[{{ $key }}]">
+													<i class="ti-minus"></i>
+												</button>
+											</div>
+											<input type="text" name="quant[{{ $key }}]" class="input-number" data-min="1" data-max="100" value="{{ $cart->quantity }}">
+											<input type="hidden" name="qty_id[]" value="{{ $cart->id }}">
+											<div class="button plus">
+												<button type="button" class="btn btn-primary btn-number" data-type="plus" data-field="quant[{{ $key }}]">
+													<i class="ti-plus"></i>
+												</button>
+											</div>
 										</div>
-										<input type="text" name="quant[{{ $key }}]" class="input-number" data-min="1" data-max="100" value="{{ $cart->quantity }}">
-										<input type="hidden" name="qty_id[]" value="{{ $cart->id }}">
-										<div class="button plus">
-											<button type="button" class="btn btn-primary btn-number" data-type="plus" data-field="quant[{{ $key }}]">
-												<i class="ti-plus"></i>
-											</button>
-										</div>
-									</div>
-								</td>
-								<td class="total-amount cart_single_price" data-title="Total"><span class="money">${{ $cart['amount'] }}</span></td>
-								<td class="action" data-title="Remove">
-									<a href="{{ route('cart-delete', $cart->id) }}"><i class="ti-trash remove-icon"></i></a>
-								</td>
+									</td>
+
+									<td class="total-amount cart_single_price" data-title="Total">
+										<span class="money">${{ number_format($total, 2) }}</span>
+									</td>
+
+									<td class="action" data-title="Remove">
+										<a href="{{ route('cart-delete', $cart->id) }}"><i class="ti-trash remove-icon"></i></a>
+									</td>
 							</tr>
 							@endforeach
 
@@ -124,13 +152,13 @@
 					<div class="row">
 						<div class="col-lg-8 col-md-5 col-12">
 							<div class="left">
-								<div class="coupon">
+								<!-- <div class="coupon">
 									<form action="{{route('coupon-store')}}" method="POST">
 										@csrf
 										<input name="code" placeholder="Enter Your Coupon">
 										<button class="btn">Apply</button>
 									</form>
-								</div>
+								</div> -->
 								{{-- <div class="checkbox">`
 										@php
 											$shipping=DB::table('shippings')->where('status','active')->limit(1)->get();
@@ -141,24 +169,28 @@
 						</div>
 						<div class="col-lg-4 col-md-7 col-12">
 							<div class="right">
-								<ul>
-									<li class="order_subtotal" data-price="{{Helper::totalCartPrice()}}">Cart Subtotal<span>${{number_format(Helper::totalCartPrice(),2)}}</span></li>
+								@php
+								$cartSummary = Helper::totalCartPriceWithBreakdown();
+								$cartSubtotal = $cartSummary['total'];
+								$categorySaved = $cartSummary['saved'];
+								$couponDiscount = session('coupon')['value'] ?? 0;
+								$finalAmount = $cartSubtotal - $couponDiscount;
+								@endphp
 
-									@if(session()->has('coupon'))
-									<li class="coupon_price" data-price="{{Session::get('coupon')['value']}}">You Save<span>${{number_format(Session::get('coupon')['value'],2)}}</span></li>
+								<ul>
+									<li class="order_subtotal">Cart Subtotal<span>${{ number_format($cartSubtotal + $categorySaved, 2) }}</span></li>
+
+									@if($categorySaved > 0)
+									<li class="category_discount">Category Discount<span class="text-success">- ${{ number_format($categorySaved, 2) }}</span></li>
 									@endif
-									@php
-									$total_amount=Helper::totalCartPrice();
-									if(session()->has('coupon')){
-									$total_amount=$total_amount-Session::get('coupon')['value'];
-									}
-									@endphp
-									@if(session()->has('coupon'))
-									<li class="last" id="order_total_price">You Pay<span>${{number_format($total_amount,2)}}</span></li>
-									@else
-									<li class="last" id="order_total_price">You Pay<span>${{number_format($total_amount,2)}}</span></li>
+
+									@if($couponDiscount)
+									<li class="coupon_price">Coupon Applied<span class="text-success">- ${{ number_format($couponDiscount, 2) }}</span></li>
 									@endif
+
+									<li class="last" id="order_total_price">You Pay<span>${{ number_format($finalAmount, 2) }}</span></li>
 								</ul>
+
 								<div class="button5">
 									<a href="{{route('checkout')}}" class="btn">Checkout</a>
 									<a href="{{route('product-grids')}}" class="btn">Continue shopping</a>
