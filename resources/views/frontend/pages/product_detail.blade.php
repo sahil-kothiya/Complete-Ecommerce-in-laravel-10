@@ -82,67 +82,38 @@
 									<a href="#" class="total-review">({{$product_detail['getReview']->count()}}) Review</a>
 								</div>
 								@php
-								// Step 1: Original price
-								$productBasePrice = $product_detail->price;
-								$firstLevelDiscountedPrice = $productBasePrice;
-
-								// Step 2: Apply product-level discount
-								$productLevelDiscount = $product_detail->discount ?? 0;
-								if ($productLevelDiscount > 0) {
-								$firstLevelDiscountedPrice = $productBasePrice - ($productBasePrice * $productLevelDiscount / 100);
-								}
-
-								// Step 3: Apply time-based discount
-								$discount = $discountService->getEffectiveDiscount($product_detail);
-								$finalPrice = $firstLevelDiscountedPrice;
-
-								$campaignDiscountValue = 0;
-								$campaignDiscountType = null;
-
-								if ($discount) {
-								$campaignDiscountValue = $discount['value'];
-								$campaignDiscountType = $discount['type'];
-								$finalPrice = $discountService->calculateDiscountedPrice($firstLevelDiscountedPrice, $discount);
-								}
-
-								// Compute total percentage discount for UX (optional)
-								$isDiscounted = $finalPrice < $productBasePrice;
+								$originalPrice = $product_detail->price;
+								$discounts = $discountService->getEffectiveDiscounts($product_detail);
+								$discountedPrice = $discountService->applyAllDiscounts($originalPrice, $discounts);
+								$isDiscounted = $discountedPrice < $originalPrice;
 									@endphp
 
-									{{-- Final Price Display --}}
 									<p class="price">
+									@if($isDiscounted)
+									<span class="text-danger font-weight-bold"
+										title="@foreach($discounts as $d){{ $d['title'] ?? ucfirst($d['source']) }}: {{ $d['type'] === 'percentage' ? $d['value'].'%' : '$'.number_format($d['value'], 0) }}{{ !$loop->last ? ', ' : '' }}@endforeach">
+										${{ number_format($discountedPrice, 2) }}
+									</span><br>
+									<small><s class="text-muted">${{ number_format($originalPrice, 2) }}</s></small>
 
-									@if ($isDiscounted)
-									<span class="discount text-danger font-weight-bold"
-										title="Base Discount: {{ $productLevelDiscount }}%
-              {{ $campaignDiscountType ? ', Campaign: ' . $campaignDiscountValue . ($campaignDiscountType == 'percentage' ? '%' : '$') : '' }}">
-										${{ number_format($finalPrice, 2) }}
-									</span>
+									@if(count($discounts))
 									<br>
-
-									{{-- Show crossed price if product-level discount exists --}}
-									@if($productLevelDiscount > 0 || $campaignDiscountValue > 0)
-									<small>
-										<s class="text-muted">${{ number_format($productBasePrice, 2) }}</s>
+									<small class="text-muted">
+										@foreach($discounts as $d)
+										• {{ $d['title'] ?? ucfirst($d['source']) }}:
+										@if($d['type'] === 'percentage')
+										{{ $d['value'] }}% off
+										@elseif($d['type'] === 'amount')
+										${{ number_format($d['value'], 0) }} off
+										@endif
+										<br>
+										@endforeach
 									</small>
 									@endif
 									@else
-									<span>${{ number_format($finalPrice, 2) }}</span>
+									<span>${{ number_format($originalPrice, 2) }}</span>
 									@endif
-
 									</p>
-
-									{{-- Discount Breakdown Text (optional for clarity) --}}
-									@if ($productLevelDiscount > 0 || $campaignDiscountValue > 0)
-									<p class="mb-0 text-muted small">
-										@if ($productLevelDiscount > 0)
-										• Product Discount: {{ $productLevelDiscount }}%<br>
-										@endif
-										@if ($campaignDiscountType)
-										• Campaign Discount: {{ $campaignDiscountValue }}{{ $campaignDiscountType === 'percentage' ? '%' : '$' }}
-										@endif
-									</p>
-									@endif
 
 									{{-- Product Summary --}}
 									<p class="description">{!! $product_detail->summary !!}</p>

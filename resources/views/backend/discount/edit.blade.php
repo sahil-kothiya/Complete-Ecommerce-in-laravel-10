@@ -31,8 +31,7 @@
 				<label for="value">Discount Value <span class="text-danger">*</span></label>
 				<input id="value" type="number" step="0.01" name="value" class="form-control"
 					placeholder="e.g. 10 or 100.00"
-					value="{{ old('value', $discount->value) }}"
-					{{ old('type', $discount->type) == 'percentage' ? 'max=100' : '' }} min="0">
+					value="{{ old('value', $discount->value) }}" min="0">
 				@error('value')<span class="text-danger">{{ $message }}</span>@enderror
 			</div>
 
@@ -40,7 +39,7 @@
 			<div class="form-group">
 				<label for="starts_at">Starts At <span class="text-danger">*</span></label>
 				<input type="datetime-local" name="starts_at" id="starts_at" class="form-control"
-					value="{{ old('starts_at', optional($discount->starts_at)->format('Y-m-d\TH:i')) }}">
+					value="{{ old('starts_at', $discount->starts_at ? $discount->starts_at->format('Y-m-d\TH:i') : '') }}">
 				@error('starts_at')<span class="text-danger">{{ $message }}</span>@enderror
 			</div>
 
@@ -48,7 +47,7 @@
 			<div class="form-group">
 				<label for="ends_at">Ends At <span class="text-danger">*</span></label>
 				<input type="datetime-local" name="ends_at" id="ends_at" class="form-control"
-					value="{{ old('ends_at', optional($discount->ends_at)->format('Y-m-d\TH:i')) }}">
+					value="{{ old('ends_at', $discount->ends_at ? $discount->ends_at->format('Y-m-d\TH:i') : '') }}">
 				@error('ends_at')<span class="text-danger">{{ $message }}</span>@enderror
 			</div>
 
@@ -75,7 +74,7 @@
 
 			{{-- Buttons --}}
 			<div class="form-group mb-3">
-				<a href="{{ route('discount.edit', $discount->id) }}" class="btn btn-warning">Reset</a>
+				<button type="reset" class="btn btn-warning">Reset</button>
 				<button type="submit" class="btn btn-success">Update</button>
 			</div>
 		</form>
@@ -119,16 +118,14 @@
 					number: true,
 					min: 0,
 					max: function() {
-						return $('#type').val() === 'percentage' ? 100 : null;
+						return $('#type').val() === 'percentage' ? 100 : undefined;
 					}
 				},
 				starts_at: {
-					required: true,
-					date: true
+					required: true
 				},
 				ends_at: {
-					required: true,
-					date: true
+					required: true
 				},
 				'categories[]': {
 					required: true,

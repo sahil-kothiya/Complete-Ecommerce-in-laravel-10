@@ -42,6 +42,7 @@
 <!-- <script src="{{asset('backend/vendor/jquery/jquery.min.js')}}"></script> -->
 <script src="https://code.jquery.com/jquery-3.2.1.min.js" crossorigin="anonymous"></script>
 <script src="{{asset('backend/vendor/bootstrap/js/bootstrap.bundle.min.js')}}"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery-validation@1.19.5/dist/jquery.validate.js"></script>
 
 <!-- Core plugin JavaScript-->
 <script src="{{asset('backend/vendor/jquery-easing/jquery.easing.min.js')}}"></script>
@@ -51,9 +52,6 @@
 
 <!-- Page level plugins -->
 <script src="{{asset('backend/vendor/chart.js/Chart.min.js')}}"></script>
-
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/jquery.validation/1.19.5/jquery.validate.min.js"></script>
 
 <!-- Page level custom scripts -->
 {{-- <script src="{{asset('backend/js/demo/chart-area-demo.js')}}"></script> --}}

@@ -54,7 +54,7 @@
                                     role="combobox"
                                     autocomplete="off">
                             </div>
-                            <div id="autocomplete-dropdown" class="autocomplete-dropdown position-absolute w-100 bg-white shadow-sm border rounded mt-1 d-none">
+                            <div id="autocomplete-dropdown" class="autocomplete-dropdown position-absolute w-100 bg-white shadow-sm border rounded mt-1">
                                 <ul id="autocomplete-list" class="list-group list-group-flush m-0"></ul>
                             </div>
                         </form>
@@ -104,3 +104,188 @@
         </div>
     </div>
 </header>
+@push('scripts')
+<script>
+    $(document).ready(function() {
+        console.log('Elasticsearch script loaded');
+
+        // Smooth scroll to sections
+        $('a[href*="#"]').on('click', function(e) {
+            e.preventDefault();
+            const target = $(this.hash);
+            if (target.length) {
+                $('html, body').animate({
+                    scrollTop: target.offset().top
+                }, 1000);
+            }
+        });
+
+        const $searchInput = $('#search-input');
+        const $dropdown = $('#autocomplete-dropdown');
+        const $list = $('#autocomplete-list');
+        let searchTimeout;
+
+        // Stop if critical elements are missing
+        if (!$searchInput.length || !$dropdown.length || !$list.length) return;
+
+        // Input event listener
+        $searchInput.on('input', function() {
+            const query = $(this).val().trim();
+            $searchInput.attr('aria-expanded', query.length >= 2);
+            debounceSearch(query);
+        });
+
+        // Handle focus event
+        $searchInput.on('focus', function() {
+            const query = $(this).val().trim();
+            if (query.length >= 2) {
+                showDropdown();
+            }
+        });
+
+        // Debounce search
+        function debounceSearch(query) {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => performAutocomplete(query), 300);
+        }
+
+        // Perform AJAX autocomplete
+        function performAutocomplete(query) {
+            if (query.length < 2) {
+                hideDropdown();
+                return;
+            }
+
+            $list.html('<li class="list-group-item loading">Searching...</li>');
+            showDropdown();
+
+            const autocompleteUrl = '/autocomplete';
+
+            $.ajax({
+                url: autocompleteUrl,
+                method: 'GET',
+                data: {
+                    q: query
+                },
+                dataType: 'json',
+                timeout: 10000,
+                success: function(response) {
+                    $list.empty();
+
+                    if (response.success && Array.isArray(response.suggestions) && response.suggestions.length > 0) {
+                        response.suggestions.forEach(item => {
+                            if (!item.title || !item.slug) return;
+
+                            const price = parseFloat(item.price) || 0;
+                            const discount = parseFloat(item.discount) || 0;
+
+                            let priceHTML = '';
+                            if (price > 0) {
+                                if (discount > 0) {
+                                    const discountPrice = price - (price * discount / 100);
+                                    priceHTML = `<span class="price">$${discountPrice.toFixed(2)} <del>$${price.toFixed(2)}</del></span>`;
+                                } else {
+                                    priceHTML = `<span class="price">$${price.toFixed(2)}</span>`;
+                                }
+                            }
+
+                            $list.append(`
+                                <li class="list-group-item autocomplete-item" data-slug="${item.slug}" role="option">
+                                    <div class="item-content">
+                                        <span class="title">${escapeHtml(item.title)}</span>
+                                        ${priceHTML}
+                                    </div>
+                                </li>
+                            `);
+                        });
+                    } else {
+                        $list.html('<li class="list-group-item no-results">No products found</li>');
+                    }
+                    showDropdown();
+                },
+                error: function(xhr, status) {
+                    let errorMessage = 'Error loading suggestions';
+                    if (status === 'timeout') {
+                        errorMessage = 'Request timed out';
+                    } else if (xhr.status === 404) {
+                        errorMessage = 'Autocomplete endpoint not found';
+                    } else if (xhr.status === 500) {
+                        errorMessage = 'Server error';
+                    }
+
+                    $list.html(`<li class="list-group-item error">${errorMessage}</li>`);
+                    showDropdown();
+                }
+            });
+        }
+
+        // Show dropdown
+        function showDropdown() {
+            $dropdown.removeClass('d-none').css('display', 'block');
+            $searchInput.attr('aria-expanded', 'true');
+        }
+
+        // Hide dropdown
+        function hideDropdown() {
+            $dropdown.addClass('d-none').css('display', 'none');
+            $searchInput.attr('aria-expanded', 'false');
+        }
+
+        // Handle suggestion clicks
+        $list.on('click', '.autocomplete-item', function(e) {
+            e.preventDefault();
+            const slug = $(this).data('slug');
+            if (slug) {
+                window.location.href = `/product/${slug}`;
+            }
+        });
+
+        // Keyboard navigation
+        $searchInput.on('keydown', function(e) {
+            const $items = $list.find('.autocomplete-item');
+            const $active = $items.filter('.active');
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if ($active.length === 0) {
+                    $items.first().addClass('active');
+                } else {
+                    $active.removeClass('active').next('.autocomplete-item').addClass('active');
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if ($active.length === 0) {
+                    $items.last().addClass('active');
+                } else {
+                    $active.removeClass('active').prev('.autocomplete-item').addClass('active');
+                }
+            } else if (e.key === 'Enter') {
+                if ($active.length > 0) {
+                    e.preventDefault();
+                    $active.click();
+                }
+            } else if (e.key === 'Escape') {
+                hideDropdown();
+            }
+        });
+
+        // Hide dropdown when clicking outside
+        $(document).on('click', function(e) {
+            if (!$(e.target).closest('.search-bar-wrapper').length) {
+                hideDropdown();
+            }
+        });
+
+        // Escape HTML utility
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+    });
+</script>
+
+@endpush

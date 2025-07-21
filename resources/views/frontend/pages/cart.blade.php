@@ -71,16 +71,10 @@
 								</td>
 
 								@php
-								$discount = $discountService->getEffectiveDiscount($cart->product);
-								$originalPrice = $cart['price'];
-								$discountedPrice = $originalPrice;
-								$isDiscounted = false;
-
-								if ($discount) {
-								$discountedPrice = $discountService->calculateDiscountedPrice($originalPrice, $discount);
+								$originalPrice = $cart->product->price;
+								$discounts = $discountService->getEffectiveDiscounts($cart->product);
+								$discountedPrice = $discountService->applyAllDiscounts($originalPrice, $discounts);
 								$isDiscounted = $discountedPrice < $originalPrice;
-									}
-
 									$total=$discountedPrice * $cart->quantity;
 									@endphp
 
@@ -88,10 +82,28 @@
 										@if($isDiscounted)
 										<span class="text-danger font-weight-bold">${{ number_format($discountedPrice, 2) }}</span><br>
 										<small><del class="text-muted">${{ number_format($originalPrice, 2) }}</del></small>
+
+										@if(count($discounts))
+										<br><small class="text-muted">
+											@foreach($discounts as $d)
+											• {{ $d['title'] ?? ucfirst($d['source']) }}:
+											@if($d['type'] === 'percentage')
+											{{ $d['value'] }}% off
+											@elseif($d['type'] === 'amount')
+											${{ number_format($d['value'], 0) }} off
+											@endif
+											<br>
+											@endforeach
+										</small>
+										@endif
 										@else
 										<span>${{ number_format($originalPrice, 2) }}</span>
 										@endif
 									</td>
+
+
+									<!-- Quantity & Total Columns as-is -->
+
 
 									<td class="qty" data-title="Qty">
 										<div class="input-group">
@@ -175,26 +187,43 @@
 								$categorySaved = $cartSummary['saved'];
 								$couponDiscount = session('coupon')['value'] ?? 0;
 								$finalAmount = $cartSubtotal - $couponDiscount;
+								$breakdown = $cartSummary['discount_breakdown'];
 								@endphp
 
 								<ul>
-									<li class="order_subtotal">Cart Subtotal<span>${{ number_format($cartSubtotal + $categorySaved, 2) }}</span></li>
+									<li class="order_subtotal">Cart Subtotal
+										<span>${{ number_format($cartSubtotal + $categorySaved, 2) }}</span>
+									</li>
 
-									@if($categorySaved > 0)
-									<li class="category_discount">Category Discount<span class="text-success">- ${{ number_format($categorySaved, 2) }}</span></li>
-									@endif
+									{{-- Show each discount line --}}
+									@foreach($breakdown as $d)
+									<li class="discount-item">
+										{{ $d['title'] }}
+										@if($d['type'] === 'percentage')
+										({{ $d['value'] }}% off)
+										@else
+										(${{ number_format($d['value'], 0) }} off)
+										@endif
+										<span class="text-success">- ${{ number_format($d['saved'], 2) }}</span>
+									</li>
+									@endforeach
 
 									@if($couponDiscount)
-									<li class="coupon_price">Coupon Applied<span class="text-success">- ${{ number_format($couponDiscount, 2) }}</span></li>
+									<li class="coupon_price">Coupon Applied
+										<span class="text-success">- ${{ number_format($couponDiscount, 2) }}</span>
+									</li>
 									@endif
 
-									<li class="last" id="order_total_price">You Pay<span>${{ number_format($finalAmount, 2) }}</span></li>
+									<li class="last" id="order_total_price">You Pay
+										<span>${{ number_format($finalAmount, 2) }}</span>
+									</li>
 								</ul>
 
 								<div class="button5">
-									<a href="{{route('checkout')}}" class="btn">Checkout</a>
-									<a href="{{route('product-grids')}}" class="btn">Continue shopping</a>
+									<a href="{{ route('checkout') }}" class="btn">Checkout</a>
+									<a href="{{ route('product-grids') }}" class="btn">Continue Shopping</a>
 								</div>
+
 							</div>
 						</div>
 					</div>

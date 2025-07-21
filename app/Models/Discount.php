@@ -15,6 +15,7 @@ class Discount extends Model
     protected $casts = [
         'starts_at' => 'datetime',
         'ends_at'   => 'datetime',
+        'is_active' => 'boolean',
     ];
 
     public function categories()
@@ -35,36 +36,43 @@ class Discount extends Model
             ->where('ends_at', '>=', $now);
     }
 
-    protected static function booted()
-    {
-        static::saved(function ($discount) {
-            $discount->loadMissing('products', 'categories.products');
+    // protected static function booted()
+    // {
+    //     static::saved(function ($discount) {
+    //         // Avoid memory explosion by lazy-loading product IDs only
+    //         $productIds = $discount->products()->pluck('id')->toArray();
 
-            foreach ($discount->products as $product) {
-                Cache::forget("discount:product:{$product->id}");
-            }
+    //         $categoryProductIds = \App\Models\Product::whereIn('category_id', function ($query) use ($discount) {
+    //             $query->select('category_id')
+    //                 ->from('category_discount')
+    //                 ->where('discount_id', $discount->id);
+    //         })->pluck('id')->toArray();
 
-            foreach ($discount->categories as $category) {
-                foreach ($category->products as $product) {
-                    Cache::forget("discount:product:{$product->id}");
-                }
-            }
-        });
+    //         $allProductIds = array_unique(array_merge($productIds, $categoryProductIds));
 
-        static::deleted(function ($discount) {
-            $discount->loadMissing('products', 'categories.products');
+    //         foreach ($allProductIds as $productId) {
+    //             Cache::forget("discount:product:$productId");
+    //         }
+    //     });
 
-            foreach ($discount->products as $product) {
-                Cache::forget("discount:product:{$product->id}");
-            }
+    //     static::deleted(function ($discount) {
+    //         // Same logic as above
+    //         $productIds = $discount->products()->pluck('id')->toArray();
 
-            foreach ($discount->categories as $category) {
-                foreach ($category->products as $product) {
-                    Cache::forget("discount:product:{$product->id}");
-                }
-            }
-        });
-    }
+    //         $categoryProductIds = \App\Models\Product::whereIn('category_id', function ($query) use ($discount) {
+    //             $query->select('category_id')
+    //                 ->from('category_discount')
+    //                 ->where('discount_id', $discount->id);
+    //         })->pluck('id')->toArray();
+
+    //         $allProductIds = array_unique(array_merge($productIds, $categoryProductIds));
+
+    //         foreach ($allProductIds as $productId) {
+    //             Cache::forget("discount:product:$productId");
+    //         }
+    //     });
+    // }
+
 
     public static function countActiveDiscount()
     {

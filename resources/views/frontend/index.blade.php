@@ -61,16 +61,33 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
 
 @endif
 
-<!-- Discount Highlight for Kids Holiday Offer -->
-<a href="{{ route('product-cat', 'kids') }}" style="text-decoration: none;">
-    <section class="discount-highlight" style="width: 100%; background: linear-gradient(135deg, #F7941D 0%, #e67e22 100%); color: white; padding: 16px 0; text-align: center; margin: 20px 0;">
+<!-- Discount Highlight & Holiday Offer -->
+@php
+// Get active category-level discounts dynamically (already uncached)
+$activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDiscounts();
+@endphp
+
+@if (!empty($activeDiscounts))
+@foreach ($activeDiscounts as $discount)
+<a href="{{ route('product-cat', $discount['category_slug']) }}" style="text-decoration: none;">
+    <section class="discount-highlight"
+        style="width: 100%; background: linear-gradient(135deg, #F7941D 0%, #e67e22 100%); color: white; padding: 16px 0; text-align: center; margin: 20px 0;">
         <div class="container">
             <p style="margin: 0; font-size: 18px; font-weight: 500;">
-                🎉 Kids' Holiday Offer: Up to 30% Off on Kids' Collection!
+                🎉 {{ $discount['title'] }}:
+                @if ($discount['type'] === 'percentage')
+                Up to <strong>{{ $discount['value'] }}% Off</strong>
+                @elseif ($discount['type'] === 'amount')
+                Save <strong>${{ number_format($discount['value'], 0) }}</strong>
+                @endif
+                on <strong>{{ $discount['category_title'] }}</strong>!
             </p>
         </div>
     </section>
 </a>
+@endforeach
+@endif
+
 
 <!-- Category Banners -->
 @if($categoryBanners?->count())
@@ -239,7 +256,33 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
 
 @push('styles')
 <style>
-    /* General Section Styling */
+    /* ========================
+   Autocomplete Styles
+======================== */
+    .autocomplete-dropdown {
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1000;
+    }
+
+    .autocomplete-item:hover,
+    .autocomplete-item.active {
+        background-color: #f8f9fa;
+        cursor: pointer;
+    }
+
+    .list-group-item.loading,
+    .list-group-item.no-results {
+        color: #6c757d;
+    }
+
+    .list-group-item.error {
+        color: #dc3545;
+    }
+
+    /* ========================
+   Section Styling
+======================== */
     .section {
         padding: 60px 0;
     }
@@ -248,9 +291,9 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
         font-size: 32px;
         font-weight: 700;
         color: #333;
+        text-align: center;
         position: relative;
         padding-bottom: 10px;
-        text-align: center;
     }
 
     .section-title h2::after {
@@ -258,49 +301,42 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
         display: block;
         width: 50px;
         height: 4px;
-        background-color: #F7941D;
         margin: 10px auto 0;
+        background-color: #F7941D;
         border-radius: 2px;
     }
 
-    /* ==========================
-   Slider Wrapper
-========================== */
+    /* ========================
+   Slider Section
+======================== */
     #gslider {
         position: relative;
         overflow: hidden;
     }
 
-    /* Slider Inner Container */
     #gslider .carousel-inner {
         height: 550px;
         min-height: 550px;
         position: relative;
     }
 
-    /* Carousel Items */
     .carousel-item {
         height: 550px;
         position: relative;
         background-color: #f9f9f9;
-        /* fallback to prevent black flash */
         transition: transform 0.6s ease-in-out;
-        /* Bootstrap slide transition */
     }
 
-    /* Main Image Styling */
     .carousel-item img {
         width: 100%;
         height: 100%;
         object-fit: cover;
-        display: block;
         opacity: 0.85;
+        display: block;
         z-index: 1;
     }
 
-    /* ==========================
-   Caption Styles
-========================== */
+    /* Slider Captions */
     #gslider .carousel-caption {
         position: absolute;
         bottom: 50%;
@@ -318,21 +354,17 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
 
     #gslider .carousel-caption p {
         font-size: 18px;
-        color: white;
+        color: #fff;
         margin: 20px 0;
     }
 
-    /* ==========================
-   Carousel Indicators
-========================== */
+    /* Slider Indicators */
     #gslider .carousel-indicators {
         bottom: 20px;
         z-index: 3;
     }
 
-    /* ==========================
-   Controls (Prev / Next Arrows)
-========================== */
+    /* Slider Controls */
     .carousel-control-prev,
     .carousel-control-next {
         z-index: 4;
@@ -348,8 +380,9 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
         background-size: 100% 100%;
     }
 
-
-    /* Product Cards */
+    /* ========================
+   Product Cards
+======================== */
     .product-card-container {
         flex: 0 0 auto;
         width: 250px;
@@ -360,8 +393,8 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
         border: 1px solid #eee;
         border-radius: 8px;
         overflow: hidden;
-        transition: transform 0.3s, box-shadow 0.3s;
         background: #fff;
+        transition: transform 0.3s, box-shadow 0.3s;
     }
 
     .single-product:hover {
@@ -393,7 +426,9 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
         text-decoration: line-through;
     }
 
-    /* Category Banners */
+    /* ========================
+   Category Banners
+======================== */
     .category-banners .single-banner {
         position: relative;
         overflow: hidden;
@@ -415,7 +450,7 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
         position: absolute;
         bottom: 20px;
         left: 20px;
-        color: white;
+        color: #fff;
         text-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
     }
 
@@ -430,7 +465,9 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
         text-decoration: none;
     }
 
-    /* Shop Services */
+    /* ========================
+   Shop Services
+======================== */
     .shop-services .single-service {
         text-align: center;
         padding: 20px;
@@ -453,7 +490,9 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
         margin-bottom: 5px;
     }
 
-    /* Responsive */
+    /* ========================
+   Responsive Styles
+======================== */
     @media (max-width: 768px) {
         #gslider .carousel-caption h1 {
             font-size: 28px;
@@ -509,78 +548,6 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
                     scrollTop: target.offset().top
                 }, 1000);
             }
-        });
-
-        // Autocomplete (reused from original)
-        let searchTimeout;
-        const $searchInput = $('#search-input');
-        const $dropdown = $('#autocomplete-dropdown');
-        const $list = $('#autocomplete-list');
-
-        $searchInput.on('input', function() {
-            debounceSearch($(this).val().trim());
-        });
-
-        function debounceSearch(query) {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => performAutocomplete(query), 300);
-        }
-
-        function performAutocomplete(query) {
-            if (query.length < 2) return hideDropdown();
-            $list.html('<li class="loading">Searching...</li>');
-            showDropdown();
-
-            $.ajax({
-                url: '{{ route("autocomplete") }}',
-                method: 'GET',
-                data: {
-                    q: query
-                },
-                dataType: 'json',
-                success: function(response) {
-                    if (response.success && response.suggestions?.length) {
-                        $list.empty();
-                        response.suggestions.forEach(item => {
-                            const discountPrice = item.price - (item.price * (item.discount || 0) / 100);
-                            const priceHTML = item.discount > 0 ?
-                                `<span class="price">$${discountPrice.toFixed(2)} <del>$${parseFloat(item.price).toFixed(2)}</del></span>` :
-                                `<span class="price">$${parseFloat(item.price).toFixed(2)}</span>`;
-                            $list.append(`
-                                <li class="autocomplete-item" data-slug="${item.slug}">
-                                    <div class="item-content">
-                                        <span class="title">${item.title}</span>
-                                        ${priceHTML}
-                                    </div>
-                                </li>
-                            `);
-                        });
-                    } else {
-                        $list.html('<li class="no-results">No products found</li>');
-                    }
-                    showDropdown();
-                },
-                error: function(xhr, status, error) {
-                    console.error('Autocomplete error:', error);
-                    hideDropdown();
-                }
-            });
-        }
-
-        function showDropdown() {
-            $dropdown.removeAttr('hidden');
-        }
-
-        function hideDropdown() {
-            $dropdown.attr('hidden', true);
-        }
-
-        $(document).on('click', '.autocomplete-item', function() {
-            window.location.href = `{{ url('/product-detail') }}/${$(this).data('slug')}`;
-        });
-
-        $(document).on('click', function(e) {
-            if (!$(e.target).closest('.search-container').length) hideDropdown();
         });
     });
 </script>

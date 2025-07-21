@@ -122,74 +122,96 @@ class Helper
         if (!Auth::check()) return 0;
 
         $user_id = $user_id ?? auth()->id();
-        $cartItems = Cart::where('user_id', $user_id)
+
+        $cartItems = Cart::with('product.cat_info.discounts')
+            ->where('user_id', $user_id)
             ->whereNull('order_id')
-            ->with('product.cat_info.discounts')
             ->get();
 
+        $discountService = app(DiscountService::class);
         $total = 0;
 
-        foreach ($cartItems as $item) {
-            $product = $item->product;
-            $price = $item->amount;
-            $discountValue = 0;
+        foreach ($cartItems as $cart) {
+            $product = $cart->product;
+            $quantity = $cart->quantity;
 
-            $category = $product->cat_info;
+            // Original product price
+            $originalPrice = $product->price;
 
-            if ($category) {
-                $activeDiscount = $category->discounts()
-                    ->where('is_active', true)
-                    ->where('starts_at', '<=', now())
-                    ->where('ends_at', '>=', now())
-                    ->first();
+            // Get all applicable discounts (category, product, etc.)
+            $discounts = $discountService->getEffectiveDiscounts($product);
 
-                if ($activeDiscount) {
-                    if ($activeDiscount->type === 'percentage') {
-                        $discountValue = $price * ($activeDiscount->value / 100);
-                    } else {
-                        $discountValue = $activeDiscount->value;
-                    }
-                }
-            }
+            // Apply all discounts to get the final price
+            $discountedPrice = $discountService->applyAllDiscounts($originalPrice, $discounts);
 
-            $total += ($price - $discountValue);
+            // Add to total based on quantity
+            $total += $discountedPrice * $quantity;
         }
 
         return round($total, 2);
     }
 
+
     public static function totalCartPriceWithBreakdown($user_id = '')
     {
-        if (!Auth::check()) return ['total' => 0, 'saved' => 0];
-
-        if ($user_id == '') {
-            $user_id = auth()->user()->id;
+        if (!Auth::check()) {
+            return [
+                'total' => 0,
+                'saved' => 0,
+                'discount_breakdown' => [],
+            ];
         }
 
+        $user_id = $user_id ?: auth()->id();
         $carts = Cart::with(['product.cat_info.discounts'])->where('user_id', $user_id)->whereNull('order_id')->get();
         $discountService = app(DiscountService::class);
 
         $total = 0;
         $saved = 0;
+        $discountBreakdown = [];
 
         foreach ($carts as $cart) {
             $product = $cart->product;
-            $original = $cart->price;
-            $discount = $discountService->getEffectiveDiscount($product);
+            $originalPrice = $product->price;
+            $quantity = $cart->quantity;
 
-            $discounted = $original;
+            // Get all discounts (product & category)
+            $discounts = $discountService->getEffectiveDiscounts($product);
+            $discountedPrice = $discountService->applyAllDiscounts($originalPrice, $discounts);
 
-            if ($discount) {
-                $discounted = $discountService->calculateDiscountedPrice($original, $discount);
-                $saved += ($original - $discounted) * $cart->quantity;
+            // Compute total price and savings
+            $total += $discountedPrice * $quantity;
+            $saved += ($originalPrice - $discountedPrice) * $quantity;
+
+            // Aggregate discount breakdown per type/title
+            foreach ($discounts as $discount) {
+                $key = ($discount['title'] ?? ucfirst($discount['source'])) . ' (' . $discount['type'] . ')';
+
+                if (!isset($discountBreakdown[$key])) {
+                    $discountBreakdown[$key] = [
+                        'title' => $discount['title'] ?? ucfirst($discount['source']),
+                        'type' => $discount['type'],
+                        'value' => $discount['value'],
+                        'source' => $discount['source'],
+                        'saved' => 0,
+                    ];
+                }
+
+                // Calculate saved amount for this discount
+                if ($discount['type'] === 'percentage') {
+                    $savedPerUnit = $originalPrice * ($discount['value'] / 100);
+                } else {
+                    $savedPerUnit = $discount['value'];
+                }
+
+                $discountBreakdown[$key]['saved'] += $savedPerUnit * $quantity;
             }
-
-            $total += $discounted * $cart->quantity;
         }
 
         return [
             'total' => round($total, 2),
             'saved' => round($saved, 2),
+            'discount_breakdown' => collect($discountBreakdown)->sortByDesc('saved')->values()->toArray(),
         ];
     }
 

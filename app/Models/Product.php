@@ -106,4 +106,14 @@ class Product extends Model
     {
         return app(DiscountService::class)->getCachedDiscountedPrice($this);
     }
+
+    public function category()
+    {
+        return $this->belongsTo(Category::class, 'cat_id');
+    }
+
+    public function categories()
+    {
+        return $this->belongsToMany(Category::class, 'category_product');
+    }
 }
