@@ -63,6 +63,7 @@
 
                     <!-- Products Grid -->
                     <div class="row">
+
                         @forelse($products as $product)
                         @include('frontend.partials.product-card', ['product' => $product])
                         @include('frontend.partials.product-modal', ['product' => $product])

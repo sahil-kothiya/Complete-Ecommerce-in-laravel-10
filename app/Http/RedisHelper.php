@@ -32,6 +32,16 @@ class RedisHelper
      */
     private const CHUNKED_PREFIX = 'CHUNKED:';
 
+    public static function has(string $key): bool
+    {
+        try {
+            return Redis::exists($key) > 0;
+        } catch (\Throwable $e) {
+            Log::error("RedisHelper::has() failed for key: {$key}", ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
     /**
      * Get data from Redis with automatic decompression and chunk handling
      */

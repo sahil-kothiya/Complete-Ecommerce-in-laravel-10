@@ -18,6 +18,7 @@ return [
         'wishlist' => env('CACHE_TTL_WISHLIST', 1800), // 30 minutes
         'cart' => env('CACHE_TTL_CART', 900), // 15 minutes
         'user_data' => env('CACHE_TTL_USER_DATA', 1800), // 30 minutes
+        'product_grids' => env('CACHE_TTL_USER_DATA', 1800), // 30 minutes
     ],
 
     /*

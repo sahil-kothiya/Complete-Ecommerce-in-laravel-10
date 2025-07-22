@@ -1286,22 +1286,151 @@ class FrontendController extends Controller
         });
     }
 
+
+    public function productSubCat(Request $request, $subCategoryId)
+    {
+        $startTime = microtime(true);
+
+        $category = Category::where('slug', $request->slug)->firstOrFail();
+
+        // Fetch subcategory and its parent category
+        $subCategory = Category::where('slug', $request->sub_slug)
+            ->where('is_parent', 0)
+            ->where('parent_id', $category->id)
+            ->firstOrFail();
+
+        $category = $subCategory->parent;
+
+        // Filters
+        $show   = max((int) $request->input('show', 21), 1);
+        $page   = (int) $request->input('page', 1);
+        $sortBy = $request->input('sortBy', 'default');
+        $price  = $request->input('price', '');
+
+        // Parse price filter
+        $minPrice = null;
+        $maxPrice = null;
+        if ($price && str_contains($price, '-')) {
+            [$minPrice, $maxPrice] = explode('-', $price);
+            $minPrice = (float) $minPrice;
+            $maxPrice = (float) $maxPrice;
+        }
+
+        // Build cache key to match seeder format
+        $cacheKey = "cached_products_cat{$category->id}_childcat{$subCategory->id}_page{$page}_limit{$show}_sort{$sortBy}";
+
+        // Add price filter to cache key if present
+        if ($minPrice && $maxPrice) {
+            $cacheKey .= "_min{$minPrice}_max{$maxPrice}";
+        } else {
+            $cacheKey .= "_min_max";
+        }
+
+        $ttl = $this->getTtlConfig();
+
+        // Check Redis cache first
+        if (RedisHelper::has($cacheKey)) {
+            $cachedData = RedisHelper::get($cacheKey);
+
+            // Convert cached products array back to paginator
+            if (isset($cachedData['products']) && isset($cachedData['recent_products'])) {
+                $paginatorData = $cachedData['products'];
+
+                // Create paginator from cached data
+                $paginated = new \Illuminate\Pagination\LengthAwarePaginator(
+                    collect($paginatorData['data'])->map(function ($item) {
+                        // Convert images back to objects
+                        if (isset($item['images'])) {
+                            $item['images'] = collect($item['images'])->map(fn($img) => (object) $img);
+                        }
+                        return (object) $item;
+                    }),
+                    $paginatorData['total'],
+                    $paginatorData['per_page'],
+                    $paginatorData['current_page'],
+                    [
+                        'path' => request()->url(),
+                        'query' => request()->query()
+                    ]
+                );
+
+                return view('frontend.pages.product-grids', [
+                    'products'        => $paginated,
+                    'recent_products' => collect($cachedData['recent_products'])->map(fn($item) => (object) $item),
+                    'category'        => $category,
+                    'subCategory'     => $subCategory,
+                    'show'            => $show,
+                    'sortBy'          => $sortBy,
+                    'price'           => $price,
+                ]);
+            }
+        }
+
+        // Fallback to database query if cache miss
+        $query = Product::with(['images', 'discount', 'cat_info', 'sub_cat_info'])
+            ->where('status', 1)
+            ->where('cat_id', $category->id)
+            ->where('child_cat_id', $subCategory->id);
+
+        // Apply price filter
+        if ($minPrice && $maxPrice) {
+            $query->whereBetween('price', [$minPrice, $maxPrice]);
+        }
+
+        // Apply sorting
+        if ($sortBy === 'price') {
+            $query->orderBy('price', 'ASC');
+        } elseif ($sortBy === 'price_desc') {
+            $query->orderBy('price', 'DESC');
+        } else {
+            $query->latest();
+        }
+
+        $products = $query->paginate($show);
+
+        // Get recent products
+        $recent_products = Product::where('status', 1)->latest()->take(3)->get();
+
+        // Cache the paginated result
+        $cacheData = [
+            'products' => $products->toArray(),
+            'recent_products' => $recent_products->toArray(),
+            'limit' => $show,
+            'sort' => $sortBy,
+            'minPrice' => $minPrice,
+            'maxPrice' => $maxPrice,
+        ];
+
+        RedisHelper::put($cacheKey, $cacheData, $ttl['product_grids']);
+
+        return view('frontend.pages.product-grids', [
+            'products'        => $products,
+            'recent_products' => $recent_products,
+            'category'        => $category,
+            'subCategory'     => $subCategory,
+            'show'            => $show,
+            'sortBy'          => $sortBy,
+            'price'           => $price,
+        ]);
+    }
+
     /**
      * Displays products by subcategory.
      *
      * @param Request $request
      * @return \Illuminate\View\View
      */
-    public function productSubCat(Request $request)
-    {
-        $products = Category::getProductBySubCat($request->sub_slug);
-        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
-        $view = request()->is('e-shop.loc/product-grids') ? 'product-grids' : 'product-lists';
+    // public function productSubCat(Request $request)
+    // {
+    //     dd($request->all());
+    //     $products = Category::getProductBySubCat($request->sub_slug);
+    //     $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
+    //     $view = request()->is('e-shop.loc/product-grids') ? 'product-grids' : 'product-lists';
 
-        return view("frontend.pages.{$view}")
-            ->with('products', $products->sub_products)
-            ->with('recent_products', $recent_products);
-    }
+    //     return view("frontend.pages.{$view}")
+    //         ->with('products', $products->sub_products)
+    //         ->with('recent_products', $recent_products);
+    // }
 
     /**
      * Renders the blog page with filtering.

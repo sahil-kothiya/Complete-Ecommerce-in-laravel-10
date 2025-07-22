@@ -120,4 +120,12 @@ class DiscountService
 
         return max($price, 0); // Prevent negative price
     }
+
+    public function getCachedDiscountedPrice(Product $product): float
+    {
+        // Fallback: return calculated value directly for now
+        return $product->discount > 0
+            ? $product->price - ($product->price * $product->discount / 100)
+            : $product->price;
+    }
 }
