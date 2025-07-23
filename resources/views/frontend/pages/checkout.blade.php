@@ -73,7 +73,7 @@
                             <div class="col-lg-6 col-md-6 col-12">
                                 <div class="form-group">
                                     <label>Country<span>*</span></label>
-                                    <select name="country" id="country">
+                                    <select name="country" id="country" class="form-control">
                                         <option value="AF">Afghanistan</option>
                                         <option value="AX">Åland Islands</option>
                                         <option value="AL">Albania</option>
@@ -174,7 +174,7 @@
                                         <option value="HK">Hong Kong SAR China</option>
                                         <option value="HU">Hungary</option>
                                         <option value="IS">Iceland</option>
-                                        <option value="IN">India</option>
+                                        <option value="IN" selected="selected">India</option>
                                         <option value="ID">Indonesia</option>
                                         <option value="IR">Iran</option>
                                         <option value="IQ">Iraq</option>
@@ -225,7 +225,7 @@
                                         <option value="MM">Myanmar [Burma]</option>
                                         <option value="NA">Namibia</option>
                                         <option value="NR">Nauru</option>
-                                        <option value="NP" selected="selected">Nepal</option>
+                                        <option value="NP">Nepal</option>
                                         <option value="NL">Netherlands</option>
                                         <option value="AN">Netherlands Antilles</option>
                                         <option value="NC">New Caledonia</option>
@@ -503,6 +503,20 @@
 @endsection
 @push('styles')
 <style>
+    .form-group label {
+        display: inline-block;
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+
+    .form-group label span {
+        color: red;
+        margin-left: 3px;
+        font-weight: bold;
+        font-size: 14px;
+        vertical-align: middle;
+    }
+
     li.shipping {
         display: inline-flex;
         width: 100%;

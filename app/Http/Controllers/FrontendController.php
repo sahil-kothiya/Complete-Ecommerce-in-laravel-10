@@ -1298,7 +1298,6 @@ class FrontendController extends Controller
             ->where('is_parent', 0)
             ->where('parent_id', $category->id)
             ->firstOrFail();
-
         $category = $subCategory->parent;
 
         // Filters
@@ -1325,7 +1324,6 @@ class FrontendController extends Controller
         } else {
             $cacheKey .= "_min_max";
         }
-
         $ttl = $this->getTtlConfig();
 
         // Check Redis cache first
@@ -1367,8 +1365,8 @@ class FrontendController extends Controller
         }
 
         // Fallback to database query if cache miss
-        $query = Product::with(['images', 'discount', 'cat_info', 'sub_cat_info'])
-            ->where('status', 1)
+        $query = Product::with(['images', 'discounts', 'cat_info', 'sub_cat_info'])
+            ->active()
             ->where('cat_id', $category->id)
             ->where('child_cat_id', $subCategory->id);
 
@@ -1389,7 +1387,7 @@ class FrontendController extends Controller
         $products = $query->paginate($show);
 
         // Get recent products
-        $recent_products = Product::where('status', 1)->latest()->take(3)->get();
+        $recent_products = Product::with(['images'])->active()->latest()->take(3)->get();
 
         // Cache the paginated result
         $cacheData = [

@@ -235,24 +235,49 @@ class CartController extends Controller
     //     return redirect()->back()->with('success','Successfully remove item');
     // }
 
+    // public function checkout(Request $request)
+    // {
+    //     $cart = session('cart');
+    //     $cart_index = Str::random(10);
+    //     $sub_total = 0;
+    //     // dd($cart);
+    //     foreach ($cart as $cart_item) {
+    //         $sub_total += $cart_item['amount'];
+    //         $data = array(
+    //             'cart_id' => $cart_index,
+    //             'user_id' => $request->user()->id,
+    //             'product_id' => $cart_item['id'],
+    //             'quantity' => $cart_item['quantity'],
+    //             'amount' => $cart_item['amount'],
+    //             'status' => 'new',
+    //             'price' => $cart_item['price'],
+    //         );
+
+    //         $cart = new Cart();
+    //         $cart->fill($data);
+    //         $cart->save();
+    //     }
+    //     return view('frontend.pages.checkout');
+    // }
     public function checkout(Request $request)
     {
-        // $cart=session('cart');
-        // $cart_index=\Str::random(10);
-        // $sub_total=0;
-        // foreach($cart as $cart_item){
-        //     $sub_total+=$cart_item['amount'];
-        //     $data=array(
-        //         'cart_id'=>$cart_index,
-        //         'user_id'=>$request->user()->id,
-        //         'product_id'=>$cart_item['id'],
-        //         'quantity'=>$cart_item['quantity'],
-        //         'amount'=>$cart_item['amount'],
-        //         'status'=>'new',
-        //         'price'=>$cart_item['price'],
+        // $cart = Helper::getAllProductFromCart();
+        // $cart_index = Str::random(10);
+        // $sub_total = 0;
+        // // dd($cart);
+        // foreach ($cart as $cart_item) {
+        //     $sub_total += $cart_item['amount'];
+        //     $data = array(
+        //         'cart_id' => $cart_index,
+        //         'user_id' => $request->user()->id,
+        //         'product_id' => $cart_item['id'],
+        //         'quantity' => $cart_item['quantity'],
+        //         'amount' => $cart_item['amount'],
+        //         'status' => 'new',
+        //         'price' => $cart_item['price'],
         //     );
 
-        //     $cart=new Cart();
+        //     $cart = new Cart();
         //     $cart->fill($data);
         //     $cart->save();
         // }

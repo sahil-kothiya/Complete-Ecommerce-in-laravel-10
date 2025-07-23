@@ -27,6 +27,11 @@ class Product extends Model
         ];
     }
 
+    public function scopeActive($query)
+    {
+        return $query->where('status', 'active');
+    }
+
     /**
      * Get the index name for the model.
      */
