@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Banner;
+use App\Models\Discount;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class BannerController extends Controller
@@ -26,7 +28,8 @@ class BannerController extends Controller
      */
     public function create()
     {
-        return view('backend.banner.create');
+        $discounts = Discount::active()->get();
+        return view('backend.banner.create', compact('discounts'));
     }
 
     /**
@@ -42,12 +45,22 @@ class BannerController extends Controller
             'description' => 'nullable|string',
             'photo' => 'required|string',
             'status' => 'required|in:active,inactive',
+            'discount_id' => 'nullable|exists:discounts,id', // Changed from discount_ids to discount_id
         ]);
 
         $slug = $this->generateUniqueSlug($request->title);
         $validatedData['slug'] = $slug;
 
         $banner = Banner::create($validatedData);
+
+        // Handle single discount relationship if needed
+        if ($request->has('discount_id') && $request->discount_id) {
+            // If you have a belongsTo relationship
+            // The discount_id is already included in $validatedData
+
+            // If you have a many-to-many relationship, use:
+            $banner->discounts()->sync([$request->discount_id]);
+        }
 
         $message = $banner
             ? 'Banner successfully added'
@@ -65,9 +78,11 @@ class BannerController extends Controller
      * @param  int  $id
      * @return \Illuminate\Http\Response
      */
+
     public function show($id)
     {
-        // Implement if needed
+        $banner = Banner::with('discounts')->findOrFail($id);
+        return view('backend.banner.show', compact('banner'));
     }
 
     /**
@@ -78,17 +93,13 @@ class BannerController extends Controller
      */
     public function edit($id)
     {
-        $banner = Banner::findOrFail($id);
-        return view('backend.banner.edit', compact('banner'));
+        $banner = Banner::with('discounts')->findOrFail($id);
+        // dd($banner);
+
+        $discounts = Discount::active()->get();
+        return view('backend.banner.edit', compact('banner', 'discounts'));
     }
 
-    /**
-     * Update the specified resource in storage.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  int  $id
-     * @return \Illuminate\Http\Response
-     */
     public function update(Request $request, $id)
     {
         $banner = Banner::findOrFail($id);
@@ -98,18 +109,28 @@ class BannerController extends Controller
             'description' => 'nullable|string',
             'photo' => 'required|string',
             'status' => 'required|in:active,inactive',
+            'discount_id' => 'nullable|exists:discounts,id',
         ]);
 
-        $status = $banner->update($validatedData);
+        // Generate new slug only if title has changed
+        if ($request->title !== $banner->title) {
+            $validatedData['slug'] = $this->generateUniqueSlug($request->title, $banner->id);
+        }
+        // dd($request->all(), $id, $validatedData);
 
-        $message = $status
-            ? 'Banner successfully updated'
-            : 'Error occurred while updating banner';
+        $banner->update($validatedData);
 
-        return redirect()->route('banner.index')->with(
-            $status ? 'success' : 'error',
-            $message
-        );
+        // Handle single discount relationship if needed
+        if ($request->has('discount_id') && $request->discount_id) {
+            // If you have a belongsTo relationship
+            // The discount_id is already included in $validatedData
+
+            // If you have a many-to-many relationship, use:
+            $banner->discounts()->sync([$request->discount_id]);
+        }
+
+
+        return redirect()->route('banner.index')->with('success', 'Banner successfully updated');
     }
 
     /**
@@ -121,6 +142,11 @@ class BannerController extends Controller
     public function destroy($id)
     {
         $banner = Banner::findOrFail($id);
+
+        if ($banner->photo && Storage::disk('public')->exists($banner->photo)) {
+            Storage::disk('public')->delete($banner->photo);
+        }
+
         $status = $banner->delete();
 
         $message = $status

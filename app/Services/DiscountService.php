@@ -110,15 +110,29 @@ class DiscountService
     {
         $price = $basePrice;
 
+        // Apply product-level discount first
         foreach ($discounts as $discount) {
-            if ($discount['type'] === 'percentage') {
-                $price -= ($price * $discount['value'] / 100);
-            } elseif ($discount['type'] === 'amount') {
-                $price -= $discount['value'];
+            if ($discount['source'] === 'product') {
+                if ($discount['type'] === 'percentage') {
+                    $price -= ($price * $discount['value'] / 100);
+                } elseif ($discount['type'] === 'amount') {
+                    $price -= $discount['value'];
+                }
             }
         }
 
-        return max($price, 0); // Prevent negative price
+        // Then apply category-level discounts
+        foreach ($discounts as $discount) {
+            if ($discount['source'] === 'category') {
+                if ($discount['type'] === 'percentage') {
+                    $price -= ($price * $discount['value'] / 100);
+                } elseif ($discount['type'] === 'amount') {
+                    $price -= $discount['value'];
+                }
+            }
+        }
+
+        return max($price, 0);
     }
 
     public function getCachedDiscountedPrice(Product $product): float

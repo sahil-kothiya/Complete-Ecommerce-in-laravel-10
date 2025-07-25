@@ -9,6 +9,7 @@ use App\Models\Wishlist;
 use App\Models\Cart;
 use Illuminate\Support\Str;
 use Helper;
+use Illuminate\Support\Facades\Log;
 
 class CartController extends Controller
 {
@@ -281,6 +282,7 @@ class CartController extends Controller
         //     $cart->fill($data);
         //     $cart->save();
         // }
+
         return view('frontend.pages.checkout');
     }
 }

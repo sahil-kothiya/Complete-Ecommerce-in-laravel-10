@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Banner;
 use App\Models\Message;
 use App\Models\Category;
 use App\Models\PostTag;
@@ -117,6 +118,30 @@ class Helper
         }
     }
 
+    private function generateUniqueSlug($title, $excludeId = null)
+    {
+        $slug = Str::slug($title);
+        $originalSlug = $slug;
+        $counter = 1;
+
+        $query = Banner::where('slug', $slug);
+        if ($excludeId) {
+            $query->where('id', '!=', $excludeId);
+        }
+
+        while ($query->exists()) {
+            $slug = $originalSlug . '-' . $counter;
+            $counter++;
+
+            $query = Banner::where('slug', $slug);
+            if ($excludeId) {
+                $query->where('id', '!=', $excludeId);
+            }
+        }
+
+        return $slug;
+    }
+
     public static function totalCartPrice($user_id = null)
     {
         if (!Auth::check()) return 0;
@@ -184,6 +209,8 @@ class Helper
             $saved += ($originalPrice - $discountedPrice) * $quantity;
 
             // Aggregate discount breakdown per type/title
+            // Compute saved amount per discount type (in order)
+            $intermediatePrice = $originalPrice;
             foreach ($discounts as $discount) {
                 $key = ($discount['title'] ?? ucfirst($discount['source'])) . ' (' . $discount['type'] . ')';
 
@@ -197,21 +224,25 @@ class Helper
                     ];
                 }
 
-                // Calculate saved amount for this discount
+                // Apply discount to intermediate price
                 if ($discount['type'] === 'percentage') {
-                    $savedPerUnit = $originalPrice * ($discount['value'] / 100);
+                    $savedPerUnit = $intermediatePrice * ($discount['value'] / 100);
                 } else {
                     $savedPerUnit = $discount['value'];
                 }
 
                 $discountBreakdown[$key]['saved'] += $savedPerUnit * $quantity;
+
+                // Reduce price for next layer
+                $intermediatePrice -= $savedPerUnit;
             }
         }
 
         return [
             'total' => round($total, 2),
             'saved' => round($saved, 2),
-            'discount_breakdown' => collect($discountBreakdown)->sortByDesc('saved')->values()->toArray(),
+            'discount_breakdown' => collect($discountBreakdown)->values()->toArray(),
+            // 'discount_breakdown' => collect($discountBreakdown)->sortByDesc('saved')->values()->toArray(),
         ];
     }
 

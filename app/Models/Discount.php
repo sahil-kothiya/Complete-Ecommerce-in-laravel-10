@@ -28,6 +28,11 @@ class Discount extends Model
         return $this->belongsToMany(Product::class, 'product_discount');
     }
 
+    public function banners()
+    {
+        return $this->belongsToMany(Banner::class, 'banner_discount')->withTimestamps();
+    }
+
     public function scopeActive($query)
     {
         $now = now();
@@ -35,44 +40,6 @@ class Discount extends Model
             ->where('starts_at', '<=', $now)
             ->where('ends_at', '>=', $now);
     }
-
-    // protected static function booted()
-    // {
-    //     static::saved(function ($discount) {
-    //         // Avoid memory explosion by lazy-loading product IDs only
-    //         $productIds = $discount->products()->pluck('id')->toArray();
-
-    //         $categoryProductIds = \App\Models\Product::whereIn('category_id', function ($query) use ($discount) {
-    //             $query->select('category_id')
-    //                 ->from('category_discount')
-    //                 ->where('discount_id', $discount->id);
-    //         })->pluck('id')->toArray();
-
-    //         $allProductIds = array_unique(array_merge($productIds, $categoryProductIds));
-
-    //         foreach ($allProductIds as $productId) {
-    //             Cache::forget("discount:product:$productId");
-    //         }
-    //     });
-
-    //     static::deleted(function ($discount) {
-    //         // Same logic as above
-    //         $productIds = $discount->products()->pluck('id')->toArray();
-
-    //         $categoryProductIds = \App\Models\Product::whereIn('category_id', function ($query) use ($discount) {
-    //             $query->select('category_id')
-    //                 ->from('category_discount')
-    //                 ->where('discount_id', $discount->id);
-    //         })->pluck('id')->toArray();
-
-    //         $allProductIds = array_unique(array_merge($productIds, $categoryProductIds));
-
-    //         foreach ($allProductIds as $productId) {
-    //             Cache::forget("discount:product:$productId");
-    //         }
-    //     });
-    // }
-
 
     public static function countActiveDiscount()
     {

@@ -95,6 +95,49 @@
 
 @push('styles')
 <style>
+    .recent-post .single-post {
+        display: flex;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #eaeaea;
+    }
+
+    .recent-post .single-post:last-child {
+        border-bottom: none;
+    }
+
+    .recent-post .image {
+        flex-shrink: 0;
+        width: 75px;
+        height: 60px;
+        border-radius: 50%;
+        overflow: hidden;
+        margin-right: 15px;
+        background-color: #f7f7f7;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .recent-post .image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .recent-post .content h5 {
+        margin: 0 0 5px;
+        font-size: 14px;
+        line-height: 1.4;
+    }
+
+    .recent-post .content .price {
+        font-size: 13px;
+        color: #444;
+        margin: 0;
+    }
+
     /* .botm row {
         margin: 3% 1% 0% 3%;
     } */
@@ -363,6 +406,7 @@
 
 @push('scripts')
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert.min.js"></script>
+
 <script>
     $(document).ready(function() {
         // $('select.nice-select').niceSelect();

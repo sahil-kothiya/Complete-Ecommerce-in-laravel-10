@@ -210,12 +210,12 @@ class FrontendController extends Controller
      */
     private function getBannersData(string $key, int $ttl)
     {
+        // dd($banners[0]->discounts->first(), $discount->category);
         return Cache::remember($key, $ttl, function () use ($key, $ttl) {
-            $banners = Banner::where('status', 'active')
+            $banners = Banner::with(['discounts.categories'])->where('status', 'active')
                 ->select(['id', 'title', 'description', 'photo'])
                 ->orderByDesc('id')
                 ->get();
-
             RedisHelper::put($key, $banners, $ttl);
             return $banners;
         });
@@ -1670,5 +1670,16 @@ class FrontendController extends Controller
 
         request()->session()->flash('error', 'Already Subscribed');
         return back();
+    }
+
+    public function cart(Request $request)
+    {
+        // If the user came here NOT from coupon apply POST or redirect
+        if (!$request->session()->has('coupon_set')) {
+            session()->forget('coupon'); // Clear it only once
+            session()->put('coupon_set', true); // Flag to prevent auto-remove
+        }
+
+        return view('frontend.pages.cart');
     }
 }

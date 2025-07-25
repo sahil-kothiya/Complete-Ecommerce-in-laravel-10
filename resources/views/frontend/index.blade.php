@@ -27,6 +27,7 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
         $photo = $banner->photo ?? 'images/placeholder-banner.jpg';
         $webp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $photo);
         $isFirst = $key === 0;
+        $discount = $banner->discounts->first();
         @endphp
 
         <div class="carousel-item {{ $isFirst ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}">
@@ -43,9 +44,26 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
             <div class="carousel-caption d-none d-md-block text-left">
                 <h1>{{ $banner->title }}</h1>
                 <p>{!! $banner->description !!}</p>
-                <a class="btn btn-lg btn-primary" href="{{ route('product-grids') }}">
+
+                @php
+                $discount = $banner->discounts->first();
+                $category = $discount?->categories?->first();
+                $ctaUrl = $category
+                ? route('product-cat', $category->slug)
+                : route('product-grids');
+                @endphp
+
+                @if($discount && $category)
+                <p class="text-warning h5">
+                    {{ $discount->title }} -
+                    {{ $discount->type === 'percentage' ? $discount->value . '%' : '₹' . number_format($discount->value, 2) }} OFF
+                </p>
+                @endif
+
+                <a class="btn btn-lg btn-primary" href="{{ $ctaUrl }}">
                     Shop Now <i class="fa fa-arrow-right"></i>
                 </a>
+
             </div>
         </div>
         @endforeach

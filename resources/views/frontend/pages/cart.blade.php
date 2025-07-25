@@ -164,13 +164,13 @@
 					<div class="row">
 						<div class="col-lg-8 col-md-5 col-12">
 							<div class="left">
-								<!-- <div class="coupon">
-									<form action="{{route('coupon-store')}}" method="POST">
+								<div class="coupon">
+									<form action="{{route('coupon-apply')}}" method="POST">
 										@csrf
 										<input name="code" placeholder="Enter Your Coupon">
 										<button class="btn">Apply</button>
 									</form>
-								</div> -->
+								</div>
 								{{-- <div class="checkbox">`
 										@php
 											$shipping=DB::table('shippings')->where('status','active')->limit(1)->get();
@@ -185,45 +185,62 @@
 								$cartSummary = Helper::totalCartPriceWithBreakdown();
 								$cartSubtotal = $cartSummary['total'];
 								$categorySaved = $cartSummary['saved'];
-								$couponDiscount = session('coupon')['value'] ?? 0;
-								$finalAmount = $cartSubtotal - $couponDiscount;
 								$breakdown = $cartSummary['discount_breakdown'];
-								@endphp
 
-								<ul>
-									<li class="order_subtotal">Cart Subtotal
-										<span>${{ number_format($cartSubtotal + $categorySaved, 2) }}</span>
-									</li>
+								// Get coupon value
+								$couponValue = session('coupon')['value'] ?? 0;
 
-									{{-- Show each discount line --}}
-									@foreach($breakdown as $d)
-									<li class="discount-item">
-										{{ $d['title'] }}
-										@if($d['type'] === 'percentage')
-										({{ $d['value'] }}% off)
-										@else
-										(${{ number_format($d['value'], 0) }} off)
+								// Validate coupon: apply only if subtotal > 0 AND coupon ≤ subtotal
+								$validCoupon = $cartSubtotal > 0 && $couponValue > 0 && $couponValue <= $cartSubtotal;
+
+									// Apply discount only if valid
+									$couponDiscount=$validCoupon ? $couponValue : 0;
+
+									$finalAmount=$cartSubtotal - $couponDiscount;
+
+									// Optional: clear invalid coupon from session
+									if (!$validCoupon && session()->has('coupon')) {
+									session()->forget('coupon');
+									}
+									@endphp
+
+									<ul>
+										<li class="order_subtotal">
+											Cart Subtotal
+											<span>${{ number_format($cartSubtotal + $categorySaved, 2) }}</span>
+										</li>
+
+										{{-- Show all product/category-level discount breakdowns --}}
+										@foreach($breakdown as $d)
+										<li class="discount-item">
+											{{ $d['title'] }}
+											@if($d['type'] === 'percentage')
+											({{ $d['value'] }}% off)
+											@else
+											(${{ number_format($d['value'], 0) }} off)
+											@endif
+											<span class="text-success">- ${{ number_format($d['saved'], 2) }}</span>
+										</li>
+										@endforeach
+
+										{{-- Show coupon if valid --}}
+										@if($couponDiscount > 0)
+										<li class="coupon_price">
+											Coupon Applied
+											<span class="text-success">- ${{ number_format($couponDiscount, 2) }}</span>
+										</li>
 										@endif
-										<span class="text-success">- ${{ number_format($d['saved'], 2) }}</span>
-									</li>
-									@endforeach
 
-									@if($couponDiscount)
-									<li class="coupon_price">Coupon Applied
-										<span class="text-success">- ${{ number_format($couponDiscount, 2) }}</span>
-									</li>
-									@endif
+										<li class="last" id="order_total_price">
+											You Pay
+											<span>${{ number_format($finalAmount, 2) }}</span>
+										</li>
+									</ul>
 
-									<li class="last" id="order_total_price">You Pay
-										<span>${{ number_format($finalAmount, 2) }}</span>
-									</li>
-								</ul>
-
-								<div class="button5">
-									<a href="{{ route('checkout') }}" class="btn">Checkout</a>
-									<a href="{{ route('product-grids') }}" class="btn">Continue Shopping</a>
-								</div>
-
+									<div class="button5">
+										<a href="{{ route('checkout') }}" class="btn">Checkout</a>
+										<a href="{{ route('product-grids') }}" class="btn">Continue Shopping</a>
+									</div>
 							</div>
 						</div>
 					</div>

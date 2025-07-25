@@ -376,20 +376,28 @@
                                         @endif
                                     </li>
 
-                                    @if(session('coupon'))
-                                    <li class="coupon_price" data-price="{{session('coupon')['value']}}">You Save<span>${{number_format(session('coupon')['value'],2)}}</span></li>
-                                    @endif
                                     @php
-                                    $total_amount=Helper::totalCartPrice();
-                                    if(session('coupon')){
-                                    $total_amount=$total_amount-session('coupon')['value'];
-                                    }
-                                    @endphp
-                                    @if(session('coupon'))
-                                    <li class="last" id="order_total_price">Total<span>${{number_format($total_amount,2)}}</span></li>
-                                    @else
-                                    <li class="last" id="order_total_price">Total<span>${{number_format($total_amount,2)}}</span></li>
-                                    @endif
+                                    $totalAmount = Helper::totalCartPrice(); // Assuming this returns subtotal
+                                    $couponValue = session('coupon')['value'] ?? 0;
+
+                                    // Apply coupon only if cart total > 0 AND coupon value <= total
+                                        $validCoupon=$totalAmount> 0 && $couponValue > 0 && $couponValue <= $totalAmount;
+
+                                            if ($validCoupon) {
+                                            $totalAmount -=$couponValue;
+                                            }
+                                            @endphp
+
+                                            @if($validCoupon)
+                                            <li class="coupon_price" data-price="{{ $couponValue }}">
+                                            You Save <span>${{ number_format($couponValue, 2) }}</span>
+                                            </li>
+                                            @endif
+
+                                            <li class="last" id="order_total_price">
+                                                Total <span>${{ number_format($totalAmount, 2) }}</span>
+                                            </li>
+
                                 </ul>
                             </div>
                         </div>

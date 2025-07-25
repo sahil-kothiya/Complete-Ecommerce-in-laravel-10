@@ -74,7 +74,8 @@ Route::get('/blog-tag/{slug}', [FrontendController::class, 'blogByTag'])->name('
 Route::post('/subscribe', [FrontendController::class, 'subscribe'])->name('subscribe');
 
 // Cart & Wishlist
-Route::get('/cart', fn() => view('frontend.pages.cart'))->name('cart');
+// Route::get('/cart', fn() => view('frontend.pages.cart'))->name('cart');
+Route::get('/cart', [FrontendController::class, 'cart'])->name('cart');
 Route::get('/wishlist', fn() => view('frontend.pages.wishlist'))->name('wishlist');
 
 Route::middleware('auth')->group(function () {
@@ -103,7 +104,7 @@ Route::post('/post/{slug}/comment', [PostCommentController::class, 'store'])->na
 Route::resource('/comment', PostCommentController::class);
 
 // Coupon & Payment
-Route::post('/coupon-store', [CouponController::class, 'couponStore'])->name('coupon-store');
+Route::post('/coupon-apply', [CouponController::class, 'applyCoupon'])->name('coupon-apply');
 Route::get('/payment', [PayPalController::class, 'payment'])->name('payment');
 Route::get('/cancel', [PayPalController::class, 'cancel'])->name('payment.cancel');
 Route::get('/payment/success', [PayPalController::class, 'success'])->name('payment.success');

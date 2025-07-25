@@ -2155,7 +2155,7 @@
 .main-sidebar .single-post .content,
 .shop-sidebar .single-post .content,
 .shopping-cart .total-amount .right {
-    padding-left: 100px
+    /* padding-left: 100px */
 }
 
 .main-sidebar .single-post .content h5,
