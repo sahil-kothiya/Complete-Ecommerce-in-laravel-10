@@ -7,97 +7,88 @@ use Illuminate\Http\Request;
 use App\Models\Cart;
 use App\Models\Product;
 use App\Models\Order;
-use DB;
-use Illuminate\Support\Facades\Log;
+use App\Models\Shipping;
+use Illuminate\Support\Facades\DB;
 
 class PaypalController extends Controller
 {
     public function payment()
     {
-        $cart = Cart::where('user_id', auth()->user()->id)->where('order_id', null)->get()->toArray();
+        $checkoutData = session('checkout_data');
+        if (!$checkoutData) {
+            return redirect()->back()->with('error', 'Checkout data not found. Please try again.');
+        }
 
-        if (empty($cart)) {
+        $cart = Cart::where('user_id', auth()->user()->id)->where('order_id', null)->get();
+        if ($cart->isEmpty()) {
             return redirect()->back()->with('error', 'Your cart is empty!');
         }
 
-        $data = [];
-
-        // Prepare items for PayPal
-        $data['items'] = array_map(function ($item) {
-            $product = Product::find($item['product_id']);
-            return [
+        $items = [];
+        $subtotal = 0;
+        foreach ($cart as $cartItem) {
+            $product = Product::find($cartItem->product_id);
+            $items[] = [
                 'name' => $product->title ?? 'Product',
-                'price' => $item['price'],
-                'desc'  => 'Thank you for using PayPal',
-                'qty' => $item['quantity']
+                'price' => $cartItem->price,
+                'desc' => 'Thank you for using PayPal',
+                'qty' => $cartItem->quantity
             ];
-        }, $cart);
-
-        $data['invoice_id'] = 'ORD-' . strtoupper(uniqid());
-        $data['invoice_description'] = "Order #{$data['invoice_id']} Invoice";
-        $data['return_url'] = route('payment.success');
-        $data['cancel_url'] = route('payment.cancel');
-
-        // Calculate total
-        $total = 0;
-        foreach ($data['items'] as $item) {
-            $total += $item['price'] * $item['qty'];
+            $subtotal += $cartItem->price * $cartItem->quantity;
         }
 
-        $data['total'] = $total;
-        $couponDiscount = session('coupon')['value'] ?? 0;
-        $finalTotal = $total - $couponDiscount;
+        $shippingCost = 0;
+        if ($checkoutData['shipping_id']) {
+            $shipping = Shipping::find($checkoutData['shipping_id']);
+            $shippingCost = $shipping ? $shipping->price : 0;
+        }
 
-        // Ensure minimum amount for PayPal (usually $1.00)
+        $couponDiscount = session('coupon')['value'] ?? 0;
+        $finalTotal = $subtotal + $shippingCost - $couponDiscount;
+
         if ($finalTotal < 1) {
             return redirect()->back()->with('error', 'Order total must be at least $1.00');
         }
 
-        // Create order record first
-        $order = Order::create([
-            'order_number' => $data['invoice_id'],
-            'user_id' => auth()->user()->id,
-            'sub_total' => $total,
-            'coupon' => $couponDiscount,
-            'total_amount' => $finalTotal,
-            'quantity' => array_sum(array_column($data['items'], 'qty')),
-            'payment_method' => 'paypal',
-            'payment_status' => 'unpaid', // Use valid status
-            'status' => 'new', // Use valid status
-            'first_name' => auth()->user()->first_name ?? 'N/A',
-            'last_name' => auth()->user()->last_name ?? 'N/A',
-            'email' => auth()->user()->email,
-            'phone' => auth()->user()->phone ?? 'N/A',
-            'country' => 'N/A',
-            'address1' => 'N/A',
-        ]);
-
-        // Update cart items with order_id
-        Cart::where('user_id', auth()->user()->id)
-            ->where('order_id', null)
-            ->update(['order_id' => $order->id]);
-
-        // Store order_id in session for success callback
-        session(['order_id' => $order->id]);
+        $orderNumber = Order::generateOrderNumber();
 
         try {
+            DB::beginTransaction();
+
+            $order = Order::create([
+                'order_number' => $orderNumber,
+                'user_id' => auth()->user()->id,
+                'sub_total' => $subtotal,
+                'coupon' => $couponDiscount,
+                'total_amount' => $finalTotal,
+                'quantity' => $cart->sum('quantity'),
+                'payment_method' => Order::PAYMENT_METHOD_PAYPAL,
+                'payment_status' => Order::PAYMENT_STATUS_UNPAID,
+                'status' => Order::STATUS_NEW,
+                'first_name' => $checkoutData['first_name'],
+                'last_name' => $checkoutData['last_name'],
+                'email' => $checkoutData['email'],
+                'phone' => $checkoutData['phone'],
+                'country' => $checkoutData['country'],
+                'address1' => $checkoutData['address1'],
+                'address2' => $checkoutData['address2'] ?? null,
+                'post_code' => $checkoutData['post_code'] ?? null,
+                'shipping_id' => $checkoutData['shipping_id'] ?? null,
+            ]);
+
+            Cart::where('user_id', auth()->user()->id)
+                ->where('order_id', null)
+                ->update(['order_id' => $order->id]);
+
+            session(['paypal_order_id' => $order->id]);
+
             $provider = new PayPalClient;
-
-            // Get PayPal config and disable SSL verification for local development
-            $config = config('paypal');
-
-            Log::info('PayPal Config:', $config);
-
-            $provider->setApiCredentials($config);
-
+            $provider->setApiCredentials(config('paypal'));
             $paypalToken = $provider->getAccessToken();
 
             if (!$paypalToken) {
-                Log::error('Failed to get PayPal access token');
-                return redirect()->back()->with('error', 'PayPal authentication failed. Please check your credentials.');
+                throw new \Exception('Failed to get PayPal access token');
             }
-
-            Log::info('PayPal Token obtained successfully');
 
             $orderData = [
                 "intent" => "CAPTURE",
@@ -110,15 +101,15 @@ class PaypalController extends Controller
                 ],
                 "purchase_units" => [
                     [
-                        "reference_id" => $data['invoice_id'],
-                        "description" => $data['invoice_description'],
+                        "reference_id" => $orderNumber,
+                        "description" => "Order #{$orderNumber} Invoice",
                         "amount" => [
                             "currency_code" => "USD",
                             "value" => number_format($finalTotal, 2, '.', ''),
                             "breakdown" => [
                                 "item_total" => [
                                     "currency_code" => "USD",
-                                    "value" => number_format($total, 2, '.', '')
+                                    "value" => number_format($subtotal, 2, '.', '')
                                 ]
                             ]
                         ],
@@ -133,12 +124,18 @@ class PaypalController extends Controller
                                 "quantity" => (string)$item['qty'],
                                 "category" => "PHYSICAL_GOODS"
                             ];
-                        }, $data['items'])
+                        }, $items)
                     ]
                 ]
             ];
 
-            // Add discount if applicable
+            if ($shippingCost > 0) {
+                $orderData["purchase_units"][0]["amount"]["breakdown"]["shipping"] = [
+                    "currency_code" => "USD",
+                    "value" => number_format($shippingCost, 2, '.', '')
+                ];
+            }
+
             if ($couponDiscount > 0) {
                 $orderData["purchase_units"][0]["amount"]["breakdown"]["discount"] = [
                     "currency_code" => "USD",
@@ -146,118 +143,83 @@ class PaypalController extends Controller
                 ];
             }
 
-            Log::info('Creating PayPal order with data:', $orderData);
-
             $response = $provider->createOrder($orderData);
 
-            Log::info('PayPal Response:', $response);
-
-            if (isset($response['id']) && $response['id'] != null) {
-                // Store PayPal order ID for reference
+            if (isset($response['id']) && $response['id']) {
                 $order->update(['transaction_id' => $response['id']]);
+                DB::commit();
 
-                foreach ($response['links'] as $links) {
-                    if ($links['rel'] == 'approve') {
-                        Log::info('Redirecting to PayPal approval URL: ' . $links['href']);
-                        return redirect()->away($links['href']);
+                foreach ($response['links'] as $link) {
+                    if ($link['rel'] == 'approve') {
+                        return redirect()->away($link['href']);
                     }
                 }
 
-                Log::error('No approval link found in PayPal response');
-                return redirect()
-                    ->route('payment.cancel')
-                    ->with('error', 'PayPal approval link not found.');
-            } else {
-                Log::error('PayPal order creation failed:', $response);
-                return redirect()
-                    ->route('payment.cancel')
-                    ->with('error', 'Failed to create PayPal order: ' . ($response['message'] ?? 'Unknown error'));
+                throw new \Exception('No approval link found in PayPal response');
             }
+
+            throw new \Exception('Failed to create PayPal order: ' . ($response['message'] ?? 'Unknown error'));
         } catch (\Exception $e) {
-            Log::error('PayPal Error: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
+            DB::rollBack();
             return redirect()->back()->with('error', 'PayPal Error: ' . $e->getMessage());
+        }
+    }
+
+    public function success(Request $request)
+    {
+        if (!$request->has('token')) {
+            return redirect()->route('payment.cancel')->with('error', 'Invalid PayPal response. Missing payment token.');
+        }
+
+        try {
+            $provider = new PayPalClient;
+            $provider->setApiCredentials(config('paypal'));
+            $provider->getAccessToken();
+
+            $response = $provider->capturePaymentOrder($request['token']);
+
+            if (isset($response['status']) && $response['status'] == 'COMPLETED') {
+                $orderId = session()->get('paypal_order_id');
+                $order = $orderId ? Order::find($orderId) : Order::where('transaction_id', $request['token'])->first();
+
+                if ($order) {
+                    $order->update([
+                        'payment_status' => 'paid',
+                        'status' => 'process'
+                    ]);
+
+                    session()->forget(['cart', 'coupon', 'paypal_order_id', 'checkout_data']);
+                    return redirect()->route('home')->with('success', 'Payment completed successfully! Thank you for your purchase.');
+                }
+
+                return redirect()->route('payment.cancel')->with('error', 'Order not found.');
+            }
+
+            return redirect()->route('payment.cancel')->with('error', 'Payment was not completed. Status: ' . ($response['status'] ?? 'unknown'));
+        } catch (\Exception $e) {
+            return redirect()->route('payment.cancel')->with('error', 'Payment verification failed: ' . $e->getMessage());
         }
     }
 
     public function cancel(Request $request)
     {
-        Log::info('PayPal payment cancelled', ['request' => $request->all()]);
-
-        // Clean up the order if it exists - use valid status values
-        $orderId = session()->get('order_id');
+        $orderId = session()->get('paypal_order_id');
         if ($orderId) {
             try {
-                Order::where('id', $orderId)->update([
-                    'payment_status' => 'unpaid', // Use valid status instead of 'cancelled'
-                    'status' => 'new' // Use valid status instead of 'cancelled'
-                ]);
-                session()->forget('order_id');
+                $order = Order::find($orderId);
+                if ($order) {
+                    $order->update([
+                        'payment_status' => 'unpaid',
+                        'status' => 'cancelled'
+                    ]);
+                    Cart::where('order_id', $orderId)->update(['order_id' => null]);
+                }
+                session()->forget(['paypal_order_id', 'checkout_data']);
             } catch (\Exception $e) {
-                Log::error('Error updating order status: ' . $e->getMessage());
+                // Handle exception silently
             }
         }
 
         return redirect()->route('home')->with('error', 'Your PayPal payment has been cancelled. You can try again or choose a different payment method.');
-    }
-
-    public function success(Request $request)
-    {
-        Log::info('PayPal success callback', ['request' => $request->all()]);
-
-        if (!$request->has('token')) {
-            Log::error('No PayPal token in success callback');
-            return redirect()
-                ->route('payment.cancel')
-                ->with('error', 'Invalid PayPal response. Missing payment token.');
-        }
-
-        try {
-            $provider = new PayPalClient;
-
-            // Get PayPal config and disable SSL verification for local development
-            $config = config('paypal');
-
-            $provider->setApiCredentials($config);
-
-            $provider->getAccessToken();
-
-            $response = $provider->capturePaymentOrder($request['token']);
-
-            Log::info('PayPal capture response:', $response);
-
-            if (isset($response['status']) && $response['status'] == 'COMPLETED') {
-                // Update order status
-                $orderId = session()->get('order_id');
-                if ($orderId) {
-                    Order::where('id', $orderId)->update([
-                        'payment_status' => 'paid',
-                        'status' => 'process'
-                    ]);
-
-                    Log::info('Order updated successfully', ['order_id' => $orderId]);
-                } else {
-                    Log::warning('No order ID found in session during success callback');
-                }
-
-                // Clear sessions
-                session()->forget(['cart', 'coupon', 'order_id']);
-
-                return redirect()->route('home')->with('success', 'Payment completed successfully! Thank you for your purchase.');
-            } else {
-                Log::error('PayPal payment not completed', ['status' => $response['status'] ?? 'unknown']);
-                return redirect()
-                    ->route('payment.cancel')
-                    ->with('error', 'Payment was not completed. Status: ' . ($response['status'] ?? 'unknown'));
-            }
-        } catch (\Exception $e) {
-            Log::error('PayPal success callback error: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
-            return redirect()
-                ->route('payment.cancel')
-                ->with('error', 'Payment verification failed: ' . $e->getMessage());
-        }
     }
 }

@@ -46,7 +46,7 @@
                             <div class="col-lg-6 col-md-6 col-12">
                                 <div class="form-group">
                                     <label>Last Name<span>*</span></label>
-                                    <input type="text" name="last_name" placeholder="" value="{{old('lat_name')}}">
+                                    <input type="text" name="last_name" placeholder="" value="{{old('last_name')}}">
                                     @error('last_name')
                                     <span class='text-danger'>{{$message}}</span>
                                     @enderror
@@ -410,7 +410,8 @@
                                     {{-- <label class="checkbox-inline" for="1"><input name="updates" id="1" type="checkbox"> Check Payments</label> --}}
                                     <form-group>
                                         <input name="payment_method" type="radio" value="cod"> <label> Cash On Delivery</label><br>
-                                        <input name="payment_method" type="radio" value="paypal"> <label> PayPal</label>
+                                        <input name="payment_method" type="radio" value="paypal"> <label> PayPal</label><br>
+                                        <input name="payment_method" type="radio" value="stripe"> <label> Stripe</label>
                                     </form-group>
 
                                 </div>
@@ -604,6 +605,49 @@
             let coupon = parseFloat($('.coupon_price').data('price')) || 0;
             // alert(coupon);
             $('#order_total_price span').text('$' + (subtotal + cost - coupon).toFixed(2));
+        });
+
+
+        // Handle payment method selection
+        $('input[name="payment_method"]').change(function() {
+            var selectedMethod = $(this).val();
+
+            // Update button text based on payment method
+            var buttonText = 'Proceed to Checkout';
+            switch (selectedMethod) {
+                case 'paypal':
+                    buttonText = 'Pay with PayPal';
+                    break;
+                case 'stripe':
+                    buttonText = 'Pay with Card';
+                    break;
+                case 'cod':
+                    buttonText = 'Place Order';
+                    break;
+            }
+
+            $('.get-button button[type="submit"]').text(buttonText);
+        });
+
+        // Form submission handling
+        $('.form').on('submit', function(e) {
+            var selectedPaymentMethod = $('input[name="payment_method"]:checked').val();
+
+            if (!selectedPaymentMethod) {
+                e.preventDefault();
+                alert('Please select a payment method');
+                return false;
+            }
+
+            // Show loading state
+            var submitBtn = $(this).find('button[type="submit"]');
+            var originalText = submitBtn.text();
+            submitBtn.prop('disabled', true).text('Processing...');
+
+            // Re-enable button after 30 seconds as fallback
+            setTimeout(function() {
+                submitBtn.prop('disabled', false).text(originalText);
+            }, 30000);
         });
 
     });

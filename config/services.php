@@ -1,5 +1,7 @@
 <?php
 
+use App\User;
+
 return [
 
     /*
@@ -33,16 +35,24 @@ return [
         'client_id' => 'YOUR_GITHUB_API', //Github API
         'client_secret' => 'YOUR_GITHUB_SECRET', //Github Secret
         'redirect' => 'http://localhost:8000/login/github/callback',
-     ],
-     'google' => [
+    ],
+    'google' => [
         'client_id' => 'YOUR_GOOGLE_API', //Google API
         'client_secret' => 'YOUR_GOOGLE_SECRET', //Google Secret
         'redirect' => 'http://localhost:8000/login/google/callback',
-     ],
-     'facebook' => [
+    ],
+    'facebook' => [
         'client_id' => 'YOUR_FACEBOOK_API', //Facebook API
         'client_secret' => 'YOUR_FACEBOK_SECRET', //Facebook Secret
         'redirect' => 'http://localhost:8000/login/facebook/callback',
-     ],
-
+    ],
+    'stripe' => [
+        'model' => User::class,
+        'key' => env('STRIPE_KEY'),
+        'secret' => env('STRIPE_SECRET'),
+        'webhook' => [
+            'secret' => env('STRIPE_WEBHOOK_SECRET'),
+            'tolerance' => env('STRIPE_WEBHOOK_TOLERANCE', 300),
+        ],
+    ],
 ];

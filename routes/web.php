@@ -18,6 +18,7 @@ use App\Http\Controllers\{
     PayPalController,
     PostCommentController,
     ProductReviewController,
+    StripeController,
     WishlistController
 };
 use UniSharp\LaravelFilemanager\Lfm;
@@ -108,6 +109,13 @@ Route::post('/coupon-apply', [CouponController::class, 'applyCoupon'])->name('co
 Route::get('/payment', [PayPalController::class, 'payment'])->name('payment');
 Route::get('/cancel', [PayPalController::class, 'cancel'])->name('payment.cancel');
 Route::get('/payment/success', [PayPalController::class, 'success'])->name('payment.success');
+
+// Stripe Payment Routes
+Route::get('stripe/payment', [App\Http\Controllers\StripeController::class, 'payment'])->name('stripe.payment');
+Route::post('stripe/payment', [App\Http\Controllers\StripeController::class, 'payment'])->name('stripe.payment.post');
+Route::get('stripe/success', [App\Http\Controllers\StripeController::class, 'success'])->name('stripe.success');
+Route::get('stripe/cancel', [App\Http\Controllers\StripeController::class, 'cancel'])->name('stripe.cancel');
+Route::post('stripe/webhook', [App\Http\Controllers\StripeController::class, 'webhook'])->name('stripe.webhook');
 
 // Admin
 Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
