@@ -18,6 +18,8 @@ use App\Http\Controllers\{
     PayPalController,
     PostCommentController,
     ProductReviewController,
+    RazorpayController,
+    SquareController,
     StripeController,
     WishlistController
 };
@@ -111,11 +113,24 @@ Route::get('/cancel', [PayPalController::class, 'cancel'])->name('payment.cancel
 Route::get('/payment/success', [PayPalController::class, 'success'])->name('payment.success');
 
 // Stripe Payment Routes
-Route::get('stripe/payment', [App\Http\Controllers\StripeController::class, 'payment'])->name('stripe.payment');
-Route::post('stripe/payment', [App\Http\Controllers\StripeController::class, 'payment'])->name('stripe.payment.post');
-Route::get('stripe/success', [App\Http\Controllers\StripeController::class, 'success'])->name('stripe.success');
-Route::get('stripe/cancel', [App\Http\Controllers\StripeController::class, 'cancel'])->name('stripe.cancel');
-Route::post('stripe/webhook', [App\Http\Controllers\StripeController::class, 'webhook'])->name('stripe.webhook');
+Route::get('stripe/payment', [StripeController::class, 'payment'])->name('stripe.payment');
+Route::post('stripe/payment', [StripeController::class, 'payment'])->name('stripe.payment.post');
+Route::get('stripe/success', [StripeController::class, 'success'])->name('stripe.success');
+Route::get('stripe/cancel', [StripeController::class, 'cancel'])->name('stripe.cancel');
+Route::post('stripe/webhook', [StripeController::class, 'webhook'])->name('stripe.webhook');
+
+// Razorpay routes
+Route::post('/razorpay/success', [RazorpayController::class, 'success'])->name('razorpay.success');
+Route::get('/payment/cancel', [RazorpayController::class, 'cancel'])->name('payment.cancel');
+Route::post('/razorpay/webhook', [RazorpayController::class, 'webhook'])->name('razorpay.webhook');
+
+// Square Payment Routes
+Route::prefix('square')->name('square.')->group(function () {
+    Route::post('/process-payment', [SquareController::class, 'processPayment'])->name('process');
+    Route::get('/success', [SquareController::class, 'success'])->name('success');
+    Route::get('/cancel', [SquareController::class, 'cancel'])->name('cancel');
+    Route::post('/webhook', [SquareController::class, 'webhook'])->name('webhook');
+});
 
 // Admin
 Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {

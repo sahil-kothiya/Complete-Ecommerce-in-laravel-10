@@ -88,6 +88,7 @@ class OrderController extends Controller
         return match ($validated['payment_method']) {
             Order::PAYMENT_METHOD_PAYPAL => redirect()->route('payment'),
             Order::PAYMENT_METHOD_STRIPE => app(StripeController::class)->payment(),
+            Order::PAYMENT_METHOD_SQUARE => app(SquareController::class)->payment(),
             Order::PAYMENT_METHOD_COD => $this->processCODOrder($validated),
             default => back()->with('error', 'Invalid payment method selected.')
         };

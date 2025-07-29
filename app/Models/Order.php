@@ -54,6 +54,7 @@ class Order extends Model
     const PAYMENT_METHOD_COD = 'cod';
     const PAYMENT_METHOD_PAYPAL = 'paypal';
     const PAYMENT_METHOD_STRIPE = 'stripe';
+    const PAYMENT_METHOD_SQUARE = 'square';
 
     /**
      * Get all valid statuses
@@ -88,6 +89,7 @@ class Order extends Model
             self::PAYMENT_METHOD_COD,
             self::PAYMENT_METHOD_PAYPAL,
             self::PAYMENT_METHOD_STRIPE,
+            self::PAYMENT_METHOD_SQUARE,
         ];
     }
 
