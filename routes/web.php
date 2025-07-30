@@ -13,6 +13,7 @@ use App\Http\Controllers\{
     FrontendController,
     HomeController,
     MessageController,
+    MollieController,
     NotificationController,
     OrderController,
     PayPalController,
@@ -125,12 +126,17 @@ Route::get('/payment/cancel', [RazorpayController::class, 'cancel'])->name('paym
 Route::post('/razorpay/webhook', [RazorpayController::class, 'webhook'])->name('razorpay.webhook');
 
 // Square Payment Routes
-Route::prefix('square')->name('square.')->group(function () {
-    Route::post('/process-payment', [SquareController::class, 'processPayment'])->name('process');
-    Route::get('/success', [SquareController::class, 'success'])->name('success');
-    Route::get('/cancel', [SquareController::class, 'cancel'])->name('cancel');
-    Route::post('/webhook', [SquareController::class, 'webhook'])->name('webhook');
-});
+Route::get('square/payment', [SquareController::class, 'payment'])->name('square.payment');
+Route::post('square/payment', [SquareController::class, 'processPayment'])->name('square.payment.post');
+Route::get('square/success', [SquareController::class, 'success'])->name('square.success');
+Route::get('square/cancel', [SquareController::class, 'cancel'])->name('square.cancel');
+Route::post('square/webhook', [SquareController::class, 'webhook'])->name('square.webhook');
+
+// Mollie payment routes
+Route::get('/mollie/payment', [MollieController::class, 'payment'])->name('mollie.payment');
+Route::get('/mollie/success', [MollieController::class, 'success'])->name('mollie.success');
+Route::get('/mollie/cancel', [MollieController::class, 'cancel'])->name('mollie.cancel');
+Route::post('/mollie/webhook', [MollieController::class, 'webhook'])->name('mollie.webhook');
 
 // Admin
 Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {

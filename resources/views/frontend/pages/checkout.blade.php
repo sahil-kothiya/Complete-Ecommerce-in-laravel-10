@@ -412,6 +412,7 @@
                                         <input name="payment_method" type="radio" value="cod"> <label> Cash On Delivery</label><br>
                                         <input name="payment_method" type="radio" value="paypal"> <label> PayPal</label><br>
                                         <input name="payment_method" type="radio" value="stripe"> <label> Stripe</label><br>
+                                        <input name="payment_method" type="radio" value="mollie"> <label> Mollie</label><br>
                                         <input name="payment_method" type="radio" value="square"> <label> Square</label>
                                     </form-group>
 

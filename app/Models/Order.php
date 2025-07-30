@@ -55,6 +55,7 @@ class Order extends Model
     const PAYMENT_METHOD_PAYPAL = 'paypal';
     const PAYMENT_METHOD_STRIPE = 'stripe';
     const PAYMENT_METHOD_SQUARE = 'square';
+    const PAYMENT_METHOD_MOLLIE = 'mollie';
 
     /**
      * Get all valid statuses
@@ -90,6 +91,7 @@ class Order extends Model
             self::PAYMENT_METHOD_PAYPAL,
             self::PAYMENT_METHOD_STRIPE,
             self::PAYMENT_METHOD_SQUARE,
+            self::PAYMENT_METHOD_MOLLIE,
         ];
     }
 
@@ -142,6 +144,8 @@ class Order extends Model
             self::PAYMENT_METHOD_COD => 'Cash on Delivery',
             self::PAYMENT_METHOD_PAYPAL => 'PayPal',
             self::PAYMENT_METHOD_STRIPE => 'Stripe',
+            self::PAYMENT_METHOD_SQUARE => 'Square',
+            self::PAYMENT_METHOD_MOLLIE => 'Mollie',
             default => ucfirst($this->payment_method)
         };
     }
@@ -316,5 +320,15 @@ class Order extends Model
                 }
             }
         });
+    }
+
+    /**
+     * Check if order can be refunded (for Mollie integration)
+     */
+    public function canBeRefunded(): bool
+    {
+        return $this->payment_status === self::PAYMENT_STATUS_PAID
+            && in_array($this->payment_method, [self::PAYMENT_METHOD_MOLLIE, self::PAYMENT_METHOD_STRIPE])
+            && $this->transaction_id;
     }
 }

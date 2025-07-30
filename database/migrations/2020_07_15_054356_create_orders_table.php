@@ -22,7 +22,7 @@ class CreateOrdersTable extends Migration
             $table->decimal('coupon')->nullable();
             $table->decimal('total_amount');
             $table->integer('quantity');
-            $table->enum('payment_method', ['cod', 'paypal', 'stripe', 'square'])->default('cod');
+            $table->enum('payment_method', ['cod', 'paypal', 'stripe', 'razorpay', 'square', 'mollie'])->default('cod');
             $table->enum('payment_status', ['paid', 'unpaid'])->default('unpaid');
             $table->enum('status', ['new', 'process', 'delivered', 'cancel'])->default('new');
             $table->string('transaction_id')->nullable(); // For PayPal/Stripe transaction IDs

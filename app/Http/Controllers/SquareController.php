@@ -7,226 +7,249 @@ use App\Models\Cart;
 use App\Models\Product;
 use App\Models\Order;
 use Square\SquareClient;
+use Square\Environment;
+use Square\Exceptions\ApiException;
 use Square\Models\CreatePaymentRequest;
 use Square\Models\Money;
-use Square\Exceptions\ApiException;
-use Illuminate\Support\Facades\DB;
+use Square\Utils\WebhooksHelper;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
-use Square\Environments;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use Helper;
 
 class SquareController extends Controller
 {
-    private $client;
+    protected $client;
 
     public function __construct()
     {
-        dd(Environments::SANDBOX); // Should output "sandbox"
+        // Get configuration values
+        $accessToken = config('services.square.access_token');
+        $environment = config('services.square.environment', 'sandbox');
 
-        $environment = config('services.square.environment') === 'production'
-            ? Environments::PRODUCTION
-            : Environments::SANDBOX;
+        // Validate access token
+        if (empty($accessToken)) {
+            throw new \InvalidArgumentException('Square access token is required. Please set SQUARE_ACCESS_TOKEN in your .env file.');
+        }
 
-        // Fixed constructor - pass array with proper keys
-        $this->client = new SquareClient([
-            'accessToken' => config('services.square.access_token'),
-            'environment' => $environment,
-            'customUrl' => '', // Optional
-            'squareVersion' => '2023-10-18' // Use latest API version
+        // Set environment - use Environment constants from Square SDK
+        $squareEnvironment = $environment === 'production'
+            ? Environment::PRODUCTION
+            : Environment::SANDBOX;
+
+        // Initialize Square client with proper configuration
+        $this->client = new SquareClient(options: [
+            'accessToken' => $accessToken,
+            'environment' => $squareEnvironment,
         ]);
     }
 
     public function payment(Request $request = null)
     {
-        $checkoutData = session('checkout_data') ?? $request?->all();
+        // Get checkout data from session
+        $checkoutData = session('checkout_data');
         if (!$checkoutData) {
-            return redirect()->back()->with('error', 'Checkout data not found.');
+            return redirect()->back()->with('error', 'Checkout data not found. Please try again.');
         }
 
-        $cart = Cart::where('user_id', auth()->user()->id)
-            ->where('order_id', null)
-            ->get()
-            ->toArray();
+        // Get cart items
+        $cart = Cart::where('user_id', Auth::id())
+            ->whereNull('order_id')
+            ->get();
 
-        if (empty($cart)) {
+        if ($cart->isEmpty()) {
             return redirect()->back()->with('error', 'Your cart is empty!');
         }
 
-        $subtotal = 0;
-        $items = [];
-        foreach ($cart as $item) {
-            $product = Product::find($item['product_id']);
-            $subtotal += $item['price'] * $item['quantity'];
-            $items[] = [
-                'name' => $product->title ?? 'Product',
-                'price' => $item['price'],
-                'quantity' => $item['quantity']
-            ];
-        }
-
+        // Calculate totals
+        $subtotal = Helper::totalCartPrice();
         $couponDiscount = session('coupon')['value'] ?? 0;
-        $finalTotal = $subtotal - $couponDiscount;
+        $shippingCost = $this->calculateShippingCost($checkoutData['shipping_id'] ?? null);
+        $finalTotal = $subtotal + $shippingCost - $couponDiscount;
 
+        // Ensure minimum amount for Square (usually $1.00)
         if ($finalTotal < 1.00) {
             return redirect()->back()->with('error', 'Order total must be at least $1.00');
         }
 
-        // Square uses cents, so multiply by 100
+        // Convert to cents for Square (Square uses base currency units)
         $amountInCents = round($finalTotal * 100);
+
+        // Prepare items for display
+        $items = [];
+        foreach ($cart as $item) {
+            $items[] = [
+                'name' => $item->product->title ?? 'Product',
+                'price' => $item->price,
+                'quantity' => $item->quantity
+            ];
+        }
 
         try {
             DB::beginTransaction();
 
-            $orderNumber = Order::generateOrderNumber();
+            // Create order record
             $order = Order::create([
-                'order_number' => $orderNumber,
-                'user_id' => auth()->user()->id,
+                'user_id' => Auth::id(),
                 'sub_total' => $subtotal,
                 'coupon' => $couponDiscount,
                 'total_amount' => $finalTotal,
-                'quantity' => array_sum(array_column($items, 'quantity')),
-                'payment_method' => 'square',
-                'payment_status' => 'unpaid',
-                'status' => 'new',
-                'first_name' => $checkoutData['first_name'] ?? auth()->user()->first_name ?? 'N/A',
-                'last_name' => $checkoutData['last_name'] ?? auth()->user()->last_name ?? 'N/A',
-                'email' => $checkoutData['email'] ?? auth()->user()->email,
-                'phone' => $checkoutData['phone'] ?? auth()->user()->phone ?? 'N/A',
-                'country' => $checkoutData['country'] ?? 'N/A',
-                'address1' => $checkoutData['address1'] ?? 'N/A',
+                'quantity' => Helper::cartCount(),
+                'payment_method' => Order::PAYMENT_METHOD_SQUARE,
+                'payment_status' => Order::PAYMENT_STATUS_UNPAID,
+                'status' => Order::STATUS_NEW,
+                'first_name' => $checkoutData['first_name'],
+                'last_name' => $checkoutData['last_name'],
+                'email' => $checkoutData['email'],
+                'phone' => $checkoutData['phone'],
+                'country' => $checkoutData['country'],
+                'address1' => $checkoutData['address1'],
                 'address2' => $checkoutData['address2'] ?? null,
                 'post_code' => $checkoutData['post_code'] ?? null,
                 'shipping_id' => $checkoutData['shipping_id'] ?? null,
             ]);
 
-            Cart::where('user_id', auth()->user()->id)
-                ->where('order_id', null)
+            // Update cart items with order_id
+            Cart::where('user_id', Auth::id())
+                ->whereNull('order_id')
                 ->update(['order_id' => $order->id]);
 
-            DB::commit();
-
+            // Store order_id in session for payment processing
             session(['square_order_id' => $order->id]);
+
+            DB::commit();
 
             return view('frontend.pages.square-checkout', [
                 'order' => $order,
                 'items' => $items,
-                'amountInCents' => $amountInCents,
+                'amount' => $amountInCents,
                 'applicationId' => config('services.square.application_id'),
                 'locationId' => config('services.square.location_id'),
-                'environment' => config('services.square.environment')
+                'environment' => config('services.square.environment', 'sandbox'),
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Square Payment Error: ' . $e->getMessage());
-            return redirect()->back()->with('error', 'Payment Error: ' . $e->getMessage());
+            Log::error('Square Payment Error: ' . $e->getMessage(), [
+                'user_id' => Auth::id(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return redirect()->back()->with('error', 'Payment initialization failed. Please try again.');
         }
     }
 
     public function processPayment(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'sourceId' => 'required|string',
         ]);
 
+        $sourceId = $validated['sourceId'];
         $orderId = session('square_order_id');
+
         if (!$orderId) {
-            return response()->json(['error' => 'Order not found'], 400);
+            return response()->json([
+                'success' => false,
+                'error' => 'Order session expired. Please try again.'
+            ], 400);
         }
 
         $order = Order::find($orderId);
         if (!$order) {
-            return response()->json(['error' => 'Order not found'], 400);
+            return response()->json([
+                'success' => false,
+                'error' => 'Order not found.'
+            ], 404);
         }
 
         try {
+            $amountInCents = round($order->total_amount * 100);
+
+            // Create Money object
+            $amountMoney = new Money();
+            $amountMoney->setAmount($amountInCents);
+            $amountMoney->setCurrency('USD');
+
+            // Create payment request
+            $createPaymentRequest = new CreatePaymentRequest(
+                $sourceId, // source_id
+                uniqid(), // idempotency_key
+                $amountMoney
+            );
+
+            // Set location ID if available
+            $locationId = config('services.square.location_id');
+            if ($locationId) {
+                $createPaymentRequest->setLocationId($locationId);
+            }
+
+            // Make the payment request
             $paymentsApi = $this->client->getPaymentsApi();
-
-            // Create Money object properly
-            $money = new Money();
-            $money->setAmount(round($order->total_amount * 100)); // Convert to cents
-            $money->setCurrency('USD');
-
-            // Create payment request with proper idempotency key
-            $idempotencyKey = Str::uuid()->toString();
-            $createPaymentRequest = new CreatePaymentRequest($request->sourceId, $idempotencyKey);
-            $createPaymentRequest->setAmountMoney($money);
-            $createPaymentRequest->setLocationId(config('services.square.location_id'));
-            $createPaymentRequest->setNote("Order #{$order->order_number}");
-
-            // Optional: Add reference ID for tracking
-            $createPaymentRequest->setReferenceId($order->order_number);
-
             $response = $paymentsApi->createPayment($createPaymentRequest);
 
             if ($response->isSuccess()) {
                 $payment = $response->getResult()->getPayment();
 
-                DB::beginTransaction();
-
                 $order->update([
-                    'payment_status' => 'paid',
-                    'status' => 'process',
-                    'transaction_id' => $payment->getId()
+                    'transaction_id' => $payment->getId(),
+                    'payment_status' => Order::PAYMENT_STATUS_PAID,
+                    'status' => Order::STATUS_PROCESS
                 ]);
 
-                DB::commit();
-
+                // Clear sessions
                 session()->forget(['cart', 'coupon', 'square_order_id', 'checkout_data']);
+
+                Log::info('Square payment successful', [
+                    'order_id' => $order->id,
+                    'payment_id' => $payment->getId(),
+                    'user_id' => Auth::id()
+                ]);
 
                 return response()->json([
                     'success' => true,
-                    'payment_id' => $payment->getId(),
-                    'redirect_url' => route('square.success', ['payment_id' => $payment->getId()])
+                    'redirect_url' => route('home')
                 ]);
             } else {
                 $errors = $response->getErrors();
-                $errorMessage = 'Payment failed';
-                if (!empty($errors)) {
-                    $errorMessage .= ': ' . $errors[0]->getDetail();
-                }
-                Log::error('Square Payment Failed: ' . $errorMessage);
+                Log::error('Square payment failed', [
+                    'order_id' => $order->id,
+                    'errors' => $errors,
+                    'user_id' => Auth::id()
+                ]);
 
-                return response()->json(['error' => $errorMessage], 400);
+                return response()->json([
+                    'success' => false,
+                    'error' => $this->formatSquareErrors($errors)
+                ], 400);
             }
         } catch (ApiException $e) {
-            Log::error('Square API Exception: ' . $e->getMessage());
-            return response()->json(['error' => 'Payment processing failed: ' . $e->getMessage()], 500);
+            Log::error('Square API Error: ' . $e->getMessage(), [
+                'order_id' => $order->id,
+                'response_body' => $e->getResponseBody(),
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Payment processing failed. Please try again.'
+            ], 500);
         } catch (\Exception $e) {
-            Log::error('Square Payment Exception: ' . $e->getMessage());
-            return response()->json(['error' => 'Payment processing failed'], 500);
+            Log::error('General Payment Error: ' . $e->getMessage(), [
+                'order_id' => $order->id,
+                'user_id' => Auth::id(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'An unexpected error occurred. Please try again.'
+            ], 500);
         }
     }
 
     public function success(Request $request)
     {
-        $paymentId = $request->get('payment_id');
-
-        if (!$paymentId) {
-            return redirect()->route('home')->with('error', 'Invalid payment response.');
-        }
-
-        try {
-            $paymentsApi = $this->client->getPaymentsApi();
-            $response = $paymentsApi->getPayment($paymentId);
-
-            if ($response->isSuccess()) {
-                $payment = $response->getResult()->getPayment();
-
-                if ($payment->getStatus() === 'COMPLETED') {
-                    return redirect()->route('home')->with('success', 'Payment completed successfully! Thank you for your purchase.');
-                } else {
-                    return redirect()->route('square.cancel')->with('error', 'Payment was not completed. Status: ' . $payment->getStatus());
-                }
-            } else {
-                return redirect()->route('square.cancel')->with('error', 'Payment verification failed.');
-            }
-        } catch (ApiException $e) {
-            Log::error('Square Payment Verification Failed: ' . $e->getMessage());
-            return redirect()->route('square.cancel')->with('error', 'Payment verification failed.');
-        } catch (\Exception $e) {
-            Log::error('Square Payment Verification Exception: ' . $e->getMessage());
-            return redirect()->route('square.cancel')->with('error', 'Payment verification failed.');
-        }
+        return redirect()->route('home')
+            ->with('success', 'Payment completed successfully! Thank you for your purchase.');
     }
 
     public function cancel(Request $request)
@@ -235,101 +258,160 @@ class SquareController extends Controller
         if ($orderId) {
             try {
                 Order::where('id', $orderId)->update([
-                    'payment_status' => 'unpaid',
-                    'status' => 'new'
+                    'payment_status' => Order::PAYMENT_STATUS_UNPAID,
+                    'status' => Order::STATUS_NEW
                 ]);
                 session()->forget('square_order_id');
             } catch (\Exception $e) {
-                Log::error('Square Cancel Error: ' . $e->getMessage());
+                Log::error('Error updating order status on cancellation: ' . $e->getMessage());
             }
         }
 
-        return redirect()->route('home')->with('error', 'Your Square payment has been cancelled. You can try again or choose a different payment method.');
+        return redirect()->route('home')
+            ->with('error', 'Your Square payment has been cancelled. You can try again or choose a different payment method.');
     }
 
     public function webhook(Request $request)
     {
         $payload = $request->getContent();
-        $signature = $request->header('X-Square-Signature');
-        $webhookSecret = config('services.square.webhook.secret');
+        $signatureHeader = $request->header('x-square-hmacsha256-signature');
+        $signatureKey = config('services.square.webhook_signature_key');
+        $notificationUrl = config('services.square.webhook_url');
 
-        // Verify webhook signature
-        if (!$this->verifyWebhookSignature($payload, $signature, $webhookSecret)) {
-            Log::warning('Square webhook signature verification failed');
-            return response('Invalid signature', 400);
-        }
+        // Verify webhook signature if signature key is configured
+        if ($signatureKey && $notificationUrl) {
+            try {
+                $isValidSignature = WebhooksHelper::isValidWebhookEventSignature(
+                    $payload,
+                    $signatureHeader,
+                    $signatureKey,
+                    $notificationUrl
+                );
 
-        $event = json_decode($payload, true);
-
-        if (!$event || !isset($event['type'])) {
-            Log::warning('Invalid Square webhook payload');
-            return response('Invalid payload', 400);
+                if (!$isValidSignature) {
+                    Log::warning('Invalid Square webhook signature received');
+                    return response('Invalid signature', 401);
+                }
+            } catch (\Exception $e) {
+                Log::error('Square webhook signature verification failed: ' . $e->getMessage());
+                return response('Signature verification failed', 401);
+            }
         }
 
         try {
-            switch ($event['type']) {
+            $event = json_decode($payload, true);
+
+            if (!$event || !isset($event['type'])) {
+                Log::warning('Invalid Square webhook payload received');
+                return response('Invalid payload', 400);
+            }
+
+            Log::info('Square webhook received', [
+                'event_type' => $event['type'],
+                'merchant_id' => $event['merchant_id'] ?? 'unknown'
+            ]);
+
+            $eventType = $event['type'];
+
+            switch ($eventType) {
+                case 'payment.created':
                 case 'payment.updated':
-                    if (isset($event['data']['object']['payment'])) {
-                        $this->handlePaymentUpdated($event['data']['object']['payment']);
-                    }
+                    $this->handlePaymentEvent($event);
                     break;
                 default:
-                    Log::info('Unhandled Square webhook event type: ' . $event['type']);
-                    break;
+                    Log::info('Received unhandled Square event type: ' . $eventType);
             }
+
+            return response('Success', 200);
         } catch (\Exception $e) {
             Log::error('Square webhook processing error: ' . $e->getMessage());
-            return response('Processing error', 500);
+            return response('Webhook error', 500);
         }
-
-        return response('Success', 200);
     }
 
-    private function verifyWebhookSignature(string $payload, ?string $signature, string $secret): bool
+    /**
+     * Handle payment events from Square webhook
+     */
+    private function handlePaymentEvent(array $event): void
     {
-        if (!$signature) {
-            return false;
-        }
+        $payment = $event['data']['object']['payment'] ?? null;
 
-        $expectedSignature = base64_encode(hash_hmac('sha1', $payload, $secret, true));
-        return hash_equals($expectedSignature, $signature);
-    }
-
-    private function handlePaymentUpdated(array $payment): void
-    {
-        if (!isset($payment['id'])) {
-            Log::warning('Payment updated webhook missing payment ID');
+        if (!$payment || !isset($payment['id'])) {
+            Log::warning('Invalid payment data in Square webhook event');
             return;
         }
 
         $order = Order::where('transaction_id', $payment['id'])->first();
 
         if (!$order) {
-            Log::warning('Order not found for payment ID: ' . $payment['id']);
+            Log::warning('Order not found for Square payment ID: ' . $payment['id']);
             return;
         }
 
-        try {
-            DB::beginTransaction();
+        $status = $payment['status'] ?? '';
 
-            if ($payment['status'] === 'COMPLETED') {
-                $order->update([
-                    'payment_status' => 'paid',
-                    'status' => 'process'
-                ]);
-                Log::info('Order payment completed: ' . $order->order_number);
-            } elseif ($payment['status'] === 'FAILED') {
-                $order->update([
-                    'payment_status' => 'unpaid',
-                    'status' => 'new'
-                ]);
-                Log::info('Order payment failed: ' . $order->order_number);
-            }
+        switch ($status) {
+            case 'COMPLETED':
+                if ($order->payment_status !== Order::PAYMENT_STATUS_PAID) {
+                    $order->update([
+                        'payment_status' => Order::PAYMENT_STATUS_PAID,
+                        'status' => Order::STATUS_PROCESS
+                    ]);
+                    Log::info('Order payment confirmed via Square webhook', ['order_id' => $order->id]);
+                }
+                break;
 
-            DB::commit();
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error updating order from webhook: ' . $e->getMessage());
+            case 'FAILED':
+            case 'CANCELED':
+                $order->update([
+                    'payment_status' => Order::PAYMENT_STATUS_UNPAID,
+                    'status' => Order::STATUS_NEW
+                ]);
+                Log::info('Order payment failed via Square webhook', [
+                    'order_id' => $order->id,
+                    'status' => $status
+                ]);
+                break;
+
+            default:
+                Log::info('Unhandled Square payment status via webhook', [
+                    'order_id' => $order->id,
+                    'status' => $status
+                ]);
         }
+    }
+
+    /**
+     * Calculate shipping cost
+     */
+    private function calculateShippingCost(?string $shippingId): float
+    {
+        if (!$shippingId) {
+            return 0.0;
+        }
+
+        $shipping = \App\Models\Shipping::find($shippingId);
+        return $shipping ? (float) $shipping->price : 0.0;
+    }
+
+    /**
+     * Format Square errors for user display
+     */
+    private function formatSquareErrors(array $errors): string
+    {
+        if (empty($errors)) {
+            return 'Unknown payment error occurred.';
+        }
+
+        $errorMessages = [];
+        foreach ($errors as $error) {
+            if (isset($error['detail'])) {
+                $errorMessages[] = $error['detail'];
+            } elseif (isset($error['code'])) {
+                $errorMessages[] = $error['code'];
+            }
+        }
+
+        return implode('. ', $errorMessages);
     }
 }
