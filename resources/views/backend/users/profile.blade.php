@@ -25,7 +25,7 @@
                         @if($profile->photo)
                         <img class="card-img-top img-fluid roundend-circle mt-4" style="border-radius:50%;height:80px;width:80px;margin:auto;" src="{{$profile->photo}}" alt="profile picture">
                         @else
-                        <img class="card-img-top img-fluid roundend-circle mt-4" style="border-radius:50%;height:80px;width:80px;margin:auto;" src="{{asset('backend/img/avatar.webp')}}" alt="profile picture">
+                        <img class="card-img-top img-fluid roundend-circle mt-4" style="border-radius:50%;height:80px;width:80px;margin:auto;" src="{{secure_asset('backend/img/avatar.webp')}}" alt="profile picture">
                         @endif
                     </div>
                     <div class="card-body mt-4 ml-2">
@@ -112,7 +112,7 @@
     }
 
     .image {
-        background:url('{{asset(' backend/img/background.jpg')}}');
+        background:url('{{secure_asset(' backend/img/background.jpg')}}');
         height: 150px;
         background-position: center;
         background-attachment: cover;

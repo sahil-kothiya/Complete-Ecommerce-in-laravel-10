@@ -7,7 +7,7 @@
         @foreach(Helper::getAllProductFromCart() as $data)
         @php
         $firstImage = $data->product->images->first(); // Get first related image
-        $imagePath = $firstImage ? asset($firstImage->image_path) : asset('default.jpg'); // Use asset() for full path
+        $imagePath = $firstImage ? asset($firstImage->image_path) : secure_asset('default.jpg'); // Use asset() for full path
         @endphp
         <li>
             <a href="{{ route('cart-delete', $data->id) }}" class="remove" title="Remove this item"><i class="fa fa-remove"></i></a>

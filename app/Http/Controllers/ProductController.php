@@ -69,7 +69,7 @@ class ProductController extends Controller
 
         $webpPaths = [];
         foreach ($rawPaths as $index => $url) {
-            $relativePath = str_replace(asset('storage') . '/', '', $url);
+            $relativePath = str_replace(secure_asset('storage') . '/', '', $url);
             $storagePath = storage_path("app/public/{$relativePath}");
 
             if (file_exists($storagePath)) {
@@ -176,7 +176,7 @@ class ProductController extends Controller
         $webpPaths = [];
 
         foreach ($rawPaths as $index => $url) {
-            $relativePath = str_replace(asset('storage') . '/', '', $url);
+            $relativePath = str_replace(secure_asset('storage') . '/', '', $url);
             $storagePath = storage_path("app/public/{$relativePath}");
 
             if (file_exists($storagePath)) {

@@ -18,7 +18,7 @@
                             @forelse($product->images as $image)
                             <img src="{{ asset($image->image_path) }}" class="img-fluid mb-2 rounded" alt="{{ $product->title }}" loading="lazy">
                             @empty
-                            <img src="{{ asset('images/no-image.jpg') }}" class="img-fluid mb-2 rounded" alt="No image available" loading="lazy">
+                            <img src="{{ secure_asset('images/no-image.jpg') }}" class="img-fluid mb-2 rounded" alt="No image available" loading="lazy">
                             @endforelse
                         </div>
                     </div>

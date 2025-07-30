@@ -236,7 +236,7 @@
                                 </div>
                                 @empty
                                 <div class="single-slider">
-                                    <img src="{{ asset('images/no-image.png') }}" alt="No image available">
+                                    <img src="{{ secure_asset('images/no-image.png') }}" alt="No image available">
                                 </div>
                                 @endforelse
                             </div>

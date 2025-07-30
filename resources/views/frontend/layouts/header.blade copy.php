@@ -31,7 +31,7 @@
                 <div class="col-lg-2 col-md-2 col-12">
                     <div class="logo">
                         <a href="{{ route('home') }}">
-                            <img src="{{ $settings->logo ?? asset('images/default-logo.png') }}" alt="Logo" loading="eager">
+                            <img src="{{ $settings->logo ?? secure_asset('images/default-logo.png') }}" alt="Logo" loading="eager">
                         </a>
                     </div>
                     <div class="mobile-nav"></div>

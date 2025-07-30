@@ -35,7 +35,7 @@
                         height="235"
                         decoding="async"
                         fetchpriority="low"
-                        onerror="this.src='{{ asset('images/no-image.png') }}';">
+                        onerror="this.src='{{ secure_asset('images/no-image.png') }}';">
                     @endforeach
                 </div>
             </div>

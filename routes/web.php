@@ -126,11 +126,11 @@ Route::get('/payment/cancel', [RazorpayController::class, 'cancel'])->name('paym
 Route::post('/razorpay/webhook', [RazorpayController::class, 'webhook'])->name('razorpay.webhook');
 
 // Square Payment Routes
-Route::get('square/payment', [SquareController::class, 'payment'])->name('square.payment');
-Route::post('square/payment', [SquareController::class, 'processPayment'])->name('square.payment.post');
-Route::get('square/success', [SquareController::class, 'success'])->name('square.success');
-Route::get('square/cancel', [SquareController::class, 'cancel'])->name('square.cancel');
-Route::post('square/webhook', [SquareController::class, 'webhook'])->name('square.webhook');
+Route::group(['prefix' => 'square', 'middleware' => 'auth'], function () {
+    Route::post('/process-payment', [SquareController::class, 'processPayment'])->name('square.process');
+    Route::get('/success', [SquareController::class, 'success'])->name('square.success');
+    Route::get('/cancel', [SquareController::class, 'cancel'])->name('square.cancel');
+});
 
 // Mollie payment routes
 Route::get('/mollie/payment', [MollieController::class, 'payment'])->name('mollie.payment');

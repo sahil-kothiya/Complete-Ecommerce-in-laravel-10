@@ -51,8 +51,8 @@
 										<img src="{{ asset($image->image_path) }}" alt="product image">
 									</li>
 									@empty
-									<li data-thumb="{{ asset('images/no-image.png') }}">
-										<img src="{{ asset('images/no-image.png') }}" alt="No Image">
+									<li data-thumb="{{ secure_asset('images/no-image.png') }}">
+										<img src="{{ secure_asset('images/no-image.png') }}" alt="No Image">
 									</li>
 									@endforelse
 								</ul>
@@ -293,7 +293,7 @@
 															@if($data->user_info['photo'])
 															<img src="{{$data->user_info['photo']}}" alt="{{$data->user_info['photo']}}">
 															@else
-															<img src="{{asset('backend/img/avatar.png')}}" alt="Profile.jpg">
+															<img src="{{secure_asset('backend/img/avatar.png')}}" alt="Profile.jpg">
 															@endif
 														</div>
 														<div class="rating-des">

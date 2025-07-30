@@ -56,7 +56,7 @@
 					<p>Copyright © {{ date('Y') }} All Rights Reserved.</p>
 				</div>
 				<div class="col-lg-6 col-12">
-					<!-- <img src="{{ asset('frontend/images/payments.webp') }}" alt="Payment Methods" loading="lazy"> -->
+					<!-- <img src="{{ secure_asset('frontend/images/payments.webp') }}" alt="Payment Methods" loading="lazy"> -->
 				</div>
 			</div>
 		</div>
@@ -67,45 +67,45 @@
 <script src="https://code.jquery.com/jquery-3.2.1.min.js" crossorigin="anonymous"></script>
 <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js" crossorigin="anonymous"></script>
 
-<!-- <script src="{{ asset('frontend/js/jquery.min.js') }}"></script> -->
-<!-- <script src="{{asset('frontend/js/jquery-migrate-3.0.0.js')}}"></script> -->
-<!-- <script src="{{asset('frontend/js/jquery-ui.min.js')}}"></script> -->
-<!-- <script src="{{asset('frontend/js/sharethis.js')}}" defer></script> -->
+<!-- <script src="{{ secure_asset('frontend/js/jquery.min.js') }}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/jquery-migrate-3.0.0.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/jquery-ui.min.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/sharethis.js')}}" defer></script> -->
 <!-- Popper JS -->
-<!-- <script src="{{asset('frontend/js/popper.min.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/popper.min.js')}}"></script> -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.3/umd/popper.min.js" crossorigin="anonymous"></script>
 
 <!-- Bootstrap JS -->
-<!-- <script src="{{asset('frontend/js/bootstrap.min.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/bootstrap.min.js')}}"></script> -->
 <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.0.0-beta.2/js/bootstrap.min.js" crossorigin="anonymous"></script>
 
 <!-- Color JS -->
-<!-- <script src="{{asset('frontend/js/colors.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/colors.js')}}"></script> -->
 <!-- Slicknav JS -->
-<!-- <script src="{{asset('frontend/js/slicknav.min.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/slicknav.min.js')}}"></script> -->
 <!-- Owl Carousel JS -->
-<!-- <script src="{{asset('frontend/js/owl-carousel.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/owl-carousel.js')}}"></script> -->
 <!-- Magnific Popup JS -->
-<!-- <script src="{{asset('frontend/js/magnific-popup.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/magnific-popup.js')}}"></script> -->
 <!-- Waypoints JS -->
-<!-- <script src="{{asset('frontend/js/waypoints.min.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/waypoints.min.js')}}"></script> -->
 <!-- Countdown JS -->
-<!-- <script src="{{asset('frontend/js/finalcountdown.min.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/finalcountdown.min.js')}}"></script> -->
 <!-- Nice Select JS -->
-<!-- <script src="{{asset('frontend/js/nicesellect.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/nicesellect.js')}}"></script> -->
 <!-- Flex Slider JS -->
-<!-- <script src="{{asset('frontend/js/flex-slider.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/flex-slider.js')}}"></script> -->
 <!-- ScrollUp JS -->
-<!-- <script src="{{asset('frontend/js/scrollup.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/scrollup.js')}}"></script> -->
 <!-- Onepage Nav JS -->
-<!-- <script src="{{asset('frontend/js/onepage-nav.min.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/onepage-nav.min.js')}}"></script> -->
 {{-- Isotope --}}
-<!-- <script src="{{asset('frontend/js/isotope/isotope.pkgd.min.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/isotope/isotope.pkgd.min.js')}}"></script> -->
 <!-- Easing JS -->
-<!-- <script src="{{asset('frontend/js/easing.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/easing.js')}}"></script> -->
 
 <!-- Active JS -->
-<!-- <script src="{{asset('frontend/js/active.js')}}"></script> -->
+<!-- <script src="{{secure_asset('frontend/js/active.js')}}"></script> -->
 
 @stack('scripts')
 <script>

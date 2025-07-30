@@ -65,7 +65,7 @@
     $images = $product->images ?? [];
     $firstImage = is_array($images) || $images instanceof \Illuminate\Support\Collection ? collect($images)->first() : null;
     $imgPath = is_array($firstImage) ? ($firstImage['image_path'] ?? '') : ($firstImage->image_path ?? '');
-    $imgUrl = $imgPath ? asset($imgPath) : asset('frontend/img/default-product.png');
+    $imgUrl = $imgPath ? asset($imgPath) : secure_asset('frontend/img/default-product.png');
     $discounted = $product->price - ($product->price * $product->discount / 100);
     @endphp
     <div class="single-post">

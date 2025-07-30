@@ -22,7 +22,7 @@
           @if($message->photo)
           <img class="rounded-circle" src="{{$message->photo}}" alt="profile">
           @else
-          <img class="rounded-circle" src="{{asset('backend/img/avatar.webp')}}" alt="default img">
+          <img class="rounded-circle" src="{{secure_asset('backend/img/avatar.webp')}}" alt="default img">
           @endif
           {{-- <div class="status-indicator bg-success"></div> --}}
         </div>

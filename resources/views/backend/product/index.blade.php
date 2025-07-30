@@ -83,7 +83,7 @@
               @if($primaryImage)
               <img src="{{ asset($primaryImage->image_path) }}" class="img-fluid zoom" style="max-width:80px;" alt="Product Image">
               @else
-              <img src="{{ asset('backend/img/thumbnail-default.jpg') }}" class="img-fluid" style="max-width:80px;" alt="Default Image">
+              <img src="{{ secure_asset('backend/img/thumbnail-default.jpg') }}" class="img-fluid" style="max-width:80px;" alt="Default Image">
               @endif
             </td>
             <td>
@@ -121,7 +121,7 @@
 @endsection
 
 @push('styles')
-<link href="{{asset('backend/vendor/datatables/dataTables.bootstrap4.min.css')}}" rel="stylesheet">
+<link href="{{secure_asset('backend/vendor/datatables/dataTables.bootstrap4.min.css')}}" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/1.1.3/sweetalert.min.css" />
 <style>
   .zoom {
@@ -140,8 +140,8 @@
 @endpush
 
 @push('scripts')
-<script src="{{asset('backend/vendor/datatables/jquery.dataTables.min.js')}}"></script>
-<script src="{{asset('backend/vendor/datatables/dataTables.bootstrap4.min.js')}}"></script>
+<script src="{{secure_asset('backend/vendor/datatables/jquery.dataTables.min.js')}}"></script>
+<script src="{{secure_asset('backend/vendor/datatables/dataTables.bootstrap4.min.js')}}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert.min.js"></script>
 
 <script>

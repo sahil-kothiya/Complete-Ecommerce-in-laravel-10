@@ -6,7 +6,7 @@
 <title>@yield('title', 'E-Shop')</title>
 
 <!-- Favicon -->
-<link rel="icon" type="image/png" href="{{ asset('images/favicon.webp') }}">
+<link rel="icon" type="image/png" href="{{ secure_asset('images/favicon.webp') }}">
 
 <!-- Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,38 +15,38 @@
 <!-- StyleSheet -->
 <link rel="manifest" href="/manifest.json">
 <!-- Bootstrap -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/bootstrap.css')}}"> -->
+<!-- <link rel="stylesheet" href="{{secure_asset('frontend/css/bootstrap.css')}}"> -->
 <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.0.0-beta.2/css/bootstrap.min.css" crossorigin="anonymous">
 
 <!-- Magnific Popup -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/magnific-popup.min.css')}}"> -->
+<!-- <link rel="stylesheet" href="{{secure_asset('frontend/css/magnific-popup.min.css')}}"> -->
 <!-- Font Awesome -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/font-awesome.css')}}"> -->
+<!-- <link rel="stylesheet" href="{{secure_asset('frontend/css/font-awesome.css')}}"> -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
 
 <!-- Fancybox -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/jquery.fancybox.min.css')}}"> -->
+<!-- <link rel="stylesheet" href="{{secure_asset('frontend/css/jquery.fancybox.min.css')}}"> -->
 <!-- Themify Icons -->
-<link rel="stylesheet" href="{{asset('frontend/css/themify-icons.css')}}">
+<link rel="stylesheet" href="{{secure_asset('frontend/css/themify-icons.css')}}">
 <!-- Nice Select CSS -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/niceselect.css')}}"> -->
+<!-- <link rel="stylesheet" href="{{secure_asset('frontend/css/niceselect.css')}}"> -->
 <!-- Animate CSS -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/animate.css')}}"> -->
+<!-- <link rel="stylesheet" href="{{secure_asset('frontend/css/animate.css')}}"> -->
 <!-- Flex Slider CSS -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/flex-slider.min.css')}}"> -->
+<!-- <link rel="stylesheet" href="{{secure_asset('frontend/css/flex-slider.min.css')}}"> -->
 
 <!-- Owl Carousel -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/owl-carousel.css')}}"> -->
+<!-- <link rel="stylesheet" href="{{secure_asset('frontend/css/owl-carousel.css')}}"> -->
 <!-- Slicknav -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/slicknav.min.css')}}"> -->
+<!-- <link rel="stylesheet" href="{{secure_asset('frontend/css/slicknav.min.css')}}"> -->
 <!-- Jquery Ui -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/jquery-ui.css')}}"> -->
+<!-- <link rel="stylesheet" href="{{secure_asset('frontend/css/jquery-ui.css')}}"> -->
 <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
 
 <!-- Eshop StyleSheet -->
-<link rel="stylesheet" href="{{asset('frontend/css/reset.min.css')}}">
-<link rel="stylesheet" href="{{asset('frontend/css/style.min.css')}}">
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/responsive.css')}}"> -->
+<link rel="stylesheet" href="{{secure_asset('frontend/css/reset.min.css')}}">
+<link rel="stylesheet" href="{{secure_asset('frontend/css/style.min.css')}}">
+<!-- <link rel="stylesheet" href="{{secure_asset('frontend/css/responsive.css')}}"> -->
 <!-- <script type='text/javascript' src='https://platform-api.sharethis.com/js/sharethis.js#property=5f2e5abf393162001291e431&product=inline-share-buttons' async='async' defer></script> -->
 <style>
     /* Multilevel dropdown */
