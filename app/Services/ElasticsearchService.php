@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use Elasticsearch\Client;
-use Illuminate\Support\Facades\Log;
+// use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
 
 class ElasticsearchService
@@ -78,10 +78,10 @@ class ElasticsearchService
             ];
 
             $this->client->indices()->create($params);
-            Log::info('Elasticsearch index created successfully');
+            // Log::info('Elasticsearch index created successfully');
             return true;
         } catch (\Exception $e) {
-            Log::error('Failed to create Elasticsearch index: ' . $e->getMessage());
+            // Log::error('Failed to create Elasticsearch index: ' . $e->getMessage());
             return false;
         }
     }
@@ -124,7 +124,7 @@ class ElasticsearchService
             $response = $this->client->search($params);
             return $response['hits']['hits'] ?? [];
         } catch (\Exception $e) {
-            Log::error('Elasticsearch search failed: ' . $e->getMessage());
+            // Log::error('Elasticsearch search failed: ' . $e->getMessage());
             return [];
         }
     }
@@ -177,7 +177,7 @@ class ElasticsearchService
             $this->client->index($params);
             return true;
         } catch (\Exception $e) {
-            Log::error('Failed to index product: ' . $e->getMessage());
+            // Log::error('Failed to index product: ' . $e->getMessage());
             return false;
         }
     }
@@ -203,7 +203,7 @@ class ElasticsearchService
             $this->client->bulk($params);
             return true;
         } catch (\Exception $e) {
-            Log::error('Bulk indexing failed: ' . $e->getMessage());
+            // Log::error('Bulk indexing failed: ' . $e->getMessage());
             return false;
         }
     }

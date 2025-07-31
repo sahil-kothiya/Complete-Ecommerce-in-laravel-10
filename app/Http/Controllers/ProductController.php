@@ -2,12 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\RedisHelper;
 use Illuminate\Http\Request;
 use App\Models\Product;
 use App\Models\Category;
 use App\Models\Brand;
 use App\Models\ProductImage;
+use Helper;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Intervention\Image\Facades\Image;
@@ -21,6 +25,8 @@ class ProductController extends Controller
      */
     public function index()
     {
+        dd(RedisHelper::get('cache:homepage:product_lists'));
+
         // $products = Product::getAllProduct();
         $products = Product::with(['cat_info', 'sub_cat_info'])->orderBy('id', 'desc')->paginate(10);
         return view('backend.product.index', compact('products'));
@@ -48,7 +54,7 @@ class ProductController extends Controller
     {
         $validatedData = $request->validate([
             'title' => 'required|string|max:255',
-            'summary' => 'nullable|string',
+            'summary' => 'required|nullable|string',
             'description' => 'nullable|string',
             'photo' => 'required|string', // from FileManager, comma-separated
             'size' => 'nullable|array',
@@ -63,23 +69,37 @@ class ProductController extends Controller
             'discount' => 'nullable|numeric|min:0',
         ]);
 
-        // 1. Parse photo URLs (from file manager)
-        $rawPaths = array_filter(array_map('trim', explode(',', $validatedData['photo'])));
+        // dd($validatedData);
+
+        // Step 1: Split and clean the photo URLs
+        $rawPaths = array_filter(array_map('trim', explode(',', $validatedData['photo'] ?? '')));
         unset($validatedData['photo']);
 
         $webpPaths = [];
+
+        // dd($rawPaths);
         foreach ($rawPaths as $index => $url) {
-            $relativePath = str_replace(asset('storage') . '/', '', $url);
-            $storagePath = storage_path("app/public/{$relativePath}");
+            // Step 2: Extract relative path by removing asset('storage')
+            // $publicPath = str_replace(asset('storage') . '/', '', $url);
+            $parsed = parse_url($url, PHP_URL_PATH); // gets only /storage/photos/...
+            $publicPath = ltrim(str_replace('/storage/', '', $parsed), '/'); // now: photos/1/Products/filename.webp
 
-            if (file_exists($storagePath)) {
-                $image = Image::make($storagePath)->encode('webp', 75);
+            // Step 3: Convert to actual storage path
+            $fullPath = storage_path("app/public/{$publicPath}");
+            // dd($fullPath);
+            // Step 4: Validate file exists and convert
+            if (file_exists($fullPath)) {
+                $image = Image::make($fullPath)->encode('webp', 75);
 
-                $webpFilename = 'product_' . uniqid() . '_' . $index . '.webp';
-                $webpPath = 'public/products/' . $webpFilename;
+                $webpFilename = 'product_' . uniqid() . "_{$index}.webp";
+                $webpPath = "public/products/{$webpFilename}";
+
                 Storage::put($webpPath, (string) $image);
 
-                $webpPaths[] = 'storage/products/' . $webpFilename;
+                // Save this for DB or other processing
+                $webpPaths[] = "storage/products/{$webpFilename}";
+            } else {
+                Log::warning("Image not found: {$fullPath}");
             }
         }
 
@@ -105,6 +125,9 @@ class ProductController extends Controller
             }
 
             DB::commit();
+
+            // RedisHelper::forgetMany(['e_shop_database_cache.home_page.product_lists']);
+
             return redirect()->route('product.index')->with('success', 'Product added successfully with optimized WebP images.');
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -157,7 +180,7 @@ class ProductController extends Controller
             'title' => 'required|string|max:255',
             'summary' => 'required|string',
             'description' => 'nullable|string',
-            'photo' => 'required|string',
+            'photo' => ($product->images->isEmpty() ? 'required' : 'nullable') . '|string',
             'size' => 'nullable|array',
             'stock' => 'required|integer|min:0',
             'cat_id' => 'required|exists:categories,id',
@@ -170,27 +193,30 @@ class ProductController extends Controller
             'discount' => 'nullable|numeric|min:0',
         ]);
 
-        $rawPaths = array_filter(array_map('trim', explode(',', $validatedData['photo'])));
-        unset($validatedData['photo']);
-
+        // ✅ Extract and process photo paths (if any)
         $webpPaths = [];
+        if (!empty($validatedData['photo'])) {
+            $rawPaths = array_filter(array_map('trim', explode(',', $validatedData['photo'])));
+            unset($validatedData['photo']);
 
-        foreach ($rawPaths as $index => $url) {
-            $relativePath = str_replace(asset('storage') . '/', '', $url);
-            $storagePath = storage_path("app/public/{$relativePath}");
+            foreach ($rawPaths as $index => $url) {
+                $parsed = parse_url($url, PHP_URL_PATH);
+                $relativePath = ltrim(str_replace('/storage/', '', $parsed), '/');
+                $storagePath = storage_path("app/public/{$relativePath}");
 
-            if (file_exists($storagePath)) {
-                $image = Image::make($storagePath)->encode('webp', 75);
+                if (file_exists($storagePath)) {
+                    $image = Image::make($storagePath)->encode('webp', 75);
 
-                $webpFilename = 'product_' . uniqid() . '_' . $index . '.webp';
-                $webpPath = 'public/products/' . $webpFilename;
-                Storage::put($webpPath, (string) $image);
+                    $webpFilename = 'product_' . uniqid() . '_' . $index . '.webp';
+                    $webpPath = "public/products/{$webpFilename}";
 
-                $webpPaths[] = 'storage/products/' . $webpFilename;
+                    Storage::put($webpPath, (string) $image);
+                    $webpPaths[] = "storage/products/{$webpFilename}";
+                }
             }
         }
 
-        // If title changed, regenerate slug
+        // ✅ Handle slug regeneration
         if ($product->title !== $validatedData['title']) {
             $validatedData['slug'] = generateUniqueSlug($validatedData['title'], Product::class, 'slug', $product->id);
         }
@@ -203,36 +229,34 @@ class ProductController extends Controller
         try {
             $product->update($validatedData);
 
-            // 1. Fetch and delete old images from storage
-            $oldImages = ProductImage::where('product_id', $product->id)->get();
-            foreach ($oldImages as $img) {
-                $path = str_replace('storage/', 'public/', $img->image_path); // convert to Storage path
-                Storage::delete($path);
-            }
+            // ✅ Only delete and re-create images if new ones are provided
+            if (!empty($webpPaths)) {
+                $oldImages = ProductImage::where('product_id', $product->id)->get();
+                foreach ($oldImages as $img) {
+                    $path = str_replace('storage/', 'public/', $img->image_path);
+                    Storage::delete($path);
+                }
 
-            // 2. Delete old image records
-            ProductImage::where('product_id', $product->id)->delete();
+                ProductImage::where('product_id', $product->id)->delete();
 
-            // 3. Save new images
-            foreach ($webpPaths as $index => $path) {
-                ProductImage::create([
-                    'product_id' => $product->id,
-                    'image_path' => $path,
-                    'is_primary' => $index === 0,
-                    'sort_order' => $index + 1,
-                ]);
+                foreach ($webpPaths as $index => $path) {
+                    ProductImage::create([
+                        'product_id' => $product->id,
+                        'image_path' => $path,
+                        'is_primary' => $index === 0,
+                        'sort_order' => $index + 1,
+                    ]);
+                }
             }
 
             DB::commit();
-            return redirect()->route('product.index')->with('success', 'Product updated with WebP images and old files cleaned.');
+            return redirect()->route('product.index')->with('success', 'Product updated successfully.');
         } catch (\Throwable $e) {
             DB::rollBack();
             report($e);
             return redirect()->route('product.index')->with('error', 'Update failed. Please try again.');
         }
     }
-
-
 
     /**
      * Remove the specified resource from storage.

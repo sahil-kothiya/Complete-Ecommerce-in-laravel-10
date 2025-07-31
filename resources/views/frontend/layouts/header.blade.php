@@ -107,7 +107,7 @@
 @push('scripts')
 <script>
     $(document).ready(function() {
-        console.log('Elasticsearch script loaded');
+        // console.log('Elasticsearch script loaded');
 
         // Smooth scroll to sections
         $('a[href*="#"]').on('click', function(e) {

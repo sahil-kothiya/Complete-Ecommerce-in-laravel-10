@@ -930,7 +930,7 @@ class FrontendController extends Controller
     public function autocomplete(Request $request)
     {
         $query = $request->input('q', '');
-        Log::info('Autocomplete query: ' . $query);
+        // Log::info('Autocomplete query: ' . $query);
 
         if (strlen($query) < 2) {
             return response()->json(['success' => false, 'suggestions' => []]);
@@ -960,7 +960,7 @@ class FrontendController extends Controller
 
             return response()->json(['success' => true, 'suggestions' => $suggestions]);
         } catch (\Exception $e) {
-            Log::error('Autocomplete error: ' . $e->getMessage());
+            // Log::error('Autocomplete error: ' . $e->getMessage());
             return response()->json(['success' => false, 'suggestions' => [], 'error' => $e->getMessage()]);
         }
     }
