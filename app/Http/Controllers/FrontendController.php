@@ -73,7 +73,7 @@ class FrontendController extends Controller
         ];
 
         $cachedData = RedisHelper::mget(array_values($cacheKeys));
-
+        // dd($cachedData, $cachedData[$cacheKeys['categories']], $this->getCategoriesData($cacheKeys['categories'], $ttl['categories']));
         $data = [
             'categories' => $cachedData[$cacheKeys['categories']]
                 ?? $this->getCategoriesData($cacheKeys['categories'], $ttl['categories']),
@@ -230,32 +230,39 @@ class FrontendController extends Controller
      */
     private function getHomepageProductsData(string $key, int $ttl)
     {
-        return Cache::remember($key, $ttl, function () use ($key, $ttl) {
-            $products = Product::select([
-                'id',
-                'title',
-                'slug',
-                'price',
-                'discount',
-                'stock',
-                'condition',
-                'cat_id',
-                'size',
-                'summary'
+        // 1. Try loading from Redis
+        $redisData = RedisHelper::get($key);
+        if ($redisData) {
+            return $redisData;
+        }
+
+        // 2. Load from DB if Redis is empty
+        $products = Product::select([
+            'id',
+            'title',
+            'slug',
+            'price',
+            'discount',
+            'stock',
+            'condition',
+            'cat_id',
+            'size',
+            'summary'
+        ])
+            ->where('status', 'active')
+            ->with([
+                'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
+                'cat_info' => fn($q) => $q->select(['id', 'title'])
             ])
-                ->where('status', 'active')
-                ->with([
-                    'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
-                    'cat_info' => fn($q) => $q->select(['id', 'title'])
-                ])
-                ->latest('id')
-                ->limit(60)
-                ->get();
-            if (!RedisHelper::put($key, $products, $ttl)) {
-                Log::warning("Failed to store homepage products in Redis for key: {$key}");
-            }
-            return $products;
-        });
+            ->latest('id')
+            ->limit(60)
+            ->get();
+
+        // 3. Save in Redis and Laravel Cache
+        RedisHelper::put($key, $products, $ttl);
+        // Cache::put($key, $products, $ttl);
+
+        return $products;
     }
 
     /**

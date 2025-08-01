@@ -25,7 +25,7 @@ class ProductController extends Controller
      */
     public function index()
     {
-        dd(RedisHelper::get('cache:homepage:product_lists'));
+        // dd(RedisHelper::get('cache:homepage:product_lists'));
 
         // $products = Product::getAllProduct();
         $products = Product::with(['cat_info', 'sub_cat_info'])->orderBy('id', 'desc')->paginate(10);
