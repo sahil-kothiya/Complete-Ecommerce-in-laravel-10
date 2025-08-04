@@ -17,51 +17,30 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Session;
-use Illuminate\Support\Str;
 use Spatie\Newsletter\Facades\Newsletter;
 
 class FrontendController extends Controller
 {
     private const RECENT_PRODUCTS_CACHE_PREFIX = 'cache:recent_products:';
-
-    private ProductSearchService $searchService;
     private const HOMEPAGE_CACHE_PREFIX = 'cache:homepage:';
     private const PRODUCT_GRIDS_CACHE_PREFIX = 'cache:product_grids:';
     private static ?array $ttlConfig = null;
 
-    /**
-     * Constructor to initialize the ProductSearchService.
-     *
-     * @param ProductSearchService $searchService
-     */
+    private ProductSearchService $searchService;
+
     public function __construct(ProductSearchService $searchService)
     {
         $this->searchService = $searchService;
     }
 
-    // Homepage Related Functions
-
-    /**
-     * Redirects authenticated user to their role-specific route.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
     public function index(Request $request)
     {
         return redirect()->route($request->user()->role);
     }
 
-    /**
-     * Renders the homepage with cached data for categories, banners, and products.
-     *
-     * @return \Illuminate\View\View
-     */
     public function home()
     {
         $ttl = $this->getTtlConfig();
@@ -73,14 +52,40 @@ class FrontendController extends Controller
         ];
 
         $cachedData = RedisHelper::mget(array_values($cacheKeys));
-        // dd($cachedData, $cachedData[$cacheKeys['categories']], $this->getCategoriesData($cacheKeys['categories'], $ttl['categories']));
+
+        $products = $cachedData[$cacheKeys['products']]
+            ?? $this->getHomepageProductsData($cacheKeys['products'], $ttl['product_lists']);
+
+        $usedProductIds = [];
+
+        $kidsProducts = $products->filter(function ($product) use (&$usedProductIds) {
+            return $product->cat_info?->title === "Kid's" && !in_array($product->id, $usedProductIds);
+        })->take(12);
+        $usedProductIds = array_merge($usedProductIds, $kidsProducts->pluck('id')->all());
+
+        $womenProducts = $products->filter(function ($product) use (&$usedProductIds) {
+            return $product->cat_info?->title === "Women's Fashion" && !in_array($product->id, $usedProductIds);
+        })->take(12);
+        $usedProductIds = array_merge($usedProductIds, $womenProducts->pluck('id')->all());
+
+        $menProducts = $products->filter(function ($product) use (&$usedProductIds) {
+            return $product->cat_info?->title === "Men's Fashion" && !in_array($product->id, $usedProductIds);
+        })->take(12);
+        $usedProductIds = array_merge($usedProductIds, $menProducts->pluck('id')->all());
+
+        $allProducts = $products->filter(function ($product) use ($usedProductIds) {
+            return !in_array($product->id, $usedProductIds);
+        })->take(24);
+
         $data = [
             'categories' => $cachedData[$cacheKeys['categories']]
                 ?? $this->getCategoriesData($cacheKeys['categories'], $ttl['categories']),
             'banners' => $cachedData[$cacheKeys['banners']]
                 ?? $this->getBannersData($cacheKeys['banners'], $ttl['banners']),
-            'product_lists' => $cachedData[$cacheKeys['products']]
-                ?? $this->getHomepageProductsData($cacheKeys['products'], $ttl['product_lists']),
+            'product_lists' => $allProducts,
+            'kidsProducts' => $kidsProducts,
+            'womenProducts' => $womenProducts,
+            'menProducts' => $menProducts,
             'categoryBanners' => $cachedData[$cacheKeys['categoryBanners']]
                 ?? $this->getCategoryBannersData($cacheKeys['categoryBanners'], $cachedData[$cacheKeys['categories']] ?? null, $ttl['categories']),
         ];
@@ -88,11 +93,6 @@ class FrontendController extends Controller
         return view('frontend.index', $data);
     }
 
-    /**
-     * Warms up the homepage cache for faster access.
-     *
-     * @return array Cache warming results with status and statistics
-     */
     public function warmUpHomepageCache(): array
     {
         $ttl = $this->getTtlConfig();
@@ -109,8 +109,7 @@ class FrontendController extends Controller
             $startTime = microtime(true);
             try {
                 $data = $callback();
-                $endTime = microtime(true);
-                $duration = round(($endTime - $startTime) * 1000, 2);
+                $duration = round((microtime(true) - $startTime) * 1000, 2);
 
                 $results[$type] = [
                     'status' => 'success',
@@ -135,11 +134,6 @@ class FrontendController extends Controller
         return $results;
     }
 
-    /**
-     * Clears the homepage cache.
-     *
-     * @return bool Success status of cache clearing
-     */
     public function clearHomepageCache(): bool
     {
         $keys = [
@@ -162,11 +156,6 @@ class FrontendController extends Controller
         }
     }
 
-    /**
-     * Retrieves TTL configuration for caching.
-     *
-     * @return array TTL configuration
-     */
     private function getTtlConfig(): array
     {
         if (self::$ttlConfig === null) {
@@ -175,68 +164,52 @@ class FrontendController extends Controller
         return self::$ttlConfig;
     }
 
-    /**
-     * Fetches categories data with caching.
-     *
-     * @param string $key Cache key
-     * @param int $ttl Time-to-live for cache
-     * @return \Illuminate\Support\Collection
-     */
     private function getCategoriesData(string $key, int $ttl)
     {
-        return Cache::remember($key, $ttl, function () use ($key, $ttl) {
-            $categories = Category::select(['id', 'title', 'slug', 'parent_id', 'photo', 'is_parent'])
-                ->active()
-                ->where('is_parent', 1)
-                ->with([
-                    'children' => fn($q) => $q->active()
-                        ->select(['id', 'title', 'slug', 'parent_id'])
-                        ->orderBy('title')
-                ])
-                ->orderBy('title')
-                ->get();
-
-            RedisHelper::put($key, $categories, $ttl);
-            return $categories;
-        });
-    }
-
-    /**
-     * Fetches banners data with caching.
-     *
-     * @param string $key Cache key
-     * @param int $ttl Time-to-live for cache
-     * @return \Illuminate\Support\Collection
-     */
-    private function getBannersData(string $key, int $ttl)
-    {
-        // dd($banners[0]->discounts->first(), $discount->category);
-        return Cache::remember($key, $ttl, function () use ($key, $ttl) {
-            $banners = Banner::with(['discounts.categories'])->where('status', 'active')
-                ->select(['id', 'title', 'description', 'photo'])
-                ->orderByDesc('id')
-                ->get();
-            RedisHelper::put($key, $banners, $ttl);
-            return $banners;
-        });
-    }
-
-    /**
-     * Fetches homepage products data with caching.
-     *
-     * @param string $key Cache key
-     * @param int $ttl Time-to-live for cache
-     * @return \Illuminate\Support\Collection
-     */
-    private function getHomepageProductsData(string $key, int $ttl)
-    {
-        // 1. Try loading from Redis
         $redisData = RedisHelper::get($key);
         if ($redisData) {
             return $redisData;
         }
 
-        // 2. Load from DB if Redis is empty
+        $categories = Category::select(['id', 'title', 'slug', 'parent_id', 'photo', 'is_parent'])
+            ->active()
+            ->where('is_parent', 1)
+            ->with([
+                'children' => fn($q) => $q->active()
+                    ->select(['id', 'title', 'slug', 'parent_id'])
+                    ->orderBy('title')
+            ])
+            ->orderBy('title')
+            ->get();
+
+        RedisHelper::put($key, $categories, $ttl);
+        return $categories;
+    }
+
+    private function getBannersData(string $key, int $ttl)
+    {
+        $redisData = RedisHelper::get($key);
+        if ($redisData) {
+            return $redisData;
+        }
+
+        $banners = Banner::with(['discounts.categories'])
+            ->where('status', 'active')
+            ->select(['id', 'title', 'description', 'photo'])
+            ->orderByDesc('id')
+            ->get();
+
+        RedisHelper::put($key, $banners, $ttl);
+        return $banners;
+    }
+
+    private function getHomepageProductsData(string $key, int $ttl)
+    {
+        $redisData = RedisHelper::get($key);
+        if ($redisData) {
+            return $redisData;
+        }
+
         $products = Product::select([
             'id',
             'title',
@@ -247,43 +220,37 @@ class FrontendController extends Controller
             'condition',
             'cat_id',
             'size',
-            'summary'
+            'summary',
+            'is_featured'
         ])
             ->where('status', 'active')
+            ->where('is_featured', true)
             ->with([
                 'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
                 'cat_info' => fn($q) => $q->select(['id', 'title'])
             ])
             ->latest('id')
-            ->limit(60)
+            ->limit(300)
             ->get();
 
-        // 3. Save in Redis and Laravel Cache
         RedisHelper::put($key, $products, $ttl);
-        // Cache::put($key, $products, $ttl);
-
         return $products;
     }
 
-    /**
-     * Fetches category banners data with caching.
-     *
-     * @param string $key Cache key
-     * @param mixed $categories Categories data
-     * @param int $ttl Time-to-live for cache
-     * @return \Illuminate\Support\Collection
-     */
     private function getCategoryBannersData(string $key, $categories, int $ttl)
     {
         if (!$categories) {
             return collect();
         }
 
-        return Cache::remember($key, $ttl, function () use ($key, $categories, $ttl) {
-            $categoryBanners = $categories->filter(fn($cat) => !empty($cat->photo));
-            RedisHelper::put($key, $categoryBanners, $ttl);
-            return $categoryBanners;
-        });
+        $redisData = RedisHelper::get($key);
+        if ($redisData) {
+            return $redisData;
+        }
+
+        $categoryBanners = $categories->filter(fn($cat) => !empty($cat->photo));
+        RedisHelper::put($key, $categoryBanners, $ttl);
+        return $categoryBanners;
     }
 
     // Product Grids Related Functions
@@ -292,28 +259,20 @@ class FrontendController extends Controller
     {
         $startTime = microtime(true);
         $ttl = $this->getTtlConfig();
-
-        // Generate cache key with all parameters
         $cacheKey = $this->generateOptimizedCacheKey($request);
-
-        // Try to get complete page data from cache first
         $cachedData = RedisHelper::get($cacheKey);
 
         if ($cachedData) {
-            // Restore paginator from cache
             if (isset($cachedData['products_data'])) {
                 $cachedData['products'] = $this->restorePaginatorFromCache($cachedData['products_data'], $request);
                 unset($cachedData['products_data']);
             }
 
-            // Convert cached arrays back to collections/models for proper relationship handling
             $cachedData = $this->hydrateRelationshipsFromCache($cachedData);
-
             Log::info("Product grids served from cache in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
             return view('frontend.pages.product-grids', $cachedData);
         }
 
-        // If not in cache, fetch and cache the data
         $data = $this->fetchOptimizedProductGridsData($request, $ttl);
         $this->cacheCompletePageData($cacheKey, $data, $ttl['product_lists']);
 
@@ -332,10 +291,7 @@ class FrontendController extends Controller
             'page' => $request->get('page', '1')
         ];
 
-        // Remove empty values
         $params = array_filter($params, fn($value) => !empty($value));
-
-        // Create a more specific cache key
         $paramString = http_build_query($params);
         $hash = md5($paramString);
 
@@ -344,7 +300,6 @@ class FrontendController extends Controller
 
     private function fetchOptimizedProductGridsData(Request $request, array $ttl): array
     {
-        // Get all sidebar data in one go using mget
         $sidebarCacheKeys = [
             'recent_products' => self::PRODUCT_GRIDS_CACHE_PREFIX . 'recent_products',
             'categories' => self::PRODUCT_GRIDS_CACHE_PREFIX . 'sidebar_categories',
@@ -354,30 +309,20 @@ class FrontendController extends Controller
 
         $cachedSidebarData = RedisHelper::mget(array_values($sidebarCacheKeys));
 
-        // Prepare sidebar data with fallbacks
         $sidebarData = [
-            'recent_products' => $cachedSidebarData[$sidebarCacheKeys['recent_products']]
-                ?? $this->getRecentProductsOptimized($ttl['product_lists']),
-            'categories' => $cachedSidebarData[$sidebarCacheKeys['categories']]
-                ?? $this->getSidebarCategoriesOptimized($ttl['categories']),
-            'brands' => $cachedSidebarData[$sidebarCacheKeys['brands']]
-                ?? $this->getSidebarBrandsOptimized($ttl['categories']),
-            'max_price' => $cachedSidebarData[$sidebarCacheKeys['max_price']]
-                ?? $this->getMaxPriceOptimized($ttl['product_lists'])
+            'recent_products' => $cachedSidebarData[$sidebarCacheKeys['recent_products']] ?? $this->getRecentProductsOptimized($ttl['product_lists']),
+            'categories' => $cachedSidebarData[$sidebarCacheKeys['categories']] ?? $this->getSidebarCategoriesOptimized($ttl['categories']),
+            'brands' => $cachedSidebarData[$sidebarCacheKeys['brands']] ?? $this->getSidebarBrandsOptimized($ttl['categories']),
+            'max_price' => $cachedSidebarData[$sidebarCacheKeys['max_price']] ?? $this->getMaxPriceOptimized($ttl['product_lists'])
         ];
 
-        // Build products query with optimized joins
         $products = $this->buildOptimizedProductsQuery($request);
-
         return array_merge($sidebarData, ['products' => $products]);
     }
 
-    // Optimized product query builder
     private function buildOptimizedProductsQuery(Request $request)
     {
         $query = Product::query();
-
-        // Select only necessary fields
         $query->select([
             'products.id',
             'products.title',
@@ -392,7 +337,6 @@ class FrontendController extends Controller
             'products.summary'
         ]);
 
-        // Apply filters with optimized queries
         if ($categorySlug = $request->get('category')) {
             $categoryIds = $this->getCategoryIdsOptimized($categorySlug);
             if (!empty($categoryIds)) {
@@ -407,31 +351,20 @@ class FrontendController extends Controller
             }
         }
 
-        // Apply sorting
         $this->applySortingOptimized($query, $request->get('sortBy'));
 
-        // Apply price filter
         if ($priceRange = $request->get('price')) {
             $this->applyPriceFilter($query, $priceRange);
         }
 
-        // Apply base conditions and eager loading
         $query->where('products.status', 'active')
             ->with([
-                'images' => function ($q) {
-                    $q->select(['id', 'image_path', 'product_id', 'is_primary'])
-                        ->orderBy('is_primary', 'desc');
-                },
-                'cat_info' => function ($q) {
-                    $q->select(['id', 'title', 'slug']);
-                },
-                'brand' => function ($q) {
-                    $q->select(['id', 'title', 'slug']);
-                }
+                'images' => fn($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->orderBy('is_primary', 'desc'),
+                'cat_info' => fn($q) => $q->select(['id', 'title', 'slug']),
+                'brand' => fn($q) => $q->select(['id', 'title', 'slug'])
             ]);
 
-        $perPage = min((int)$request->get('show', 9), 30); // Limit max per page
-
+        $perPage = min((int)$request->get('show', 9), 30);
         return $query->paginate($perPage);
     }
 
@@ -459,7 +392,6 @@ class FrontendController extends Controller
         }
     }
 
-    // Optimized price filter
     private function applyPriceFilter($query, $priceRange)
     {
         $prices = explode('-', $priceRange);
@@ -468,7 +400,6 @@ class FrontendController extends Controller
         }
     }
 
-    // Optimized category ID retrieval
     private function getCategoryIdsOptimized(string $categoryParam): array
     {
         $slugs = explode(',', $categoryParam);
@@ -479,7 +410,6 @@ class FrontendController extends Controller
         });
     }
 
-    // Optimized brand ID retrieval
     private function getBrandIdsOptimized(string $brandParam): array
     {
         $slugs = explode(',', $brandParam);
@@ -490,7 +420,6 @@ class FrontendController extends Controller
         });
     }
 
-    // Optimized sidebar data methods with proper relationship caching
     private function getRecentProductsOptimized(int $ttl)
     {
         $cacheKey = self::PRODUCT_GRIDS_CACHE_PREFIX . 'recent_products';
@@ -506,7 +435,6 @@ class FrontendController extends Controller
                 ->limit(3)
                 ->get();
 
-            // Convert to array format that preserves relationship data
             return $products->map(function ($product) {
                 return [
                     'id' => $product->id,
@@ -545,7 +473,6 @@ class FrontendController extends Controller
                 ->orderBy('title')
                 ->get();
 
-            // Convert to array format that preserves relationship data
             return $categories->map(function ($category) {
                 return [
                     'id' => $category->id,
@@ -594,10 +521,8 @@ class FrontendController extends Controller
         });
     }
 
-    // Hydrate relationships from cached data
     private function hydrateRelationshipsFromCache(array $cachedData): array
     {
-        // Convert recent_products back to collection-like structure
         if (isset($cachedData['recent_products']) && is_array($cachedData['recent_products'])) {
             $cachedData['recent_products'] = collect($cachedData['recent_products'])->map(function ($product) {
                 $productObj = (object) $product;
@@ -608,7 +533,6 @@ class FrontendController extends Controller
             });
         }
 
-        // Convert categories back to collection-like structure
         if (isset($cachedData['categories']) && is_array($cachedData['categories'])) {
             $cachedData['categories'] = collect($cachedData['categories'])->map(function ($category) {
                 $categoryObj = (object) $category;
@@ -619,7 +543,6 @@ class FrontendController extends Controller
             });
         }
 
-        // Convert brands back to collection-like structure
         if (isset($cachedData['brands']) && is_array($cachedData['brands'])) {
             $cachedData['brands'] = collect($cachedData['brands'])->map(function ($brand) {
                 return (object) $brand;
@@ -629,7 +552,6 @@ class FrontendController extends Controller
         return $cachedData;
     }
 
-    // Optimized complete page caching
     private function cacheCompletePageData(string $key, array $data, int $ttl): void
     {
         try {
@@ -640,9 +562,7 @@ class FrontendController extends Controller
                 'max_price' => $data['max_price'],
             ];
 
-            // Cache paginator data separately
             if (isset($data['products']) && $data['products'] instanceof LengthAwarePaginator) {
-                // Convert products with relationships to cacheable format
                 $productsWithRelations = $data['products']->getCollection()->map(function ($product) {
                     return [
                         'id' => $product->id,
@@ -689,15 +609,13 @@ class FrontendController extends Controller
                 ];
             }
 
-            // Cache for shorter time to ensure freshness
-            $cacheTtl = min($ttl, 900); // 15 minutes max
+            $cacheTtl = min($ttl, 900);
             RedisHelper::put($key, $cacheableData, $cacheTtl);
         } catch (\Exception $e) {
             Log::error("Failed to cache complete page data: " . $e->getMessage());
         }
     }
 
-    // Enhanced product filter with caching
     public function productFilter(Request $request)
     {
         $startTime = microtime(true);
@@ -705,7 +623,6 @@ class FrontendController extends Controller
         $data = $request->all();
         $queryParams = [];
 
-        // Build query parameters
         if (!empty($data['show'])) {
             $queryParams['show'] = $data['show'];
         }
@@ -730,12 +647,10 @@ class FrontendController extends Controller
             $queryParams['price'] = $data['price_range'];
         }
 
-        // Pre-warm cache for this filter combination
         $tempRequest = new Request($queryParams);
         $cacheKey = $this->generateOptimizedCacheKey($tempRequest);
 
         if (!RedisHelper::exists($cacheKey)) {
-            // Pre-generate cache in background if possible
             $this->preWarmFilterCache($tempRequest);
         }
 
@@ -744,7 +659,6 @@ class FrontendController extends Controller
         return redirect()->route('product-grids', $queryParams);
     }
 
-    // Pre-warm cache for filter combinations
     private function preWarmFilterCache(Request $request): void
     {
         try {
@@ -760,26 +674,19 @@ class FrontendController extends Controller
         }
     }
 
-    /**
-     * Restores paginator from cached data with relationships
-     */
     private function restorePaginatorFromCache(array $paginationData, Request $request)
     {
-        // Convert cached items back to objects with relationships
         $items = collect($paginationData['items'])->map(function ($item) {
             $product = (object) $item;
 
-            // Restore images relationship
             $product->images = collect($item['images'] ?? [])->map(function ($image) {
                 return (object) $image;
             });
 
-            // Restore cat_info relationship
             if (isset($item['cat_info']) && $item['cat_info']) {
                 $product->cat_info = (object) $item['cat_info'];
             }
 
-            // Restore brand relationship
             if (isset($item['brand']) && $item['brand']) {
                 $product->brand = (object) $item['brand'];
             }
@@ -802,13 +709,11 @@ class FrontendController extends Controller
         return $paginator;
     }
 
-    // Batch cache warming for common combinations
     public function warmUpCommonFilters(): array
     {
         $results = [];
         $ttl = $this->getTtlConfig();
 
-        // Common filter combinations
         $commonFilters = [
             ['show' => '9', 'page' => '1'],
             ['show' => '15', 'page' => '1'],
@@ -846,7 +751,6 @@ class FrontendController extends Controller
         return $results;
     }
 
-    // Clear optimized cache
     public function clearOptimizedCache(): bool
     {
         try {
@@ -876,12 +780,6 @@ class FrontendController extends Controller
         }
     }
 
-    /**
-     * Performs enhanced product search with Elasticsearch.
-     *
-     * @param Request $request
-     * @return \Illuminate\View\View
-     */
     public function productSearch(Request $request)
     {
         $query = $request->input('search', '');
@@ -928,16 +826,9 @@ class FrontendController extends Controller
             ->with('search_query', $query);
     }
 
-    /**
-     * Provides autocomplete suggestions for product search.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function autocomplete(Request $request)
     {
         $query = $request->input('q', '');
-        // Log::info('Autocomplete query: ' . $query);
 
         if (strlen($query) < 2) {
             return response()->json(['success' => false, 'suggestions' => []]);
@@ -967,16 +858,10 @@ class FrontendController extends Controller
 
             return response()->json(['success' => true, 'suggestions' => $suggestions]);
         } catch (\Exception $e) {
-            // Log::error('Autocomplete error: ' . $e->getMessage());
             return response()->json(['success' => false, 'suggestions' => [], 'error' => $e->getMessage()]);
         }
     }
 
-    /**
-     * Retrieves cache health status for homepage and product grids.
-     *
-     * @return array Cache health status
-     */
     public function getCacheHealth(): array
     {
         $homepageKeys = [
@@ -1018,43 +903,22 @@ class FrontendController extends Controller
         return $health;
     }
 
-    /**
-     * Renders the about us page.
-     *
-     * @return \Illuminate\View\View
-     */
     public function aboutUs()
     {
         return view('frontend.pages.about-us');
     }
 
-    /**
-     * Renders the contact page.
-     *
-     * @return \Illuminate\View\View
-     */
     public function contact()
     {
         return view('frontend.pages.contact');
     }
 
-    /**
-     * Displays product details by slug.
-     *
-     * @param string $slug
-     * @return \Illuminate\View\View
-     */
     public function productDetail($slug)
     {
         $product_detail = Product::getProductBySlug($slug);
         return view('frontend.pages.product_detail')->with('product_detail', $product_detail);
     }
 
-    /**
-     * Renders the product lists page with filtering.
-     *
-     * @return \Illuminate\View\View
-     */
     public function productLists()
     {
         $products = Product::query();
@@ -1094,12 +958,6 @@ class FrontendController extends Controller
             ->with('recent_products', $recent_products);
     }
 
-    /**
-     * Displays products by brand.
-     *
-     * @param Request $request
-     * @return \Illuminate\View\View
-     */
     public function productBrand(Request $request)
     {
         $products = Brand::getProductByBrand($request->slug);
@@ -1111,12 +969,6 @@ class FrontendController extends Controller
             ->with('recent_products', $recent_products);
     }
 
-    /**
-     * Displays products by category.
-     *
-     * @param Request $request
-     * @return \Illuminate\View\View
-     */
     public function productCat(Request $request)
     {
         $startTime = microtime(true);
@@ -1300,20 +1152,17 @@ class FrontendController extends Controller
 
         $category = Category::where('slug', $request->slug)->firstOrFail();
 
-        // Fetch subcategory and its parent category
         $subCategory = Category::where('slug', $request->sub_slug)
             ->where('is_parent', 0)
             ->where('parent_id', $category->id)
             ->firstOrFail();
         $category = $subCategory->parent;
 
-        // Filters
         $show   = max((int) $request->input('show', 21), 1);
         $page   = (int) $request->input('page', 1);
         $sortBy = $request->input('sortBy', 'default');
         $price  = $request->input('price', '');
 
-        // Parse price filter
         $minPrice = null;
         $maxPrice = null;
         if ($price && str_contains($price, '-')) {
@@ -1322,10 +1171,8 @@ class FrontendController extends Controller
             $maxPrice = (float) $maxPrice;
         }
 
-        // Build cache key to match seeder format
         $cacheKey = "cached_products_cat{$category->id}_childcat{$subCategory->id}_page{$page}_limit{$show}_sort{$sortBy}";
 
-        // Add price filter to cache key if present
         if ($minPrice && $maxPrice) {
             $cacheKey .= "_min{$minPrice}_max{$maxPrice}";
         } else {
@@ -1333,7 +1180,6 @@ class FrontendController extends Controller
         }
         $ttl = $this->getTtlConfig();
 
-        // Check Redis cache first
         if (RedisHelper::has($cacheKey)) {
             $cachedData = RedisHelper::get($cacheKey);
 
@@ -1371,18 +1217,15 @@ class FrontendController extends Controller
             }
         }
 
-        // Fallback to database query if cache miss
         $query = Product::with(['images', 'discounts', 'cat_info', 'sub_cat_info'])
             ->active()
             ->where('cat_id', $category->id)
             ->where('child_cat_id', $subCategory->id);
 
-        // Apply price filter
         if ($minPrice && $maxPrice) {
             $query->whereBetween('price', [$minPrice, $maxPrice]);
         }
 
-        // Apply sorting
         if ($sortBy === 'price') {
             $query->orderBy('price', 'ASC');
         } elseif ($sortBy === 'price_desc') {
@@ -1392,11 +1235,8 @@ class FrontendController extends Controller
         }
 
         $products = $query->paginate($show);
-
-        // Get recent products
         $recent_products = Product::with(['images'])->active()->latest()->take(3)->get();
 
-        // Cache the paginated result
         $cacheData = [
             'products' => $products->toArray(),
             'recent_products' => $recent_products->toArray(),
@@ -1419,12 +1259,6 @@ class FrontendController extends Controller
         ]);
     }
 
-    /**
-     * Displays products by subcategory.
-     *
-     * @param Request $request
-     * @return \Illuminate\View\View
-     */
     // public function productSubCat(Request $request)
     // {
     //     dd($request->all());
@@ -1437,11 +1271,6 @@ class FrontendController extends Controller
     //         ->with('recent_products', $recent_products);
     // }
 
-    /**
-     * Renders the blog page with filtering.
-     *
-     * @return \Illuminate\View\View
-     */
     public function blog()
     {
         $post = Post::query();
@@ -1466,12 +1295,6 @@ class FrontendController extends Controller
             ->with('recent_posts', $rcnt_post);
     }
 
-    /**
-     * Displays blog post details by slug.
-     *
-     * @param string $slug
-     * @return \Illuminate\View\View
-     */
     public function blogDetail($slug)
     {
         $post = Post::getPostBySlug($slug);
@@ -1482,12 +1305,6 @@ class FrontendController extends Controller
             ->with('recent_posts', $rcnt_post);
     }
 
-    /**
-     * Searches blog posts based on query.
-     *
-     * @param Request $request
-     * @return \Illuminate\View\View
-     */
     public function blogSearch(Request $request)
     {
         $rcnt_post = Post::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
@@ -1504,12 +1321,6 @@ class FrontendController extends Controller
             ->with('recent_posts', $rcnt_post);
     }
 
-    /**
-     * Filters blog posts by category and tag.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
     public function blogFilter(Request $request)
     {
         $data = $request->all();
@@ -1519,12 +1330,6 @@ class FrontendController extends Controller
         return redirect()->route('blog', $catURL . $tagURL);
     }
 
-    /**
-     * Displays blog posts by category.
-     *
-     * @param Request $request
-     * @return \Illuminate\View\View
-     */
     public function blogByCategory(Request $request)
     {
         $post = PostCategory::getBlogByCategory($request->slug);
@@ -1535,12 +1340,6 @@ class FrontendController extends Controller
             ->with('recent_posts', $rcnt_post);
     }
 
-    /**
-     * Displays blog posts by tag.
-     *
-     * @param Request $request
-     * @return \Illuminate\View\View
-     */
     public function blogByTag(Request $request)
     {
         $post = Post::getBlogByTag($request->slug);
@@ -1551,22 +1350,11 @@ class FrontendController extends Controller
             ->with('recent_posts', $rcnt_post);
     }
 
-    /**
-     * Renders the login page.
-     *
-     * @return \Illuminate\View\View
-     */
     public function login()
     {
         return view('frontend.pages.login');
     }
 
-    /**
-     * Handles login submission.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
     public function loginSubmit(Request $request)
     {
         $data = $request->all();
@@ -1580,11 +1368,6 @@ class FrontendController extends Controller
         return redirect()->back();
     }
 
-    /**
-     * Logs out the user.
-     *
-     * @return \Illuminate\Http\RedirectResponse
-     */
     public function logout()
     {
         Session::forget('user');
@@ -1593,22 +1376,11 @@ class FrontendController extends Controller
         return back();
     }
 
-    /**
-     * Renders the registration page.
-     *
-     * @return \Illuminate\View\View
-     */
     public function register()
     {
         return view('frontend.pages.register');
     }
 
-    /**
-     * Handles registration submission.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
     public function registerSubmit(Request $request)
     {
         $this->validate($request, [
@@ -1630,12 +1402,6 @@ class FrontendController extends Controller
         return back();
     }
 
-    /**
-     * Creates a new user.
-     *
-     * @param array $data
-     * @return \App\User
-     */
     public function create(array $data)
     {
         return User::create([
@@ -1646,22 +1412,11 @@ class FrontendController extends Controller
         ]);
     }
 
-    /**
-     * Renders the password reset form.
-     *
-     * @return \Illuminate\View\View
-     */
     public function showResetForm()
     {
         return view('auth.passwords.old-reset');
     }
 
-    /**
-     * Handles newsletter subscription.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
     public function subscribe(Request $request)
     {
         if (!Newsletter::isSubscribed($request->email)) {
@@ -1681,10 +1436,9 @@ class FrontendController extends Controller
 
     public function cart(Request $request)
     {
-        // If the user came here NOT from coupon apply POST or redirect
         if (!$request->session()->has('coupon_set')) {
-            session()->forget('coupon'); // Clear it only once
-            session()->put('coupon_set', true); // Flag to prevent auto-remove
+            session()->forget('coupon');
+            session()->put('coupon_set', true);
         }
 
         return view('frontend.pages.cart');

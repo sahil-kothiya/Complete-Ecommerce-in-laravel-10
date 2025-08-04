@@ -139,7 +139,7 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
             <div class="col-12">
                 <div class="d-flex flex-wrap justify-content-center gap-4" id="allProductsGrid" role="tabpanel" aria-labelledby="tab-all">
                     <div class="product-listing-wrapper">
-                        @foreach($product_lists->take(12) as $product)
+                        @foreach($product_lists as $product)
                         <div class="product-card-container">
                             @include('frontend.partials.product-card', ['product' => $product])
                             @include('frontend.partials.product-modal', ['product' => $product])
@@ -154,7 +154,7 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
 @endif
 
 <!-- Kids Section -->
-@if($product_lists->filter(fn($item) => $item->cat_info?->title === "Kid's")->count())
+@if($kidsProducts?->count())
 <section class="product-area section" id="kids-products">
     <div class="container">
         <div class="section-title text-center">
@@ -164,7 +164,7 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
             <div class="col-12">
                 <div class="d-flex flex-wrap justify-content-center gap-4" id="kidsProductsGrid" role="tabpanel" aria-labelledby="tab-kids">
                     <div class="product-listing-wrapper">
-                        @foreach($product_lists->filter(fn($item) => $item->cat_info?->title === "Kid's")->take(12) as $product)
+                        @foreach($kidsProducts as $product)
                         <div class="product-card-container category-kids">
                             @include('frontend.partials.product-card', ['product' => $product])
                             @include('frontend.partials.product-modal', ['product' => $product])
@@ -179,7 +179,7 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
 @endif
 
 <!-- Women Section -->
-@if($product_lists->filter(fn($item) => $item->cat_info?->title === "Women's Fashion")->count())
+@if($womenProducts?->count())
 <section class="product-area section" id="women-products">
     <div class="container">
         <div class="section-title text-center">
@@ -189,7 +189,7 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
             <div class="col-12">
                 <div class="d-flex flex-wrap justify-content-center gap-4" id="womenProductsGrid" role="tabpanel" aria-labelledby="tab-women">
                     <div class="product-listing-wrapper">
-                        @foreach($product_lists->filter(fn($item) => $item->cat_info?->title === "Women's Fashion")->take(12) as $product)
+                        @foreach($womenProducts as $product)
                         <div class="product-card-container category-women">
                             @include('frontend.partials.product-card', ['product' => $product])
                             @include('frontend.partials.product-modal', ['product' => $product])
@@ -204,7 +204,7 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
 @endif
 
 <!-- Men Section -->
-@if($product_lists->filter(fn($item) => $item->cat_info?->title === "Men's Fashion")->count())
+@if($menProducts?->count())
 <section class="product-area section" id="men-products">
     <div class="container">
         <div class="section-title text-center">
@@ -214,7 +214,7 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
             <div class="col-12">
                 <div class="d-flex flex-wrap justify-content-center gap-4" id="menProductsGrid" role="tabpanel" aria-labelledby="tab-men">
                     <div class="product-listing-wrapper">
-                        @foreach($product_lists->filter(fn($item) => $item->cat_info?->title === "Men's Fashion")->take(12) as $product)
+                        @foreach($menProducts as $product)
                         <div class="product-card-container category-men">
                             @include('frontend.partials.product-card', ['product' => $product])
                             @include('frontend.partials.product-modal', ['product' => $product])
