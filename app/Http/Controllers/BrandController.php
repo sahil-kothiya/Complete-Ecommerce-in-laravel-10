@@ -44,18 +44,21 @@ class BrandController extends Controller
         ]);
 
         $slug = generateUniqueSlug($request->title, Brand::class);
-
         $validatedData['slug'] = $slug;
+
+        // Generate unique code
+        $existingCodes = Brand::pluck('code')->toArray();
+        $generatedCode = generateUniqueCode($request->title, $existingCodes);
+
+        $validatedData['code'] = $generatedCode;
+        $validatedData['code_locked'] = false;
+        $validatedData['code_generated_at'] = now();
 
         $brand = Brand::create($validatedData);
 
-        $message = $brand
-            ? 'Brand successfully created'
-            : 'Error, Please try again';
-
         return redirect()->route('brand.index')->with(
             $brand ? 'success' : 'error',
-            $message
+            $brand ? 'Brand successfully created' : 'Error, Please try again'
         );
     }
 
@@ -109,15 +112,23 @@ class BrandController extends Controller
             'status' => 'required|in:active,inactive',
         ]);
 
-        $status = $brand->update($validatedData);
+        $wasLocked = $brand->code_locked;
+        $isLockedNow = $request->has('code_locked');
+        $validatedData['code_locked'] = $isLockedNow ? 1 : 0;
 
-        $message = $status
-            ? 'Brand successfully updated'
-            : 'Error, Please try again';
+        // Regenerate code only if now unlocked and title changed
+        if (!$isLockedNow && $brand->title !== $request->title) {
+            $existingCodes = Brand::where('id', '!=', $brand->id)->pluck('code')->toArray();
+            $generatedCode = generateUniqueCode($request->title, $existingCodes);
+            $validatedData['code'] = $generatedCode;
+            $validatedData['code_generated_at'] = now();
+        }
+
+        $status = $brand->update($validatedData);
 
         return redirect()->route('brand.index')->with(
             $status ? 'success' : 'error',
-            $message
+            $status ? 'Brand successfully updated' : 'Error, Please try again'
         );
     }
 

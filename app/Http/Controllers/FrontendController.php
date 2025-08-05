@@ -145,9 +145,6 @@ class FrontendController extends Controller
 
         try {
             RedisHelper::forgetMany($keys);
-            foreach ($keys as $key) {
-                Cache::forget($key);
-            }
             Log::info('Homepage cache cleared successfully');
             return true;
         } catch (\Exception $e) {
@@ -230,7 +227,7 @@ class FrontendController extends Controller
                 'cat_info' => fn($q) => $q->select(['id', 'title'])
             ])
             ->latest('id')
-            ->limit(300)
+            ->limit(150)
             ->get();
 
         RedisHelper::put($key, $products, $ttl);

@@ -351,4 +351,35 @@ if (!function_exists('generateUniqueSlug')) {
     }
 }
 
+if (!function_exists('generateUniqueCode')) {
+    /**
+     * Generate a unique 3-character uppercase code based on a string.
+     *
+     * @param string $title
+     * @param array $usedCodes
+     * @return string
+     */
+    function generateUniqueCode(string $title, array $usedCodes): string
+    {
+        $slug = strtoupper(Str::slug($title));
+        $slug = preg_replace('/[^A-Z]/', '', $slug);
+        $base = substr($slug, 0, 3);
+
+        if (strlen($base) < 3) {
+            $base = strtoupper(Str::random(3));
+        }
+
+        $code = $base;
+        $i = 1;
+
+        while (in_array($code, $usedCodes)) {
+            $suffix = strtoupper(base_convert($i, 10, 36));
+            $code = substr($base, 0, 3 - strlen($suffix)) . $suffix;
+            $code = str_pad($code, 3, 'X');
+            $i++;
+        }
+
+        return $code;
+    }
+}
 ?>

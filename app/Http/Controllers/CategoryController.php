@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Category;
+use Helper;
 
 class CategoryController extends Controller
 {
@@ -38,29 +39,34 @@ class CategoryController extends Controller
     public function store(Request $request)
     {
         $validatedData = $request->validate([
-            'title' => 'required|string',
-            'summary' => 'nullable|string',
-            'photo' => 'nullable|string',
-            'status' => 'required|in:active,inactive',
+            'title'     => 'required|string',
+            'summary'   => 'nullable|string',
+            'photo'     => 'nullable|string',
+            'status'    => 'required|in:active,inactive',
             'is_parent' => 'sometimes|in:1',
             'parent_id' => 'nullable|exists:categories,id',
         ]);
 
-        $slug = generateUniqueSlug($request->title, Category::class);
-        $validatedData['slug'] = $slug;
+        $validatedData['slug'] = generateUniqueSlug($request->title, Category::class);
         $validatedData['is_parent'] = $request->input('is_parent', 0);
+
+        // Auto-generate unique 3-letter code
+        $existingCodes = Category::pluck('code')->toArray();
+        $generatedCode = generateUniqueCode($request->title, $existingCodes);
+
+        // Add code fields to data array
+        $validatedData['code'] = $generatedCode;
+        $validatedData['code_generated_at'] = now();
+        $validatedData['code_locked'] = false;
 
         $category = Category::create($validatedData);
 
-        $message = $category
-            ? 'Category successfully added'
-            : 'Error occurred, Please try again!';
-
         return redirect()->route('category.index')->with(
             $category ? 'success' : 'error',
-            $message
+            $category ? 'Category successfully added' : 'Error occurred, please try again!'
         );
     }
+
 
     /**
      * Display the specified resource.
@@ -107,6 +113,26 @@ class CategoryController extends Controller
         ]);
 
         $validatedData['is_parent'] = $request->input('is_parent', 0);
+        $validatedData['code_locked'] = $request->has('code_locked') ? 1 : 0;
+
+        // Determine if title was changed AND code is not locked (in DB or in current request)
+        $wasLockedBefore = $category->code_locked; // value from DB
+        $isLockedNow = $request->has('code_locked'); // checkbox value
+
+        $validatedData['code_locked'] = $isLockedNow ? 1 : 0;
+        $validatedData['is_parent'] = $request->input('is_parent', 0);
+
+        // Regenerate only if it's currently *not locked* AND title has changed
+        if (!$isLockedNow && $request->title !== $category->title) {
+            $existingCodes = Category::where('id', '!=', $category->id)
+                ->pluck('code')
+                ->toArray();
+
+            $newCode = generateUniqueCode($request->title, $existingCodes);
+
+            $validatedData['code'] = $newCode;
+            $validatedData['code_generated_at'] = now();
+        }
 
         $status = $category->update($validatedData);
 
