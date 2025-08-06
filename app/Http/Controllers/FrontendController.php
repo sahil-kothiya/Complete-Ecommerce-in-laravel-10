@@ -968,6 +968,7 @@ class FrontendController extends Controller
 
     public function productCat(Request $request)
     {
+        dd($request->all());
         $startTime = microtime(true);
         $category = Category::where('slug', $request->slug)->firstOrFail();
         $ttl = $this->getTtlConfig();

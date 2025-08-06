@@ -236,7 +236,7 @@
             e.preventDefault();
             const slug = $(this).data('slug');
             if (slug) {
-                window.location.href = `/product/${slug}`;
+                window.location.href = `/product-detail/${slug}`;
             }
         });
 

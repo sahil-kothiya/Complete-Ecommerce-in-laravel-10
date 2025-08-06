@@ -15,5 +15,10 @@
     <!-- Custom styles for this template-->
     <link href="{{asset('backend/css/sb-admin-2.min.css')}}" rel="stylesheet">
     @stack('styles')
-
+    <style>
+        .text-danger {
+            font-size: 0.875rem;
+            font-weight: normal;
+        }
+    </style>
 </head>

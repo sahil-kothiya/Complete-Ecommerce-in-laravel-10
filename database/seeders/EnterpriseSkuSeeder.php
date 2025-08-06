@@ -10,13 +10,13 @@ use Exception;
 
 class EnterpriseSkuSeeder extends Seeder
 {
-    private const CHUNK_SIZE = 1000;
-    private const MAX_RETRIES = 15;
+    private const CHUNK_SIZE = 500;
+    private const MAX_RETRIES = 100;
     private const MEMORY_LIMIT_CHECK = 50;
 
     private array $generatedSkus = [];
     private int $memoryCheckCounter = 0;
-    private int $startFromId = 8951426; // change to 8951426 if resuming from there
+    private int $startFromId = 5098072; // change to 8951426 if resuming from there
 
     private array $stats = [
         'processed' => 0,
@@ -115,7 +115,8 @@ class EnterpriseSkuSeeder extends Seeder
 
                 $cat = $product->category->title ?? 'N/A';
                 $brand = $product->brand->title ?? 'N/A';
-                $this->info("🧬 ID {$product->id} | SKU: {$sku} | Cat: {$cat} | Brand: {$brand}");
+                $this->info("{$product->id}");
+                // $this->info("🧬 ID {$product->id} | SKU: {$sku} | Cat: {$cat} | Brand: {$brand}");
             }
 
             if (!empty($updates)) {

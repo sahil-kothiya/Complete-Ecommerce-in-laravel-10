@@ -9,69 +9,78 @@
 	<div class="card-body">
 		<form method="post" action="{{route('banner.store')}}">
 			@csrf
-			<div class="form-group">
-				<label for="inputTitle" class="col-form-label">Title <span class="text-danger">*</span></label>
-				<input id="inputTitle" type="text" name="title" placeholder="Enter title" value="{{old('title')}}" class="form-control" required>
-				@error('title')
-				<span class="text-danger">{{$message}}</span>
-				@enderror
-			</div>
 
-			<div class="form-group">
-				<label for="inputDesc" class="col-form-label">Description <span class="text-danger">*</span></label>
-				<textarea class="form-control" id="description" name="description">{{ old('description') }}</textarea>
-				@error('description')
-				<span class="text-danger">{{$message}}</span>
-				@enderror
-			</div>
+			<div class="row">
+				<div class="col-md-6">
+					<div class="form-group">
+						<label for="inputTitle" class="col-form-label">Title <span class="text-danger">*</span></label>
+						<input id="inputTitle" type="text" name="title" placeholder="Enter title" value="{{old('title')}}" class="form-control" required>
+						@error('title')
+						<span class="text-danger">{{$message}}</span>
+						@enderror
+					</div>
 
-			<div class="form-group">
-				<label for="inputPhoto" class="col-form-label">Photo <span class="text-danger">*</span></label>
-				<div class="input-group">
-					<span class="input-group-btn">
-						<a id="lfm" data-input="thumbnail" data-preview="holder" class="btn btn-primary">
-							<i class="fa fa-picture-o"></i> Choose
-						</a>
-					</span>
-					<input id="thumbnail" class="form-control" type="text" name="photo" value="{{old('photo')}}" required>
+					<div class="form-group">
+						<label for="inputDesc" class="col-form-label">Description <span class="text-danger">*</span></label>
+						<textarea class="form-control" id="description" name="description">{{ old('description') }}</textarea>
+						@error('description')
+						<span class="text-danger">{{$message}}</span>
+						@enderror
+					</div>
+
+					<div class="form-group mb-3">
+						<button type="reset" class="btn btn-warning">Reset</button>
+						<button class="btn btn-success" type="submit">Submit</button>
+					</div>
 				</div>
-				<div id="holder" style="margin-top:15px;max-height:100px;"></div>
-				@error('photo')
-				<span class="text-danger">{{$message}}</span>
-				@enderror
+
+				<div class="col-md-6">
+					<div class="form-group">
+						<label for="discount_id" class="col-form-label">Discount <span class="text-danger">*</span></label>
+						<select name="discount_id" class="form-control" required>
+							<option value="">-- Select Discount --</option>
+							@foreach($discounts as $discount)
+							<option value="{{ $discount->id }}" {{ old('discount_id') == $discount->id ? 'selected' : '' }}>
+								{{ $discount->title }} -
+								{{ $discount->type === 'percentage' ? $discount->value . '%' : '₹' . number_format($discount->value, 2) }}
+							</option>
+							@endforeach
+						</select>
+						@error('discount_id')
+						<span class="text-danger">{{ $message }}</span>
+						@enderror
+					</div>
+
+					<div class="form-group">
+						<label for="status" class="col-form-label">Status <span class="text-danger">*</span></label>
+						<select name="status" class="form-control" required>
+							<option value="active" {{ old('status') == 'active' ? 'selected' : '' }}>Active</option>
+							<option value="inactive" {{ old('status') == 'inactive' ? 'selected' : '' }}>Inactive</option>
+						</select>
+						@error('status')
+						<span class="text-danger">{{$message}}</span>
+						@enderror
+					</div>
+
+					<div class="form-group">
+						<label for="inputPhoto" class="col-form-label">Photo <span class="text-danger">*</span></label>
+						<div class="input-group">
+							<span class="input-group-btn">
+								<a id="lfm" data-input="thumbnail" data-preview="holder" class="btn btn-primary">
+									<i class="fa fa-picture-o"></i> Choose
+								</a>
+							</span>
+							<input id="thumbnail" class="form-control" type="text" name="photo" value="{{old('photo')}}" required>
+						</div>
+						<div id="holder" style="margin-top:15px;max-height:100px;"></div>
+						@error('photo')
+						<span class="text-danger">{{$message}}</span>
+						@enderror
+					</div>
+
+				</div>
 			</div>
 
-			<div class="form-group">
-				<label for="discount_id" class="col-form-label">Discount <span class="text-danger">*</span></label>
-				<select name="discount_id" class="form-control" required>
-					<option value="">-- Select Discount --</option>
-					@foreach($discounts as $discount)
-					<option value="{{ $discount->id }}" {{ old('discount_id') == $discount->id ? 'selected' : '' }}>
-						{{ $discount->title }} -
-						{{ $discount->type === 'percentage' ? $discount->value . '%' : '₹' . number_format($discount->value, 2) }}
-					</option>
-					@endforeach
-				</select>
-				@error('discount_id')
-				<span class="text-danger">{{ $message }}</span>
-				@enderror
-			</div>
-
-			<div class="form-group">
-				<label for="status" class="col-form-label">Status <span class="text-danger">*</span></label>
-				<select name="status" class="form-control" required>
-					<option value="active" {{ old('status') == 'active' ? 'selected' : '' }}>Active</option>
-					<option value="inactive" {{ old('status') == 'inactive' ? 'selected' : '' }}>Inactive</option>
-				</select>
-				@error('status')
-				<span class="text-danger">{{$message}}</span>
-				@enderror
-			</div>
-
-			<div class="form-group mb-3">
-				<button type="reset" class="btn btn-warning">Reset</button>
-				<button class="btn btn-success" type="submit">Submit</button>
-			</div>
 		</form>
 	</div>
 </div>

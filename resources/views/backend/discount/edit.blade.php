@@ -7,82 +7,94 @@
 		<form id="discountForm" method="POST" action="{{ route('discount.update', $discount->id) }}">
 			@csrf
 			@method('PATCH')
+			<div class="row">
+				<div class="col-md-6">
+					{{-- Title --}}
+					<div class="form-group">
+						<label for="title">Title <span class="text-danger">*</span></label>
+						<input id="title" type="text" name="title" class="form-control" placeholder="Enter title"
+							value="{{ old('title', $discount->title) }}">
+						@error('title')<span class="text-danger">{{ $message }}</span>@enderror
+					</div>
 
-			{{-- Title --}}
-			<div class="form-group">
-				<label for="title">Title <span class="text-danger">*</span></label>
-				<input id="title" type="text" name="title" class="form-control" placeholder="Enter title"
-					value="{{ old('title', $discount->title) }}">
-				@error('title')<span class="text-danger">{{ $message }}</span>@enderror
-			</div>
+					{{-- Discount Type --}}
+					<div class="form-group">
+						<label for="type">Discount Type <span class="text-danger">*</span></label>
+						<select name="type" id="type" class="form-control">
+							<option value="percentage" {{ old('type', $discount->type) == 'percentage' ? 'selected' : '' }}>Percentage</option>
+							<option value="amount" {{ old('type', $discount->type) == 'amount' ? 'selected' : '' }}>Fixed Amount</option>
+						</select>
+						@error('type')<span class="text-danger">{{ $message }}</span>@enderror
+					</div>
 
-			{{-- Discount Type --}}
-			<div class="form-group">
-				<label for="type">Discount Type <span class="text-danger">*</span></label>
-				<select name="type" id="type" class="form-control">
-					<option value="percentage" {{ old('type', $discount->type) == 'percentage' ? 'selected' : '' }}>Percentage</option>
-					<option value="amount" {{ old('type', $discount->type) == 'amount' ? 'selected' : '' }}>Fixed Amount</option>
-				</select>
-				@error('type')<span class="text-danger">{{ $message }}</span>@enderror
-			</div>
+					{{-- Discount Value --}}
+					<div class="form-group">
+						<label for="value">Discount Value <span class="text-danger">*</span></label>
+						<input id="value" type="number" step="0.01" name="value" class="form-control"
+							placeholder="e.g. 10 or 100.00"
+							value="{{ old('value', $discount->value) }}" min="0">
+						@error('value')<span class="text-danger">{{ $message }}</span>@enderror
+					</div>
 
-			{{-- Discount Value --}}
-			<div class="form-group">
-				<label for="value">Discount Value <span class="text-danger">*</span></label>
-				<input id="value" type="number" step="0.01" name="value" class="form-control"
-					placeholder="e.g. 10 or 100.00"
-					value="{{ old('value', $discount->value) }}" min="0">
-				@error('value')<span class="text-danger">{{ $message }}</span>@enderror
-			</div>
+					{{-- Is Active --}}
+					<div class="form-group form-check">
+						<input type="checkbox" name="is_active" id="is_active" class="form-check-input" value="1"
+							{{ old('is_active', $discount->is_active) ? 'checked' : '' }}>
+						<label for="is_active" class="form-check-label">Active</label>
+					</div>
 
-			{{-- Start Time --}}
-			<div class="form-group">
-				<label for="starts_at">Starts At <span class="text-danger">*</span></label>
-				<input type="datetime-local" name="starts_at" id="starts_at" class="form-control"
-					value="{{ old('starts_at', $discount->starts_at ? $discount->starts_at->format('Y-m-d\TH:i') : '') }}">
-				@error('starts_at')<span class="text-danger">{{ $message }}</span>@enderror
-			</div>
+					{{-- Buttons --}}
+					<div class="form-group mb-3">
+						<button type="reset" class="btn btn-warning">Reset</button>
+						<button type="submit" class="btn btn-success">Update</button>
+					</div>
+				</div>
 
-			{{-- End Time --}}
-			<div class="form-group">
-				<label for="ends_at">Ends At <span class="text-danger">*</span></label>
-				<input type="datetime-local" name="ends_at" id="ends_at" class="form-control"
-					value="{{ old('ends_at', $discount->ends_at ? $discount->ends_at->format('Y-m-d\TH:i') : '') }}">
-				@error('ends_at')<span class="text-danger">{{ $message }}</span>@enderror
-			</div>
+				<div class="col-md-6">
+					{{-- Start Time --}}
+					<div class="form-group">
+						<label for="starts_at">Starts At <span class="text-danger">*</span></label>
+						<input type="datetime-local" name="starts_at" id="starts_at" class="form-control"
+							value="{{ old('starts_at', $discount->starts_at ? $discount->starts_at->format('Y-m-d\TH:i') : '') }}">
+						@error('starts_at')<span class="text-danger">{{ $message }}</span>@enderror
+					</div>
 
-			{{-- Categories --}}
-			<div class="form-group">
-				<label for="categories">Applicable Categories <span class="text-danger">*</span></label>
-				<select name="categories[]" id="categories" class="form-control" multiple>
-					@foreach($categories as $category)
-					<option value="{{ $category->id }}"
-						{{ in_array($category->id, old('categories', $selectedCategoryIds)) ? 'selected' : '' }}>
-						{{ $category->title }}
-					</option>
-					@endforeach
-				</select>
-				@error('categories')<span class="text-danger">{{ $message }}</span>@enderror
-			</div>
+					{{-- End Time --}}
+					<div class="form-group">
+						<label for="ends_at">Ends At <span class="text-danger">*</span></label>
+						<input type="datetime-local" name="ends_at" id="ends_at" class="form-control"
+							value="{{ old('ends_at', $discount->ends_at ? $discount->ends_at->format('Y-m-d\TH:i') : '') }}">
+						@error('ends_at')<span class="text-danger">{{ $message }}</span>@enderror
+					</div>
 
-			{{-- Is Active --}}
-			<div class="form-group form-check">
-				<input type="checkbox" name="is_active" id="is_active" class="form-check-input" value="1"
-					{{ old('is_active', $discount->is_active) ? 'checked' : '' }}>
-				<label for="is_active" class="form-check-label">Active</label>
-			</div>
+					{{-- Categories --}}
+					<div class="form-group">
+						<label for="categories">Applicable Categories <span class="text-danger">*</span></label>
+						<select name="categories[]" id="categories" class="form-control selectpicker" multiple data-live-search="true">
+							@foreach($categories as $category)
+							<option value="{{ $category->id }}"
+								{{ in_array($category->id, old('categories', $selectedCategoryIds)) ? 'selected' : '' }}>
+								{{ $category->title }}
+							</option>
+							@endforeach
+						</select>
+						@error('categories')<span class="text-danger">{{ $message }}</span>@enderror
+					</div>
 
-			{{-- Buttons --}}
-			<div class="form-group mb-3">
-				<button type="reset" class="btn btn-warning">Reset</button>
-				<button type="submit" class="btn btn-success">Update</button>
+
+				</div>
 			</div>
 		</form>
 	</div>
 </div>
 @endsection
 
+@push('styles')
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/css/bootstrap-select.css" />
+@endpush
+
 @push('scripts')
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
 <script>
 	document.addEventListener('DOMContentLoaded', function() {
 		const typeSelect = document.getElementById('type');

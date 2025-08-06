@@ -355,17 +355,17 @@ class FrontendController extends Controller
         }
     }
     public function productCat(Request $request)
-{
-    $category = Category::where('slug', $request->slug)->firstOrFail();
-    $products = $category->products()->paginate(12); // Limit to 12 per page
-    $recent_products = Product::active()->latest()->limit(3)->get();
+    {
+        $category = Category::where('slug', $request->slug)->firstOrFail();
+        $products = $category->products()->paginate(12); // Limit to 12 per page
+        $recent_products = Product::active()->latest()->limit(3)->get();
 
-    if ($request->is('e-shop.loc/product-grids')) {
-        return view('frontend.pages.product-grids', compact('products', 'recent_products'));
-    } else {
-        return view('frontend.pages.product-lists', compact('products', 'recent_products'));
+        if ($request->is('e-shop.loc/product-grids')) {
+            return view('frontend.pages.product-grids', compact('products', 'recent_products'));
+        } else {
+            return view('frontend.pages.product-lists', compact('products', 'recent_products'));
+        }
     }
-}
 
 
     // public function productCat(Request $request)

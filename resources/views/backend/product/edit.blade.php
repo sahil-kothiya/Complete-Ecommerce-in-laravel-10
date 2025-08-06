@@ -12,7 +12,6 @@
 
 				{{-- Left Column --}}
 				<div class="col-md-6">
-
 					{{-- Title --}}
 					<div class="form-group">
 						<label for="inputTitle">Title <span class="text-danger">*</span></label>
@@ -71,7 +70,6 @@
 
 				{{-- Right Column --}}
 				<div class="col-md-6">
-
 					{{-- Discount --}}
 					<div class="form-group">
 						<label for="discount">Discount (%)</label>
@@ -122,6 +120,16 @@
 						@error('stock')<span class="text-danger">{{ $message }}</span>@enderror
 					</div>
 
+					{{-- Status --}}
+					<div class="form-group">
+						<label for="status">Status <span class="text-danger">*</span></label>
+						<select name="status" class="form-control">
+							<option value="active" {{ $product->status == 'active' ? 'selected' : '' }}>Active</option>
+							<option value="inactive" {{ $product->status == 'inactive' ? 'selected' : '' }}>Inactive</option>
+						</select>
+						@error('status')<span class="text-danger">{{ $message }}</span>@enderror
+					</div>
+
 					{{-- Images --}}
 					<div class="form-group">
 						<label for="inputPhoto">Upload New Image(s)</label>
@@ -160,16 +168,6 @@
 						</div>
 					</div>
 					@endif
-
-					{{-- Status --}}
-					<div class="form-group">
-						<label for="status">Status <span class="text-danger">*</span></label>
-						<select name="status" class="form-control">
-							<option value="active" {{ $product->status == 'active' ? 'selected' : '' }}>Active</option>
-							<option value="inactive" {{ $product->status == 'inactive' ? 'selected' : '' }}>Inactive</option>
-						</select>
-						@error('status')<span class="text-danger">{{ $message }}</span>@enderror
-					</div>
 
 				</div>
 			</div>

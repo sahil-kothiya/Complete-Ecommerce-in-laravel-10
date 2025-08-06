@@ -28,7 +28,7 @@ class BannerController extends Controller
      */
     public function create()
     {
-        $discounts = Discount::active()->get();
+        $discounts = Discount::all();
         return view('backend.banner.create', compact('discounts'));
     }
 

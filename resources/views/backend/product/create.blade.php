@@ -119,6 +119,16 @@
 						@error('stock')<span class="text-danger">{{ $message }}</span>@enderror
 					</div>
 
+					{{-- Status --}}
+					<div class="form-group">
+						<label for="status">Status <span class="text-danger">*</span></label>
+						<select name="status" class="form-control">
+							<option value="active" {{ old('status') == 'active' ? 'selected' : '' }}>Active</option>
+							<option value="inactive" {{ old('status') == 'inactive' ? 'selected' : '' }}>Inactive</option>
+						</select>
+						@error('status')<span class="text-danger">{{ $message }}</span>@enderror
+					</div>
+
 					{{-- Photos --}}
 					<div class="form-group">
 						<label for="inputPhoto">Photos <span class="text-danger">*</span></label>
@@ -133,16 +143,6 @@
 						<small class="form-text text-muted">Select multiple images. They will be comma-separated.</small>
 						<div id="holder" style="margin-top:15px;max-height:100px;"></div>
 						@error('photo')<span class="text-danger">{{ $message }}</span>@enderror
-					</div>
-
-					{{-- Status --}}
-					<div class="form-group">
-						<label for="status">Status <span class="text-danger">*</span></label>
-						<select name="status" class="form-control">
-							<option value="active" {{ old('status') == 'active' ? 'selected' : '' }}>Active</option>
-							<option value="inactive" {{ old('status') == 'inactive' ? 'selected' : '' }}>Inactive</option>
-						</select>
-						@error('status')<span class="text-danger">{{ $message }}</span>@enderror
 					</div>
 
 				</div>
