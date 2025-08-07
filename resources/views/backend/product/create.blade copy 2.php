@@ -65,22 +65,21 @@
 						<input type="number" id="price" name="price" class="form-control" value="{{ old('price') }}" placeholder="Enter price">
 						@error('price')<span class="text-danger">{{ $message }}</span>@enderror
 					</div>
-					
+				</div>
+
+				{{-- Right Column --}}
+				<div class="col-md-6">
 					{{-- Discount --}}
 					<div class="form-group">
 						<label for="discount">Discount (%)</label>
 						<input type="number" id="discount" name="discount" class="form-control" value="{{ old('discount') }}" min="0" max="100" placeholder="Enter discount">
 						@error('discount')<span class="text-danger">{{ $message }}</span>@enderror
 					</div>
-				</div>
-
-				{{-- Right Column --}}
-				<div class="col-md-6">
 
 					{{-- Sizes --}}
 					<div class="form-group">
 						<label for="size">Size</label>
-						@php $selectedSizes = old('size', []); @endphp
+						@php $selectedSizes = old('size') ? old('size') : []; @endphp
 						<select name="size[]" class="form-control selectpicker" multiple data-live-search="true">
 							@foreach(['S' => 'Small', 'M' => 'Medium', 'L' => 'Large', 'XL' => 'Extra Large'] as $key => $label)
 							<option value="{{ $key }}" {{ in_array($key, $selectedSizes) ? 'selected' : '' }}>{{ $label }}</option>
@@ -145,7 +144,9 @@
 
 						{{-- Image preview area --}}
 						<div id="image-preview-area" style="margin-top: 15px;">
-							<div id="holder" class="img-fluid"></div>
+							<div id="holder" class="img-fluid" style="display: none;">
+								<!-- Images will be displayed here -->
+							</div>
 						</div>
 
 						@error('photo')<span class="text-danger">{{ $message }}</span>@enderror
@@ -153,7 +154,7 @@
 
 					{{-- Alt Text Toggle Checkbox --}}
 					<div class="form-group form-check" id="alt-text-toggle" style="display: none;">
-						<input type="checkbox" name="enable_alt_text" id="enable_alt_text" value="1" class="form-check-input">
+						<input type="checkbox" name="enable_alt_text" id="enable_alt_text" value="1" class="form-check-input" {{ old('enable_alt_text') ? 'checked' : '' }}>
 						<label for="enable_alt_text" class="form-check-label">
 							<i class="fa fa-image"></i> Enable Alt Text for Images
 							<small class="text-muted d-block">Check this to add descriptive text for images (improves SEO & accessibility)</small>
@@ -163,7 +164,7 @@
 				</div>
 			</div>
 
-			{{-- Alt Text Section --}}
+			{{-- Alt Text Section (appears when images are selected and checkbox is checked) --}}
 			<div id="alt-text-section" class="row" style="display: none;">
 				<div class="col-12">
 					<hr>
@@ -196,7 +197,7 @@
 		width: 100%;
 	}
 
-	/* Image preview styles - Fixed delete button positioning */
+	/* Image preview styles */
 	#image-preview-area {
 		position: relative;
 	}
@@ -204,41 +205,43 @@
 	#holder {
 		min-height: 140px;
 		padding: 10px;
-		display: flex;
-		flex-wrap: wrap;
-		gap: 10px;
+		border: 2px dashed #dee2e6;
+		border-radius: 4px;
+		background-color: #f8f9fa;
+	}
+
+	#holder:empty::before {
+		content: "No images selected";
+		display: block;
+		text-align: center;
+		color: #6c757d;
+		padding: 50px 0;
+		font-style: italic;
 	}
 
 	.image-container {
 		display: inline-block;
 		position: relative;
 		margin: 5px;
-		border-radius: 8px;
-		background: #fff;
-		padding: 5px;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-		transition: all 0.3s ease;
-	}
-
-	.image-container:hover {
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-		transform: translateY(-2px);
 	}
 
 	.image-preview {
 		height: 120px;
-		width: 120px;
-		object-fit: cover;
+		width: auto;
 		display: block;
 		transition: all 0.3s ease;
 		cursor: zoom-in;
-		border-radius: 6px;
+		border-radius: 4px;
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 		position: relative;
 		z-index: 1;
 	}
 
 	.image-preview:hover {
-		transform: scale(1.05);
+		transform: scale(1.8);
+		z-index: 999;
+		box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+		border: 2px solid #007bff;
 	}
 
 	/* Primary image indicator */
@@ -246,16 +249,15 @@
 		border: 3px solid #28a745;
 	}
 
-	.primary-badge {
-		position: absolute;
-		top: 0px;
-		left: 0px;
-		z-index: 5;
+	.image-preview[data-is-primary="true"]:hover {
+		border: 3px solid #007bff;
 	}
 
-	.primary-badge .badge {
-		font-size: 10px;
-		padding: 3px 6px;
+	.primary-badge {
+		position: absolute;
+		top: -5px;
+		right: -5px;
+		z-index: 2;
 	}
 
 	/* Image not found styles */
@@ -268,9 +270,9 @@
 		align-items: center;
 		justify-content: center;
 		flex-direction: column;
-		border-radius: 6px;
+		border-radius: 4px;
 		color: #6c757d;
-		font-size: 11px;
+		font-size: 12px;
 		text-align: center;
 		padding: 10px;
 	}
@@ -279,29 +281,6 @@
 		font-size: 24px;
 		margin-bottom: 5px;
 		color: #adb5bd;
-	}
-
-	/* Responsive adjustments */
-	@media (max-width: 768px) {
-		.image-container {
-			margin: 3px;
-		}
-
-		.image-preview {
-			height: 100px;
-			width: 100px;
-		}
-
-		.image-not-found {
-			height: 100px;
-			width: 100px;
-			font-size: 10px;
-		}
-	}
-
-	/* Additional fixes for image container */
-	.image-container * {
-		box-sizing: border-box;
 	}
 
 	/* Alt text section styles */
@@ -436,21 +415,6 @@
 		}
 	}
 
-	/* Notification styles */
-	.notification-toast {
-		border-radius: 6px;
-		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important;
-	}
-
-	.notification-toast .close {
-		color: inherit;
-		opacity: 0.8;
-	}
-
-	.notification-toast .close:hover {
-		opacity: 1;
-	}
-
 	/* Show alt text toggle only when images are selected */
 	#alt-text-toggle.show {
 		display: block !important;
@@ -475,7 +439,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
 
 <script>
-	// File manager initialization
 	$('#lfm').filemanager('image');
 
 	// Global image error handling function
@@ -515,36 +478,6 @@
 		img.classList.add('image-error');
 	}
 
-	// Function to show notification messages
-	function showNotification(message, type = 'info') {
-		// Remove existing notifications
-		$('.notification-toast').remove();
-
-		// Create notification element
-		const notificationClass = type === 'success' ? 'alert-success' :
-			type === 'error' ? 'alert-danger' : 'alert-info';
-
-		const $notification = $(`
-			<div class="alert ${notificationClass} notification-toast alert-dismissible" 
-				 style="position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 350px;">
-				<button type="button" class="close" data-dismiss="alert" aria-label="Close">
-					<span aria-hidden="true">&times;</span>
-				</button>
-				<strong>${type === 'success' ? 'Success!' : type === 'error' ? 'Error!' : 'Info!'}</strong> ${message}
-			</div>
-		`);
-
-		// Add to page
-		$('body').append($notification);
-
-		// Auto-hide after 4 seconds
-		setTimeout(function() {
-			$notification.fadeOut(400, function() {
-				$(this).remove();
-			});
-		}, 4000);
-	}
-
 	function toggleAltTextSection() {
 		const isEnabled = $('#enable_alt_text').is(':checked');
 		const $altSection = $('#alt-text-section');
@@ -554,7 +487,7 @@
 		if (isEnabled) {
 			// Show alt text section with animation and regenerate inputs
 			$altSection.addClass('alt-text-section-show').show();
-			updateImagePreview();
+			updateImagePreview(); // Regenerate alt text inputs
 		} else {
 			// Hide alt text section with animation
 			$altSection.addClass('alt-text-section-hide');
@@ -590,8 +523,9 @@
 
 		// Show holder and images
 		$holder.show();
-		// Show alt text toggle only when images are present
-		$altToggle.addClass('show').show();
+
+		// Show alt text toggle after images are loaded
+		$altToggle.addClass('show');
 
 		images.forEach(function(url, index) {
 			url = url.trim();
@@ -630,7 +564,7 @@
 			}
 		});
 
-		// Show alt text section only if checkbox is enabled and images are present
+		// Show alt text section only if checkbox is enabled
 		if ($('#enable_alt_text').is(':checked')) {
 			$altSection.addClass('alt-text-section-show').show();
 		}
@@ -642,38 +576,42 @@
 		// Get product title for auto-suggestion
 		let productTitle = $('#inputTitle').val() || 'Product';
 		let suggestedAlt = `${productTitle} - ${index === 0 ? 'Main Image' : 'Image ' + (index + 1)}`;
+
 		let isPrimary = index === 0;
 		let counterClass = isPrimary ? 'image-counter primary-counter' : 'image-counter';
 		let primaryBadge = isPrimary ? '<span class="badge badge-success badge-sm ml-1">Primary</span>' : '';
 
+		// FIXED: The key issue was here - the name attribute should be alt_text[] (array notation)
+		// but each textarea needs a unique name to maintain proper ordering
 		let altTextHtml = `
-			<div class="col-md-6 alt-text-item" data-index="${index}">
-				<div class="d-flex align-items-start">
-					<div class="${counterClass}">${index + 1}</div>
-					<div class="alt-text-image-container">
-						<img src="${imageUrl}" class="alt-text-preview mr-3" alt="Preview" 
-							 onerror="handleAltTextImageError(this, '${suggestedAlt}')">
-					</div>
-					<div class="flex-fill">
-						<label class="font-weight-bold mb-2">
-							Alt Text for Image ${index + 1}:${primaryBadge}
-						</label>
-						<textarea name="alt_text[${index}]" class="form-control alt-text-input" 
-								  placeholder="Describe this image (e.g., ${suggestedAlt})"
-								  data-index="${index}">${suggestedAlt}</textarea>
-						<small class="form-text text-muted">
-							Good alt text: descriptive, concise (125 chars or less), includes product name
-						</small>
-						<div class="mt-2">
-							<button type="button" class="btn btn-sm btn-outline-primary auto-generate-alt" data-index="${index}" data-type="new">
-								<i class="fa fa-magic"></i> Auto-generate
-							</button>
-							<span class="ml-2 text-muted char-count">0/125 characters</span>
-						</div>
-					</div>
-				</div>
-			</div>
-		`;
+        <div class="col-md-6 alt-text-item" data-index="${index}">
+            <div class="d-flex align-items-start">
+                <div class="${counterClass}">${index + 1}</div>
+                <div class="alt-text-image-container">
+                    <img src="${imageUrl}" class="alt-text-preview mr-3" alt="Preview" 
+                         onerror="handleAltTextImageError(this, '${suggestedAlt}')">
+                </div>
+                <div class="flex-fill">
+                    <label class="font-weight-bold mb-2">
+                        Alt Text for Image ${index + 1}:${primaryBadge}
+                    </label>
+                    <input type="hidden" name="alt_text_order[]" value="${index}">
+                    <textarea name="alt_text[${index}]" class="form-control alt-text-input" 
+                              placeholder="Describe this image (e.g., ${suggestedAlt})"
+                              data-index="${index}">${suggestedAlt}</textarea>
+                    <small class="form-text text-muted">
+                        Good alt text: descriptive, concise (125 chars or less), includes product name
+                    </small>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary auto-generate-alt" data-index="${index}">
+                            <i class="fa fa-magic"></i> Auto-generate
+                        </button>
+                        <span class="ml-2 text-muted char-count">0/125 characters</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
 
 		container.append(altTextHtml);
 		updateCharCount(index);
@@ -692,8 +630,66 @@
 		}
 	}
 
+	// Alt text checkbox toggle handler
+	$('#enable_alt_text').on('change', function() {
+		toggleAltTextSection();
+	});
+
+	// Monitor changes to the thumbnail input
+	$('#thumbnail').on('input change', function() {
+		console.log('Thumbnail input changed');
+		updateImagePreview();
+	});
+
+	// Trigger update when file manager button is clicked
+	$('#lfm').on('click', function() {
+		console.log('File manager button clicked');
+		let checkCount = 0;
+		let originalValue = $('#thumbnail').val();
+		let checkInterval = setInterval(function() {
+			checkCount++;
+			let currentValue = $('#thumbnail').val();
+			if (currentValue && currentValue !== originalValue) {
+				console.log('Value changed:', currentValue);
+				updateImagePreview();
+				clearInterval(checkInterval);
+			} else if (checkCount > 20) {
+				clearInterval(checkInterval);
+			}
+		}, 500);
+	});
+
+	// Auto-generate alt text
+	$(document).on('click', '.auto-generate-alt', function() {
+		let index = $(this).data('index');
+		let productTitle = $('#inputTitle').val() || 'Product';
+		let category = $('#cat_id option:selected').text();
+		let brand = $('#brand_id option:selected').text();
+
+		let autoAlt = productTitle;
+		if (brand && brand !== '-- Select Brand --') autoAlt += ` by ${brand}`;
+		if (category && category !== '-- Select any category --') autoAlt += ` - ${category}`;
+
+		if (index === 0) {
+			autoAlt += ' - Main Product Image';
+		} else {
+			autoAlt += ` - Product Image ${index + 1}`;
+		}
+
+		// FIXED: Updated selector to match new name structure
+		$(`textarea[name="alt_text[${index}]"]`).val(autoAlt);
+		updateCharCount(index);
+	});
+
+
+	// Character count tracking for all alt text inputs
+	$(document).on('input', 'textarea[name^="alt_text["]', function() {
+		let index = $(this).data('index');
+		updateCharCount(index);
+	});
+
 	$(document).ready(function() {
-		console.log('Document ready - Product Create Form');
+		console.log('Document ready');
 
 		// Initialize Summernote
 		$('#summary').summernote({
@@ -710,57 +706,6 @@
 			updateImagePreview();
 		}
 
-		// Alt text checkbox toggle handler
-		$('#enable_alt_text').on('change', function() {
-			toggleAltTextSection();
-		});
-
-		// Monitor changes to the thumbnail input
-		$('#thumbnail').on('input change', function() {
-			console.log('Thumbnail input changed');
-			updateImagePreview();
-		});
-
-		// Trigger update when file manager button is clicked
-		$('#lfm').on('click', function() {
-			console.log('File manager button clicked');
-			let checkCount = 0;
-			let originalValue = $('#thumbnail').val();
-			let checkInterval = setInterval(function() {
-				checkCount++;
-				let currentValue = $('#thumbnail').val();
-				if (currentValue && currentValue !== originalValue) {
-					console.log('Value changed:', currentValue);
-					updateImagePreview();
-					clearInterval(checkInterval);
-				} else if (checkCount > 20) {
-					clearInterval(checkInterval);
-				}
-			}, 500);
-		});
-
-		// Auto-generate alt text
-		$(document).on('click', '.auto-generate-alt', function() {
-			let index = $(this).data('index');
-			let productTitle = $('#inputTitle').val() || 'Product';
-			let category = $('#cat_id option:selected').text();
-			let brand = $('#brand_id option:selected').text();
-
-			let autoAlt = productTitle;
-			if (brand && brand !== '-- Select Brand --') autoAlt += ` by ${brand}`;
-			if (category && category !== '-- Select any category --') autoAlt += ` - ${category}`;
-			autoAlt += index === 0 ? ' - Main Product Image' : ` - Product Image ${index + 1}`;
-
-			$(`textarea[name="alt_text[${index}]"]`).val(autoAlt);
-			updateCharCount(index);
-		});
-
-		// Character count tracking for all alt text inputs
-		$(document).on('input', 'textarea.alt-text-input', function() {
-			let index = $(this).data('index');
-			updateCharCount(index);
-		});
-
 		// Form submission handling
 		$('form').on('submit', function(e) {
 			$('#summary').val($('#summary').summernote('code'));
@@ -768,6 +713,7 @@
 
 			// Only validate alt text if the checkbox is checked
 			if ($('#enable_alt_text').is(':checked')) {
+				// FIXED: Updated selector to match new name structure
 				let altTexts = $('textarea[name^="alt_text["]');
 				if (altTexts.length > 0) {
 					let emptyAltTexts = altTexts.filter(function() {
@@ -776,7 +722,7 @@
 
 					if (emptyAltTexts.length > 0) {
 						e.preventDefault();
-						showNotification('Please provide alt text for all images or uncheck "Enable Alt Text" option.', 'error');
+						alert('Please provide alt text for all images or uncheck "Enable Alt Text" option.');
 						emptyAltTexts.first().focus();
 						return false;
 					}
@@ -808,7 +754,8 @@
 					if (response.status && response.data) {
 						$('#child_cat_div').removeClass('d-none');
 						$.each(response.data, function(id, title) {
-							const selected = (id == '{{ old('child_cat_id') }}') ? 'selected' : '';
+							const selected = (id == '{{ old('
+								child_cat_id ') }}') ? 'selected' : '';
 							html += `<option value="${id}" ${selected}>${title}</option>`;
 						});
 					} else {

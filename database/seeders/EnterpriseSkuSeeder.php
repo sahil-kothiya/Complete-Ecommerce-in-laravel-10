@@ -16,7 +16,7 @@ class EnterpriseSkuSeeder extends Seeder
 
     private array $generatedSkus = [];
     private int $memoryCheckCounter = 0;
-    private int $startFromId = 5098072; // change to 8951426 if resuming from there
+    private int $startFromId = 4045464; // change to 8951426 if resuming from there
 
     private array $stats = [
         'processed' => 0,

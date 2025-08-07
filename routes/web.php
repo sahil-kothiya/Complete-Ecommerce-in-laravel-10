@@ -8,8 +8,12 @@ use App\Http\Controllers\{
     Auth\ForgotPasswordController,
     Auth\LoginController,
     Auth\ResetPasswordController,
+    BannerController,
+    BrandController,
     CartController,
+    CategoryController,
     CouponController,
+    DiscountController,
     FrontendController,
     HomeController,
     MessageController,
@@ -17,11 +21,17 @@ use App\Http\Controllers\{
     NotificationController,
     OrderController,
     PayPalController,
+    PostCategoryController,
     PostCommentController,
+    PostController,
+    PostTagController,
+    ProductController,
     ProductReviewController,
     RazorpayController,
+    ShippingController,
     SquareController,
     StripeController,
+    UsersController,
     WishlistController
 };
 use UniSharp\LaravelFilemanager\Lfm;
@@ -158,20 +168,23 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::delete('/notification/{id}', [NotificationController::class, 'delete'])->name('notification.delete');
 
     Route::resources([
-        'users' => App\Http\Controllers\UsersController::class,
-        'banner' => App\Http\Controllers\BannerController::class,
-        'brand' => App\Http\Controllers\BrandController::class,
-        'category' => App\Http\Controllers\CategoryController::class,
-        'discount' => App\Http\Controllers\DiscountController::class,
-        'product' => App\Http\Controllers\ProductController::class,
-        'post-category' => App\Http\Controllers\PostCategoryController::class,
-        'post-tag' => App\Http\Controllers\PostTagController::class,
-        'post' => App\Http\Controllers\PostController::class,
-        'message' => App\Http\Controllers\MessageController::class,
-        'order' => App\Http\Controllers\OrderController::class,
-        'shipping' => App\Http\Controllers\ShippingController::class,
-        'coupon' => App\Http\Controllers\CouponController::class,
+        'users' => UsersController::class,
+        'banner' => BannerController::class,
+        'brand' => BrandController::class,
+        'category' => CategoryController::class,
+        'discount' => DiscountController::class,
+        'product' => ProductController::class,
+        'post-category' => PostCategoryController::class,
+        'post-tag' => PostTagController::class,
+        'post' => PostController::class,
+        'message' => MessageController::class,
+        'order' => OrderController::class,
+        'shipping' => ShippingController::class,
+        'coupon' => CouponController::class,
     ]);
+
+    Route::delete('/product/{product}/image/{image}/delete', [ProductController::class, 'deleteImage'])
+    ->name('product.image.delete');
 });
 
 // User
