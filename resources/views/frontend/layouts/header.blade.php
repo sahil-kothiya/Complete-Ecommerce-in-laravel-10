@@ -5,8 +5,12 @@
             <div class="row">
                 <div class="col-lg-6 col-md-12 col-12">
                     <ul class="list-main">
-                        <li><i class="ti-headphone-alt"></i> {{ $settings->phone ?? '' }}</li>
-                        <li><i class="ti-email"></i> {{ $settings->email ?? '' }}</li>
+                        <li><i class="ti-headphone-alt"></i> 
+                            <span class="text-placeholder" data-content="phone">{{ $settings->phone ?? '' }}</span>
+                        </li>
+                        <li><i class="ti-email"></i> 
+                            <span class="text-placeholder" data-content="email">{{ $settings->email ?? '' }}</span>
+                        </li>
                     </ul>
                 </div>
                 <div class="col-lg-6 col-md-12 col-12">
@@ -31,7 +35,12 @@
                 <div class="col-lg-2 col-md-2 col-12">
                     <div class="logo">
                         <a href="{{ route('home') }}">
-                            <img src="{{ $settings->logo ?? asset('images/default-logo.png') }}" alt="Logo" loading="eager">
+                            <img src="{{ $settings->logo ?? asset('images/default-logo.png') }}" 
+                                 alt="Logo" 
+                                 loading="eager"
+                                 width="120" 
+                                 height="40"
+                                 style="max-width: 100%; height: auto;">
                         </a>
                     </div>
                     <div class="mobile-nav"></div>
@@ -54,7 +63,7 @@
                                     role="combobox"
                                     autocomplete="off">
                             </div>
-                            <div id="autocomplete-dropdown" class="autocomplete-dropdown position-absolute w-100 bg-white shadow-sm border rounded mt-1">
+                            <div id="autocomplete-dropdown" class="autocomplete-dropdown position-absolute w-100 bg-white shadow-sm border rounded mt-1 d-none">
                                 <ul id="autocomplete-list" class="list-group list-group-flush m-0"></ul>
                             </div>
                         </form>
@@ -69,19 +78,22 @@
                                 <i class="fa fa-heart-o"></i>
                                 <span class="total-count">{{ Helper::wishlistCount() ?? 0 }}</span>
                             </a>
-                            @include('frontend.partials.wishlist-dropdown')
+                            <div class="wishlist-dropdown-placeholder">
+                                @include('frontend.partials.wishlist-dropdown')
+                            </div>
                         </div>
                         <div class="sinlge-bar shopping">
                             <a href="{{ route('cart') }}" class="single-icon" aria-label="Cart">
                                 <i class="ti-bag"></i>
                                 <span class="total-count">{{ Helper::cartCount() ?? 0 }}</span>
                             </a>
-                            @include('frontend.partials.cart-dropdown')
+                            <div class="cart-dropdown-placeholder">
+                                @include('frontend.partials.cart-dropdown')
+                            </div>
                         </div>
                         @endauth
                     </div>
                 </div>
-
             </div>
         </div>
     </div>
@@ -95,8 +107,9 @@
                         <li class="{{ request()->is('home') ? 'active' : '' }}"><a href="{{ route('home') }}">Home</a></li>
                         <li class="{{ request()->is('about-us') ? 'active' : '' }}"><a href="{{ route('about-us') }}">About Us</a></li>
                         <li class="{{ request()->is('product-grids', 'product-lists') ? 'active' : '' }}"><a href="{{ route('product-grids') }}">Products</a></li>
-                        @include('frontend.partials.category-menu')
-                        <!-- <li class="{{ request()->is('blog') ? 'active' : '' }}"><a href="{{ route('blog') }}">Blog</a></li> -->
+                        <div class="category-menu-placeholder">
+                            @include('frontend.partials.category-menu')
+                        </div>
                         <li class="{{ request()->is('contact') ? 'active' : '' }} cnt-us"><a href="{{ route('contact') }}">Contact Us</a></li>
                     </ul>
                 </div>
@@ -104,19 +117,187 @@
         </div>
     </div>
 </header>
+
+<style>
+/* CLS Prevention Styles */
+.text-placeholder {
+    display: inline-block;
+    min-width: 120px;
+    min-height: 1.2em;
+}
+
+.text-placeholder[data-content="phone"] {
+    min-width: 140px;
+}
+
+.text-placeholder[data-content="email"] {
+    min-width: 180px;
+}
+
+/* Logo container fixed dimensions */
+.logo {
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+}
+
+.logo img {
+    transition: none !important;
+    will-change: auto;
+}
+
+/* Dropdown containers with reserved space */
+.wishlist-dropdown-placeholder,
+.cart-dropdown-placeholder {
+    position: relative;
+    min-height: 0;
+}
+
+.category-menu-placeholder {
+    display: inline-block;
+}
+
+/* Autocomplete dropdown optimization */
+.autocomplete-dropdown {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 9999;
+}
+
+.autocomplete-dropdown.d-none {
+    display: none !important;
+    visibility: hidden;
+}
+
+/* Search input stability */
+.search-bar-wrapper {
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+}
+
+.search-input {
+    min-height: 40px;
+}
+
+/* Right bar fixed width */
+.right-bar {
+    min-width: 120px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 15px;
+}
+
+.sinlge-bar {
+    position: relative;
+}
+
+/* Main menu stability */
+.header-inner {
+    min-height: 60px;
+}
+
+.main-menu {
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+}
+
+/* Prevent font loading shifts */
+.header {
+    font-display: swap;
+}
+
+/* Icon stability */
+.ti-headphone-alt,
+.ti-email,
+.ti-location-pin,
+.ti-user,
+.ti-power-off,
+.fa-heart-o,
+.ti-bag {
+    display: inline-block;
+    width: 16px;
+    min-width: 16px;
+    text-align: center;
+}
+
+/* Counter badges */
+.total-count {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    min-width: 18px;
+    min-height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    line-height: 1;
+}
+
+/* Mobile responsiveness without layout shifts */
+@media (max-width: 991px) {
+    .text-placeholder {
+        min-width: 100px;
+    }
+    
+    .right-bar {
+        min-width: 100px;
+    }
+}
+
+@media (max-width: 767px) {
+    .topbar .list-main li {
+        font-size: 12px;
+    }
+    
+    .text-placeholder {
+        min-width: 80px;
+    }
+    
+    .logo {
+        min-height: 40px;
+    }
+    
+    .search-bar-wrapper {
+        min-height: 50px;
+    }
+}
+</style>
+
 @push('scripts')
 <script>
     $(document).ready(function() {
-        // console.log('Elasticsearch script loaded');
+        // Preload critical elements to prevent CLS
+        const preloadElements = () => {
+            // Ensure dropdown is properly hidden on load
+            const $dropdown = $('#autocomplete-dropdown');
+            if ($dropdown.length) {
+                $dropdown.addClass('d-none').css({
+                    'display': 'none',
+                    'visibility': 'hidden'
+                });
+            }
+        };
 
-        // Smooth scroll to sections
+        preloadElements();
+
+        // Smooth scroll to sections with RAF for better performance
         $('a[href*="#"]').on('click', function(e) {
             e.preventDefault();
             const target = $(this.hash);
             if (target.length) {
+                const targetOffset = target.offset().top;
                 $('html, body').animate({
-                    scrollTop: target.offset().top
-                }, 1000);
+                    scrollTop: targetOffset
+                }, {
+                    duration: 1000,
+                    easing: 'swing'
+                });
             }
         });
 
@@ -128,11 +309,18 @@
         // Stop if critical elements are missing
         if (!$searchInput.length || !$dropdown.length || !$list.length) return;
 
-        // Input event listener
+        // Input event listener with throttling
+        let isInputting = false;
         $searchInput.on('input', function() {
-            const query = $(this).val().trim();
-            $searchInput.attr('aria-expanded', query.length >= 2);
-            debounceSearch(query);
+            if (isInputting) return;
+            isInputting = true;
+            
+            requestAnimationFrame(() => {
+                const query = $(this).val().trim();
+                $searchInput.attr('aria-expanded', query.length >= 2 ? 'true' : 'false');
+                debounceSearch(query);
+                isInputting = false;
+            });
         });
 
         // Handle focus event
@@ -143,20 +331,21 @@
             }
         });
 
-        // Debounce search
+        // Debounce search with improved performance
         function debounceSearch(query) {
             clearTimeout(searchTimeout);
             searchTimeout = setTimeout(() => performAutocomplete(query), 300);
         }
 
-        // Perform AJAX autocomplete
+        // Perform AJAX autocomplete with better error handling
         function performAutocomplete(query) {
             if (query.length < 2) {
                 hideDropdown();
                 return;
             }
 
-            $list.html('<li class="list-group-item loading">Searching...</li>');
+            // Use DocumentFragment for better performance
+            $list.html('<li class="list-group-item loading" style="min-height: 40px;">Searching...</li>');
             showDropdown();
 
             const autocompleteUrl = '/autocomplete';
@@ -164,12 +353,13 @@
             $.ajax({
                 url: autocompleteUrl,
                 method: 'GET',
-                data: {
-                    q: query
-                },
+                data: { q: query },
                 dataType: 'json',
                 timeout: 10000,
+                cache: true,
                 success: function(response) {
+                    // Use DocumentFragment for efficient DOM manipulation
+                    const fragment = document.createDocumentFragment();
                     $list.empty();
 
                     if (response.success && Array.isArray(response.suggestions) && response.suggestions.length > 0) {
@@ -189,17 +379,19 @@
                                 }
                             }
 
-                            $list.append(`
-                                <li class="list-group-item autocomplete-item" data-slug="${item.slug}" role="option">
+                            const listItem = $(`
+                                <li class="list-group-item autocomplete-item" data-slug="${item.slug}" role="option" style="min-height: 50px;">
                                     <div class="item-content">
                                         <span class="title">${escapeHtml(item.title)}</span>
                                         ${priceHTML}
                                     </div>
                                 </li>
                             `);
+                            
+                            $list.append(listItem);
                         });
                     } else {
-                        $list.html('<li class="list-group-item no-results">No products found</li>');
+                        $list.html('<li class="list-group-item no-results" style="min-height: 40px;">No products found</li>');
                     }
                     showDropdown();
                 },
@@ -213,25 +405,35 @@
                         errorMessage = 'Server error';
                     }
 
-                    $list.html(`<li class="list-group-item error">${errorMessage}</li>`);
+                    $list.html(`<li class="list-group-item error" style="min-height: 40px;">${errorMessage}</li>`);
                     showDropdown();
                 }
             });
         }
 
-        // Show dropdown
+        // Show dropdown with better performance
         function showDropdown() {
-            $dropdown.removeClass('d-none').css('display', 'block');
-            $searchInput.attr('aria-expanded', 'true');
+            requestAnimationFrame(() => {
+                $dropdown.removeClass('d-none').css({
+                    'display': 'block',
+                    'visibility': 'visible'
+                });
+                $searchInput.attr('aria-expanded', 'true');
+            });
         }
 
-        // Hide dropdown
+        // Hide dropdown with better performance
         function hideDropdown() {
-            $dropdown.addClass('d-none').css('display', 'none');
-            $searchInput.attr('aria-expanded', 'false');
+            requestAnimationFrame(() => {
+                $dropdown.addClass('d-none').css({
+                    'display': 'none',
+                    'visibility': 'hidden'
+                });
+                $searchInput.attr('aria-expanded', 'false');
+            });
         }
 
-        // Handle suggestion clicks
+        // Handle suggestion clicks with event delegation
         $list.on('click', '.autocomplete-item', function(e) {
             e.preventDefault();
             const slug = $(this).data('slug');
@@ -240,43 +442,66 @@
             }
         });
 
-        // Keyboard navigation
+        // Improved keyboard navigation
         $searchInput.on('keydown', function(e) {
             const $items = $list.find('.autocomplete-item');
             const $active = $items.filter('.active');
 
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                if ($active.length === 0) {
-                    $items.first().addClass('active');
-                } else {
-                    $active.removeClass('active').next('.autocomplete-item').addClass('active');
-                }
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                if ($active.length === 0) {
-                    $items.last().addClass('active');
-                } else {
-                    $active.removeClass('active').prev('.autocomplete-item').addClass('active');
-                }
-            } else if (e.key === 'Enter') {
-                if ($active.length > 0) {
+            switch(e.key) {
+                case 'ArrowDown':
                     e.preventDefault();
-                    $active.click();
-                }
-            } else if (e.key === 'Escape') {
-                hideDropdown();
+                    if ($active.length === 0) {
+                        $items.first().addClass('active');
+                    } else {
+                        const $next = $active.removeClass('active').next('.autocomplete-item');
+                        if ($next.length > 0) {
+                            $next.addClass('active');
+                        } else {
+                            $items.first().addClass('active');
+                        }
+                    }
+                    break;
+                    
+                case 'ArrowUp':
+                    e.preventDefault();
+                    if ($active.length === 0) {
+                        $items.last().addClass('active');
+                    } else {
+                        const $prev = $active.removeClass('active').prev('.autocomplete-item');
+                        if ($prev.length > 0) {
+                            $prev.addClass('active');
+                        } else {
+                            $items.last().addClass('active');
+                        }
+                    }
+                    break;
+                    
+                case 'Enter':
+                    if ($active.length > 0) {
+                        e.preventDefault();
+                        $active.click();
+                    }
+                    break;
+                    
+                case 'Escape':
+                    hideDropdown();
+                    $searchInput.blur();
+                    break;
             }
         });
 
-        // Hide dropdown when clicking outside
+        // Hide dropdown when clicking outside with improved performance
+        let clickOutsideTimeout;
         $(document).on('click', function(e) {
-            if (!$(e.target).closest('.search-bar-wrapper').length) {
-                hideDropdown();
-            }
+            clearTimeout(clickOutsideTimeout);
+            clickOutsideTimeout = setTimeout(() => {
+                if (!$(e.target).closest('.search-bar-wrapper').length) {
+                    hideDropdown();
+                }
+            }, 10);
         });
 
-        // Escape HTML utility
+        // Escape HTML utility function
         function escapeHtml(unsafe) {
             return unsafe
                 .replace(/&/g, "&amp;")
@@ -285,7 +510,11 @@
                 .replace(/"/g, "&quot;")
                 .replace(/'/g, "&#039;");
         }
+
+        // Performance monitoring (optional - remove in production)
+        if (window.performance && window.performance.mark) {
+            window.performance.mark('header-script-end');
+        }
     });
 </script>
-
 @endpush

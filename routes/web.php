@@ -185,6 +185,8 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
 
     Route::delete('/product/{product}/image/{image}/delete', [ProductController::class, 'deleteImage'])
     ->name('product.image.delete');
+
+    Route::post('/brand/store-ajax', [BrandController::class, 'storeAjax'])->name('brand.store.ajax');
 });
 
 // User

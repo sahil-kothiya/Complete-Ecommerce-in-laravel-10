@@ -1,18 +1,16 @@
 @extends('frontend.layouts.master')
 @section('main-content')
 
-<!-- Slider -->
 @if($banners?->count())
-
 @php
 $firstBanner = $banners->first();
-$firstPhoto = $firstBanner?->photo ?? 'images/placeholder-banner.jpg';
+$firstPhoto = $firstBanner->photo ?? 'images/placeholder-banner.jpg';
 $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
 @endphp
 
-<!-- Preload First Banner Images for LCP -->
-<link rel="preload" as="image" href="{{ asset($firstWebp) }}" type="image/webp">
-<link rel="preload" as="image" href="{{ asset($firstPhoto) }}" type="image/{{ pathinfo($firstPhoto, PATHINFO_EXTENSION) }}">
+<!-- Preload LCP image only once -->
+<link rel="preload" as="image" href="{{ asset($firstWebp) }}" fetchpriority="high" type="image/webp">
+<link rel="preload" as="image" href="{{ asset($firstPhoto) }}" fetchpriority="high" type="image/{{ pathinfo($firstPhoto, PATHINFO_EXTENSION) }}">
 
 <section id="gslider" class="carousel slide" data-ride="carousel" data-interval="3000">
     <ol class="carousel-indicators">
@@ -29,16 +27,16 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
         $isFirst = $key === 0;
         $discount = $banner->discounts->first();
         @endphp
-
-        <div class="carousel-item {{ $isFirst ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}">
+        <div class="carousel-item {{ $isFirst ? 'active' : '' }}">
             <picture>
                 <source srcset="{{ asset($webp) }}" type="image/webp">
                 <img src="{{ asset($photo) }}"
                     class="d-block w-100"
-                    alt="{{ $banner->title }}"
+                    alt="{{ $banner->title ?? 'Promotional banner' }}"
                     width="1200" height="550"
                     loading="{{ $isFirst ? 'eager' : 'lazy' }}"
-                    fetchpriority="{{ $isFirst ? 'high' : 'low' }}">
+                    fetchpriority="{{ $isFirst ? 'high' : 'auto' }}"
+                    decoding="{{ $isFirst ? 'sync' : 'async' }}">
             </picture>
 
             <div class="carousel-caption d-none d-md-block text-left">
@@ -46,11 +44,8 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
                 <p>{!! $banner->description !!}</p>
 
                 @php
-                $discount = $banner->discounts->first();
                 $category = $discount?->categories?->first();
-                $ctaUrl = $category
-                ? route('product-cat', $category->slug)
-                : route('product-grids');
+                $ctaUrl = $category ? route('product-cat', $category->slug) : route('product-grids');
                 @endphp
 
                 @if($discount && $category)
@@ -63,7 +58,6 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
                 <a class="btn btn-lg btn-primary" href="{{ $ctaUrl }}">
                     Shop Now <i class="fa fa-arrow-right"></i>
                 </a>
-
             </div>
         </div>
         @endforeach
@@ -76,7 +70,6 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
         <span class="carousel-control-next-icon" aria-hidden="true"></span>
     </a>
 </section>
-
 @endif
 
 <!-- Discount Highlight & Holiday Offer -->
@@ -107,7 +100,7 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
 @endif
 
 
-<!-- Category Banners -->
+<!-- Category Banners with defined sizes -->
 @if($categoryBanners?->count())
 <section class="small-banner section">
     <div class="container-fluid">
@@ -115,7 +108,10 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
             @foreach($categoryBanners->take(3) as $cat)
             <div class="col-lg-4 col-md-6 col-12">
                 <div class="single-banner">
-                    <img src="{{ asset($cat->photo ?? 'images/placeholder-category.jpg') }}" alt="{{ $cat->title }}" loading="lazy">
+                    <img src="{{ asset($cat->photo ?? 'images/placeholder-category.jpg') }}"
+                        alt="{{ $cat->title }}"
+                        width="600" height="250"
+                        loading="lazy" decoding="async">
                     <div class="content">
                         <h3>{{ $cat->title }}</h3>
                         <a href="{{ route('product-cat', $cat->slug) }}">Discover Now</a>
@@ -342,14 +338,12 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
         height: 550px;
         position: relative;
         background-color: #f9f9f9;
-        transition: transform 0.6s ease-in-out;
     }
 
     .carousel-item img {
         width: 100%;
         height: 100%;
         object-fit: cover;
-        opacity: 0.85;
         display: block;
         z-index: 1;
     }
@@ -556,15 +550,14 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
 
 @push('scripts')
 <script>
-    $(document).ready(function() {
-        // Smooth scroll to sections
-        $('a[href*="#"]').on('click', function(e) {
-            e.preventDefault();
-            const target = $(this.hash);
-            if (target.length) {
-                $('html, body').animate({
-                    scrollTop: target.offset().top
-                }, 1000);
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function(e) {
+            const target = document.querySelector(this.getAttribute('href'));
+            if (target) {
+                e.preventDefault();
+                target.scrollIntoView({
+                    behavior: 'smooth'
+                });
             }
         });
     });

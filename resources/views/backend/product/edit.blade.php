@@ -66,7 +66,7 @@
 						<input type="number" id="price" name="price" class="form-control" value="{{ old('price', $product->price) }}" placeholder="Enter price">
 						@error('price')<span class="text-danger">{{ $message }}</span>@enderror
 					</div>
-		
+
 					{{-- Discount --}}
 					<div class="form-group">
 						<label for="discount">Discount (%)</label>
@@ -90,15 +90,22 @@
 						@error('size')<span class="text-danger">{{ $message }}</span>@enderror
 					</div>
 
-					{{-- Brand --}}
+					{{-- Brand with Add Button --}}
 					<div class="form-group">
 						<label for="brand_id">Brand</label>
-						<select name="brand_id" class="form-control">
-							<option value="">-- Select Brand --</option>
-							@foreach($brands as $brand)
-							<option value="{{ $brand->id }}" {{ $product->brand_id == $brand->id ? 'selected' : '' }}>{{ $brand->title }}</option>
-							@endforeach
-						</select>
+						<div class="input-group">
+							<select name="brand_id" id="brand_id" class="form-control">
+								<option value="">-- Select Brand --</option>
+								@foreach($brands as $brand)
+								<option value="{{ $brand->id }}" {{ $product->brand_id == $brand->id ? 'selected' : '' }}>{{ $brand->title }}</option>
+								@endforeach
+							</select>
+							<div class="input-group-append">
+								<button type="button" id="addBrandBtn" class="btn btn-outline-primary">
+									<i class="fa fa-plus"></i>
+								</button>
+							</div>
+						</div>
 						@error('brand_id')<span class="text-danger">{{ $message }}</span>@enderror
 					</div>
 
@@ -272,6 +279,33 @@
 	</div>
 </div>
 
+<!-- Add Brand Modal -->
+<div class="modal fade" id="addBrandModal" tabindex="-1" role="dialog" aria-labelledby="addBrandModalLabel" aria-hidden="true">
+	<div class="modal-dialog" role="document">
+		<form id="addBrandForm">
+			@csrf
+			<div class="modal-content">
+				<div class="modal-header">
+					<h5 class="modal-title" id="addBrandModalLabel">Add New Brand</h5>
+					<button type="button" class="close" data-dismiss="modal">
+						<span>&times;</span>
+					</button>
+				</div>
+				<div class="modal-body">
+					<div class="form-group">
+						<label for="new_brand_title">Brand Name</label>
+						<input type="text" name="title" id="new_brand_title" class="form-control" required>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="submit" class="btn btn-success">Save</button>
+					<button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+
 @endsection
 
 @push('styles')
@@ -366,12 +400,9 @@
 		cursor: pointer;
 		transition: all 0.3s ease;
 		box-shadow: 0 2px 6px rgba(220, 53, 69, 0.4);
-
-		/* Always visible but with reduced opacity when not hovered */
 		opacity: 0.7;
 	}
 
-	/* Show delete button more prominently on container hover */
 	.image-container:hover .delete-image-btn {
 		opacity: 1;
 		transform: scale(1.1);
@@ -389,7 +420,6 @@
 		box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.25);
 	}
 
-	/* Ensure the button is always clickable */
 	.delete-image-btn {
 		pointer-events: all;
 	}
@@ -487,12 +517,10 @@
 		}
 	}
 
-	/* Additional fixes for button visibility */
 	.image-container * {
 		box-sizing: border-box;
 	}
 
-	/* Ensure delete button is above everything */
 	.delete-image-btn {
 		position: absolute !important;
 		z-index: 999 !important;
@@ -909,8 +937,8 @@
 		toggleAltTextSections();
 
 		// Initialize character counts for existing alt text inputs
-		@if($product->images->count())
-		@foreach($product->images as $image)
+		@if($product - > images - > count())
+		@foreach($product - > images as $image)
 		updateCharCount('existing-{{ $image->id }}');
 		@endforeach
 		@endif
@@ -1084,8 +1112,55 @@
 			updateCharCount(index);
 		});
 
+		// Brand Modal Handlers
+		// Show Add Brand Modal
+		$('#addBrandBtn').click(function() {
+			$('#new_brand_title').val('');
+			$('#addBrandModal').modal('show');
+		});
+
+		// Handle Brand Form Submission
+		$('#addBrandForm').submit(function(e) {
+			e.preventDefault();
+			let brandName = $('#new_brand_title').val().trim();
+			if (!brandName) return;
+
+			$.ajax({
+				url: "{{ route('brand.store.ajax') }}", // Make sure this route exists
+				type: "POST",
+				data: {
+					_token: "{{ csrf_token() }}",
+					title: brandName
+				},
+				success: function(res) {
+					if (res.status === 'success') {
+						// Add new brand to dropdown and select it
+						$('#brand_id').append(`<option value="${res.data.id}" selected>${res.data.title}</option>`);
+						$('#brand_id').selectpicker('refresh'); // if using bootstrap-select
+						$('#addBrandModal').modal('hide');
+						showNotification('Brand added successfully!', 'success');
+					} else {
+						showNotification(res.message || 'Error adding brand', 'error');
+					}
+				},
+				error: function() {
+					showNotification('Something went wrong while adding brand.', 'error');
+				}
+			});
+		});
+
 		// Form submission handling
 		$('form').on('submit', function(e) {
+
+			// Validate discount before submission
+			let discountValue = parseFloat($('#discount').val());
+			if (!isNaN(discountValue) && (discountValue < 0 || discountValue > 100)) {
+				e.preventDefault();
+				$('#discount').focus();
+				showNotification('Please enter a valid discount between 0 and 100%.', 'error');
+				return false;
+			}
+
 			$('#summary').val($('#summary').summernote('code'));
 			$('#description').val($('#description').summernote('code'));
 
@@ -1163,6 +1238,56 @@
 				}
 			});
 		}
+		// Discount validation
+		$('#discount').on('input blur', function() {
+			let discountValue = parseFloat($(this).val());
+			let $discountField = $(this);
+			let $errorSpan = $discountField.next('.discount-error');
+
+			// Remove existing error span if it exists
+			if ($errorSpan.length === 0) {
+				$discountField.after('<span class="text-danger discount-error" style="font-size: 0.875rem;"></span>');
+				$errorSpan = $discountField.next('.discount-error');
+			}
+
+			// Clear previous error styling
+			$discountField.removeClass('is-invalid');
+			$errorSpan.text('').hide();
+
+			if (isNaN(discountValue) || discountValue === '') {
+				return; // Allow empty values
+			}
+
+			// Validate discount range
+			if (discountValue < 0) {
+				$discountField.addClass('is-invalid').val(0);
+				$errorSpan.text('Discount cannot be negative. Set to 0.').show();
+				showNotification('Discount cannot be negative.', 'error');
+			} else if (discountValue > 100) {
+				$discountField.addClass('is-invalid').val(100);
+				$errorSpan.text('Discount cannot exceed 100%. Set to 100.').show();
+				showNotification('Discount cannot exceed 100%.', 'error');
+			}
+		});
+
+		// Prevent typing non-numeric characters and handle edge cases
+		$('#discount').on('keypress', function(e) {
+			// Allow: backspace, delete, tab, escape, enter, decimal point
+			if ($.inArray(e.keyCode, [46, 8, 9, 27, 13, 110, 190]) !== -1 ||
+				// Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+				(e.keyCode === 65 && e.ctrlKey === true) ||
+				(e.keyCode === 67 && e.ctrlKey === true) ||
+				(e.keyCode === 86 && e.ctrlKey === true) ||
+				(e.keyCode === 88 && e.ctrlKey === true) ||
+				// Allow: home, end, left, right
+				(e.keyCode >= 35 && e.keyCode <= 39)) {
+				return;
+			}
+			// Ensure that it is a number and stop the keypress
+			if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
+				e.preventDefault();
+			}
+		});
 	});
 </script>
 @endpush

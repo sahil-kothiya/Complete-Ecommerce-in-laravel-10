@@ -16,7 +16,7 @@ class EnterpriseSkuSeeder extends Seeder
 
     private array $generatedSkus = [];
     private int $memoryCheckCounter = 0;
-    private int $startFromId = 4045464; // change to 8951426 if resuming from there
+    private int $startFromId = 2404631; // change to 8951426 if resuming from there
 
     private array $stats = [
         'processed' => 0,
@@ -27,7 +27,7 @@ class EnterpriseSkuSeeder extends Seeder
         'chunks_processed' => 0,
         'memory_peak' => 0,
     ];
-
+    
     public function run(): void
     {
         $this->info("🚀 Starting Enterprise SKU Seeder");

@@ -157,4 +157,22 @@ class BrandController extends Controller
             $message
         );
     }
+
+    public function storeAjax(Request $request)
+    {
+        $request->validate([
+            'title' => 'required|string|max:255|unique:brands,title',
+        ]);
+
+        $brand = Brand::create([
+            'title' => $request->title,
+            'slug' => Str::slug($request->title),
+            'status' => 'active'
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $brand
+        ]);
+    }
 }

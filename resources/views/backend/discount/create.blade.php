@@ -97,34 +97,170 @@
 	document.addEventListener('DOMContentLoaded', function() {
 		const typeSelect = document.querySelector('select[name="type"]');
 		const valueInput = document.querySelector('input[name="value"]');
+		const startsAtInput = document.querySelector('input[name="starts_at"]');
+		const endsAtInput = document.querySelector('input[name="ends_at"]');
+
+		// Function to show notification messages
+		function showNotification(message, type = 'info') {
+			// Remove existing notifications
+			$('.notification-toast').remove();
+
+			// Create notification element
+			const notificationClass = type === 'success' ? 'alert-success' :
+				type === 'error' ? 'alert-danger' : 'alert-info';
+
+			const $notification = $(`
+            <div class="alert ${notificationClass} notification-toast alert-dismissible" 
+                 style="position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 350px;">
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+                <strong>${type === 'success' ? 'Success!' : type === 'error' ? 'Error!' : 'Info!'}</strong> ${message}
+            </div>
+        `);
+
+			// Add to page
+			$('body').append($notification);
+
+			// Auto-hide after 4 seconds
+			setTimeout(function() {
+				$notification.fadeOut(400, function() {
+					$(this).remove();
+				});
+			}, 4000);
+		}
 
 		function updateMax() {
 			if (typeSelect.value === 'percentage') {
 				valueInput.setAttribute('max', 100);
+				valueInput.setAttribute('placeholder', 'Enter percentage (0-100)');
 				if (parseFloat(valueInput.value) > 100) {
 					valueInput.value = 100;
+					showNotification('Percentage discount cannot exceed 100%. Set to 100.', 'error');
 				}
 			} else {
 				valueInput.removeAttribute('max');
+				valueInput.setAttribute('placeholder', 'Enter fixed amount');
 			}
 		}
 
-		// When type is changed
-		typeSelect.addEventListener('change', updateMax);
+		// Enhanced value validation function
+		function validateDiscountValue() {
+			let discountValue = parseFloat(valueInput.value);
+			let $valueField = $(valueInput);
+			let $errorSpan = $valueField.next('.discount-value-error');
 
-		// When value is changed manually
-		valueInput.addEventListener('input', function() {
-			if (typeSelect.value === 'percentage') {
-				let val = parseFloat(this.value);
-				if (val > 100) {
-					this.value = 100;
+			// Remove existing error span if it exists
+			if ($errorSpan.length === 0) {
+				$valueField.after('<span class="text-danger discount-value-error" style="font-size: 0.875rem;"></span>');
+				$errorSpan = $valueField.next('.discount-value-error');
+			}
+
+			// Clear previous error styling
+			$valueField.removeClass('is-invalid');
+			$errorSpan.text('').hide();
+
+			if (isNaN(discountValue) || discountValue === '') {
+				return true; // Allow empty values for now, required validation will handle
+			}
+
+			// Validate discount range
+			if (discountValue < 0) {
+				$valueField.addClass('is-invalid').val(0);
+				$errorSpan.text('Discount value cannot be negative. Set to 0.').show();
+				showNotification('Discount value cannot be negative.', 'error');
+				return false;
+			}
+
+			// Check percentage limit
+			if (typeSelect.value === 'percentage' && discountValue > 100) {
+				$valueField.addClass('is-invalid').val(100);
+				$errorSpan.text('Percentage discount cannot exceed 100%. Set to 100.').show();
+				showNotification('Percentage discount cannot exceed 100%.', 'error');
+				return false;
+			}
+
+			// Check fixed amount reasonable limit (optional)
+			if (typeSelect.value === 'amount' && discountValue > 999999) {
+				$valueField.addClass('is-invalid');
+				$errorSpan.text('Fixed amount seems too high. Please verify.').show();
+				showNotification('Fixed discount amount seems unusually high.', 'error');
+				return false;
+			}
+
+			return true;
+		}
+
+		// Date validation function
+		function validateDates() {
+			const startsAt = new Date(startsAtInput.value);
+			const endsAt = new Date(endsAtInput.value);
+			const now = new Date();
+			let isValid = true;
+
+			// Clear previous errors
+			$(startsAtInput).removeClass('is-invalid');
+			$(endsAtInput).removeClass('is-invalid');
+			$('.date-error').remove();
+
+			if (startsAtInput.value && endsAtInput.value) {
+				if (startsAt >= endsAt) {
+					$(endsAtInput).addClass('is-invalid');
+					$(endsAtInput).after('<span class="text-danger date-error" style="font-size: 0.875rem;">End date must be after start date.</span>');
+					showNotification('End date must be after start date.', 'error');
+					isValid = false;
 				}
+
+				// Warning for past dates
+				if (startsAt < now) {
+					showNotification('Start date is in the past. This discount will be active immediately.', 'info');
+				}
+			}
+
+			return isValid;
+		}
+
+		// When type is changed
+		typeSelect.addEventListener('change', function() {
+			updateMax();
+			validateDiscountValue();
+		});
+
+		// Value input validation
+		valueInput.addEventListener('input', function() {
+			validateDiscountValue();
+		});
+
+		valueInput.addEventListener('blur', function() {
+			validateDiscountValue();
+		});
+
+		// Prevent typing non-numeric characters
+		valueInput.addEventListener('keypress', function(e) {
+			// Allow: backspace, delete, tab, escape, enter, decimal point
+			if ($.inArray(e.keyCode, [46, 8, 9, 27, 13, 110, 190]) !== -1 ||
+				// Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+				(e.keyCode === 65 && e.ctrlKey === true) ||
+				(e.keyCode === 67 && e.ctrlKey === true) ||
+				(e.keyCode === 86 && e.ctrlKey === true) ||
+				(e.keyCode === 88 && e.ctrlKey === true) ||
+				// Allow: home, end, left, right
+				(e.keyCode >= 35 && e.keyCode <= 39)) {
+				return;
+			}
+			// Ensure that it is a number and stop the keypress
+			if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
+				e.preventDefault();
 			}
 		});
 
+		// Date validation
+		startsAtInput.addEventListener('change', validateDates);
+		endsAtInput.addEventListener('change', validateDates);
+
 		updateMax(); // Initialize on page load
 
-		// jQuery Validation for Add Discount Form
+		// jQuery Validation for Add Discount Form with enhanced rules
 		$('#discountForm').validate({
 			rules: {
 				title: {
@@ -138,15 +274,15 @@
 					required: true,
 					number: true,
 					min: 0,
-					// max is dynamic, enforced manually
+					max: function() {
+						return typeSelect.value === 'percentage' ? 100 : 999999;
+					}
 				},
 				starts_at: {
-					required: true,
-					date: true
+					required: true
 				},
 				ends_at: {
-					required: true,
-					date: true
+					required: true
 				},
 				'categories[]': {
 					required: true
@@ -163,13 +299,18 @@
 				value: {
 					required: "Please enter a discount value.",
 					number: "Please enter a valid number.",
-					min: "Value must be at least 0."
+					min: "Value must be at least 0.",
+					max: function() {
+						return typeSelect.value === 'percentage' ?
+							"Percentage cannot exceed 100%." :
+							"Amount seems too high.";
+					}
 				},
 				starts_at: {
-					required: "Please select the start time."
+					required: "Please select the start date and time."
 				},
 				ends_at: {
-					required: "Please select the end time."
+					required: "Please select the end date and time."
 				},
 				'categories[]': {
 					required: "Please select at least one category."
@@ -189,7 +330,46 @@
 			},
 			unhighlight: function(element) {
 				$(element).removeClass('is-invalid');
+			},
+			submitHandler: function(form) {
+				// Final validation before submission
+				if (!validateDiscountValue() || !validateDates()) {
+					showNotification('Please fix all validation errors before submitting.', 'error');
+					return false;
+				}
+
+				// Additional check for discount value
+				let discountValue = parseFloat(valueInput.value);
+				if (!isNaN(discountValue)) {
+					if (discountValue < 0) {
+						showNotification('Discount value cannot be negative.', 'error');
+						valueInput.focus();
+						return false;
+					}
+
+					if (typeSelect.value === 'percentage' && discountValue > 100) {
+						showNotification('Percentage discount cannot exceed 100%.', 'error');
+						valueInput.focus();
+						return false;
+					}
+				}
+
+				// If all validations pass, submit the form
+				form.submit();
 			}
+		});
+
+		// Reset button functionality
+		$('button[type="reset"]').on('click', function() {
+			// Clear all error messages and styling
+			$('.is-invalid').removeClass('is-invalid');
+			$('.discount-value-error, .date-error').remove();
+			$('.notification-toast').remove();
+
+			// Reset form and reinitialize
+			setTimeout(function() {
+				updateMax();
+			}, 100);
 		});
 	});
 </script>
