@@ -95,6 +95,275 @@
 
 @push('styles')
 <style>
+    .single-post {
+        background: #fff;
+        border: 1px solid #eee;
+        border-radius: 8px;
+        padding: 15px;
+        transition: box-shadow 0.3s ease;
+    }
+
+    .single-post:hover {
+        box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Recent Products Widget Styles */
+    .single-widget.recent-post {
+        background: #fff;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 30px;
+    }
+
+    .widget-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #f7941d;
+    }
+
+    .widget-header .title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .clear-recent-btn {
+        background: #dc3545;
+        color: white;
+        border: none;
+        padding: 5px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: all 0.3s ease;
+    }
+
+    .clear-recent-btn:hover {
+        background: #c82333;
+    }
+
+    .recent-products-container {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    /* Single Post */
+    .recent-post .single-post {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+        padding: 10px;
+        border-radius: 6px;
+        border: 1px solid #eee;
+        position: relative;
+        transition: all 0.3s ease;
+    }
+
+    .recent-post .single-post:hover {
+        background: #f8f9fa;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Image */
+    .recent-post .image {
+        flex-shrink: 0;
+        width: 60px;
+        height: 60px;
+        border-radius: 8px;
+        overflow: hidden;
+        margin-right: 12px;
+        background-color: #f7f7f7;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .recent-post .image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.3s ease;
+    }
+
+    .recent-post .single-post:hover .image img {
+        transform: scale(1.1);
+    }
+
+    /* Content */
+    .recent-post .content {
+        flex-grow: 1;
+        min-width: 0;
+    }
+
+    .recent-post .content h5 {
+        margin: 0 0 5px;
+        font-size: 13px;
+        line-height: 1.3;
+        font-weight: 500;
+    }
+
+    .recent-post .content h5 a {
+        color: #333;
+        text-decoration: none;
+        transition: color 0.3s ease;
+    }
+
+    .recent-post .content h5 a:hover {
+        color: #f7941d;
+    }
+
+    .recent-post .content .price {
+        font-size: 12px;
+        margin: 5px 0;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .recent-post .content .price .current-price {
+        font-weight: 600;
+        color: #f7941d;
+    }
+
+    /* Buttons */
+    .product-actions {
+        display: flex;
+        gap: 5px;
+        margin-top: 5px;
+    }
+
+    .quick-view-btn,
+    .add-to-cart-btn {
+        background: #f7941d;
+        color: white;
+        border: none;
+        padding: 4px 6px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 10px;
+        transition: all 0.3s ease;
+    }
+
+    .quick-view-btn:hover,
+    .add-to-cart-btn:hover {
+        background: #e6830a;
+    }
+
+    /* Remove Button */
+    .remove-recent-btn {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        background: #dc3545;
+        color: white;
+        border: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 10px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .single-post:hover .remove-recent-btn {
+        display: flex;
+    }
+
+    /* Empty State */
+    .no-recent-products .empty-state {
+        text-align: center;
+        padding: 30px 15px;
+        color: #999;
+    }
+
+    .no-recent-products .empty-state i {
+        font-size: 48px;
+        color: #ddd;
+        margin-bottom: 15px;
+    }
+
+    .no-recent-products .empty-state p {
+        margin: 10px 0 5px;
+        font-size: 14px;
+        color: #666;
+    }
+
+    .no-recent-products .empty-state small {
+        font-size: 12px;
+        color: #999;
+    }
+
+    /* View All */
+    .view-all-recent {
+        margin-top: 15px;
+        text-align: center;
+    }
+
+    .view-all-btn {
+        display: inline-block;
+        padding: 8px 15px;
+        background: #f7941d;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 500;
+        transition: all 0.3s ease;
+    }
+
+    .view-all-btn:hover {
+        background: #e6830a;
+    }
+
+    /* Scrollbar */
+    .recent-products-container::-webkit-scrollbar {
+        width: 4px;
+    }
+
+    .recent-products-container::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+
+    .recent-products-container::-webkit-scrollbar-thumb {
+        background: #f7941d;
+        border-radius: 4px;
+    }
+
+    .recent-products-container::-webkit-scrollbar-thumb:hover {
+        background: #e6830a;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .recent-post .single-post {
+            padding: 8px;
+        }
+
+        .recent-post .image {
+            width: 50px;
+            height: 50px;
+            margin-right: 10px;
+        }
+
+        .recent-post .content h5 {
+            font-size: 12px;
+        }
+
+        .recent-post .content .price {
+            font-size: 11px;
+        }
+    }
+
+
     .recent-post .single-post {
         display: flex;
         align-items: center;
@@ -269,6 +538,7 @@
         overflow: hidden;
         transition: transform 0.3s, box-shadow 0.3s;
         background: #fff;
+        margin-top: 5px;
     }
 
     .single-product:hover {

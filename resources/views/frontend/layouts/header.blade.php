@@ -5,10 +5,10 @@
             <div class="row">
                 <div class="col-lg-6 col-md-12 col-12">
                     <ul class="list-main">
-                        <li><i class="ti-headphone-alt"></i> 
+                        <li><i class="ti-headphone-alt"></i>
                             <span class="text-placeholder" data-content="phone">{{ $settings->phone ?? '' }}</span>
                         </li>
-                        <li><i class="ti-email"></i> 
+                        <li><i class="ti-email"></i>
                             <span class="text-placeholder" data-content="email">{{ $settings->email ?? '' }}</span>
                         </li>
                     </ul>
@@ -35,12 +35,12 @@
                 <div class="col-lg-2 col-md-2 col-12">
                     <div class="logo">
                         <a href="{{ route('home') }}">
-                            <img src="{{ $settings->logo ?? asset('images/default-logo.png') }}" 
-                                 alt="Logo" 
-                                 loading="eager"
-                                 width="120" 
-                                 height="40"
-                                 style="max-width: 100%; height: auto;">
+                            <img src="{{ $settings->logo ?? asset('images/default-logo.png') }}"
+                                alt="Logo"
+                                loading="eager"
+                                width="120"
+                                height="40"
+                                style="max-width: 100%; height: auto;">
                         </a>
                     </div>
                     <div class="mobile-nav"></div>
@@ -119,154 +119,261 @@
 </header>
 
 <style>
-/* CLS Prevention Styles */
-.text-placeholder {
-    display: inline-block;
-    min-width: 120px;
-    min-height: 1.2em;
-}
+    .search-bar-wrapper {
+        min-height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 10px;
+        background-color: #f3f3f3;
+        border-radius: 4px;
+    }
 
-.text-placeholder[data-content="phone"] {
-    min-width: 140px;
-}
+    .form-inline {
+        width: 100%;
+        max-width: 600px;
+    }
 
-.text-placeholder[data-content="email"] {
-    min-width: 180px;
-}
+    .input-group {
+        display: flex;
+        width: 100%;
+    }
 
-/* Logo container fixed dimensions */
-.logo {
-    min-height: 50px;
-    display: flex;
-    align-items: center;
-}
+    .search-input {
+        min-height: 40px;
+        width: 100%;
+        padding: 10px 15px;
+        border: 1px solid #ccc;
+        border-right: none;
+        border-radius: 4px 0 0 4px;
+        font-size: 16px;
+        outline: none;
+    }
 
-.logo img {
-    transition: none !important;
-    will-change: auto;
-}
+    .search-input:focus {
+        border-color: #febd69;
+        box-shadow: 0 0 3px #febd69;
+    }
 
-/* Dropdown containers with reserved space */
-.wishlist-dropdown-placeholder,
-.cart-dropdown-placeholder {
-    position: relative;
-    min-height: 0;
-}
+    .autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        width: 100%;
+        max-height: 300px;
+        overflow-y: auto;
+        background-color: #fff;
+        border: 1px solid #ccc;
+        border-radius: 0 0 4px 4px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        z-index: 9999;
+        display: none;
+    }
 
-.category-menu-placeholder {
-    display: inline-block;
-}
+    .autocomplete-dropdown.d-none {
+        display: none;
+    }
 
-/* Autocomplete dropdown optimization */
-.autocomplete-dropdown {
-    transform: translateZ(0);
-    backface-visibility: hidden;
-    max-height: 300px;
-    overflow-y: auto;
-    z-index: 9999;
-}
+    #autocomplete-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
 
-.autocomplete-dropdown.d-none {
-    display: none !important;
-    visibility: hidden;
-}
+    #autocomplete-list li {
+        padding: 10px 15px;
+        cursor: pointer;
+    }
 
-/* Search input stability */
-.search-bar-wrapper {
-    min-height: 60px;
-    display: flex;
-    align-items: center;
-}
+    #autocomplete-list li:hover {
+        background-color: #f3f3f3;
+    }
 
-.search-input {
-    min-height: 40px;
-}
+    .search-bar-form button {
+        min-height: 40px;
+        padding: 0 15px;
+        border: 1px solid #ccc;
+        border-left: none;
+        border-radius: 0 4px 4px 0;
+        background-color: #febd69;
+        color: #fff;
+        font-size: 16px;
+        cursor: pointer;
+        outline: none;
+    }
 
-/* Right bar fixed width */
-.right-bar {
-    min-width: 120px;
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 15px;
-}
+    .search-bar-form button:hover {
+        background-color: #f3a847;
+    }
 
-.sinlge-bar {
-    position: relative;
-}
+    .ti-search {
+        font-size: 18px;
+    }
 
-/* Main menu stability */
-.header-inner {
-    min-height: 60px;
-}
+    @media (max-width: 767px) {
+        .search-bar-wrapper {
+            min-height: 50px;
+        }
 
-.main-menu {
-    min-height: 40px;
-    display: flex;
-    align-items: center;
-}
+        .search-input {
+            min-height: 35px;
+            font-size: 14px;
+        }
 
-/* Prevent font loading shifts */
-.header {
-    font-display: swap;
-}
+        .search-bar-form button {
+            min-height: 35px;
+            font-size: 14px;
+        }
+    }
 
-/* Icon stability */
-.ti-headphone-alt,
-.ti-email,
-.ti-location-pin,
-.ti-user,
-.ti-power-off,
-.fa-heart-o,
-.ti-bag {
-    display: inline-block;
-    width: 16px;
-    min-width: 16px;
-    text-align: center;
-}
-
-/* Counter badges */
-.total-count {
-    position: absolute;
-    top: -8px;
-    right: -8px;
-    min-width: 18px;
-    min-height: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    line-height: 1;
-}
-
-/* Mobile responsiveness without layout shifts */
-@media (max-width: 991px) {
+    /* CLS Prevention Styles */
     .text-placeholder {
-        min-width: 100px;
+        display: inline-block;
+        min-width: 120px;
+        min-height: 1.2em;
     }
-    
-    .right-bar {
-        min-width: 100px;
-    }
-}
 
-@media (max-width: 767px) {
-    .topbar .list-main li {
-        font-size: 12px;
+    .text-placeholder[data-content="phone"] {
+        min-width: 140px;
     }
-    
-    .text-placeholder {
-        min-width: 80px;
+
+    .text-placeholder[data-content="email"] {
+        min-width: 180px;
     }
-    
+
+    /* Logo container fixed dimensions */
     .logo {
+        min-height: 50px;
+        display: flex;
+        align-items: center;
+    }
+
+    .logo img {
+        transition: none !important;
+        will-change: auto;
+    }
+
+    /* Dropdown containers with reserved space */
+    .wishlist-dropdown-placeholder,
+    .cart-dropdown-placeholder {
+        position: relative;
+        min-height: 0;
+    }
+
+    .category-menu-placeholder {
+        display: inline-block;
+    }
+
+    /* Autocomplete dropdown optimization */
+    .autocomplete-dropdown {
+        transform: translateZ(0);
+        backface-visibility: hidden;
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 9999;
+    }
+
+    .autocomplete-dropdown.d-none {
+        display: none !important;
+        visibility: hidden;
+    }
+
+    /* Search input stability */
+    .search-bar-wrapper {
+        min-height: 60px;
+        display: flex;
+        align-items: center;
+    }
+
+    .search-input {
         min-height: 40px;
     }
-    
-    .search-bar-wrapper {
-        min-height: 50px;
+
+    /* Right bar fixed width */
+    .right-bar {
+        min-width: 120px;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 15px;
     }
-}
+
+    .sinlge-bar {
+        position: relative;
+    }
+
+    /* Main menu stability */
+    .header-inner {
+        min-height: 60px;
+    }
+
+    .main-menu {
+        min-height: 40px;
+        display: flex;
+        align-items: center;
+    }
+
+    /* Prevent font loading shifts */
+    .header {
+        font-display: swap;
+    }
+
+    /* Icon stability */
+    .ti-headphone-alt,
+    .ti-email,
+    .ti-location-pin,
+    .ti-user,
+    .ti-power-off,
+    .fa-heart-o,
+    .ti-bag {
+        display: inline-block;
+        width: 16px;
+        min-width: 16px;
+        text-align: center;
+    }
+
+    /* Counter badges */
+    .total-count {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        min-width: 18px;
+        min-height: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        line-height: 1;
+    }
+
+    /* Mobile responsiveness without layout shifts */
+    @media (max-width: 991px) {
+        .text-placeholder {
+            min-width: 100px;
+        }
+
+        .right-bar {
+            min-width: 100px;
+        }
+    }
+
+    @media (max-width: 767px) {
+        .topbar .list-main li {
+            font-size: 12px;
+        }
+
+        .text-placeholder {
+            min-width: 80px;
+        }
+
+        .logo {
+            min-height: 40px;
+        }
+
+        .search-bar-wrapper {
+            min-height: 50px;
+        }
+    }
 </style>
 
 @push('scripts')
@@ -314,7 +421,7 @@
         $searchInput.on('input', function() {
             if (isInputting) return;
             isInputting = true;
-            
+
             requestAnimationFrame(() => {
                 const query = $(this).val().trim();
                 $searchInput.attr('aria-expanded', query.length >= 2 ? 'true' : 'false');
@@ -353,7 +460,9 @@
             $.ajax({
                 url: autocompleteUrl,
                 method: 'GET',
-                data: { q: query },
+                data: {
+                    q: query
+                },
                 dataType: 'json',
                 timeout: 10000,
                 cache: true,
@@ -387,7 +496,7 @@
                                     </div>
                                 </li>
                             `);
-                            
+
                             $list.append(listItem);
                         });
                     } else {
@@ -447,7 +556,7 @@
             const $items = $list.find('.autocomplete-item');
             const $active = $items.filter('.active');
 
-            switch(e.key) {
+            switch (e.key) {
                 case 'ArrowDown':
                     e.preventDefault();
                     if ($active.length === 0) {
@@ -461,7 +570,7 @@
                         }
                     }
                     break;
-                    
+
                 case 'ArrowUp':
                     e.preventDefault();
                     if ($active.length === 0) {
@@ -475,14 +584,14 @@
                         }
                     }
                     break;
-                    
+
                 case 'Enter':
                     if ($active.length > 0) {
                         e.preventDefault();
                         $active.click();
                     }
                     break;
-                    
+
                 case 'Escape':
                     hideDropdown();
                     $searchInput.blur();

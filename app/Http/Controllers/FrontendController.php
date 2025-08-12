@@ -11,6 +11,7 @@ use App\Models\PostCategory;
 use App\Models\PostTag;
 use App\Models\Product;
 use App\Services\ProductSearchService;
+use App\Services\RecentProductService;
 use App\User;
 use Helper;
 use Illuminate\Http\Request;
@@ -28,12 +29,14 @@ class FrontendController extends Controller
     private const HOMEPAGE_CACHE_PREFIX = 'cache:homepage:';
     private const PRODUCT_GRIDS_CACHE_PREFIX = 'cache:product_grids:';
     private static ?array $ttlConfig = null;
+    protected $recentProductService;
 
     private ProductSearchService $searchService;
 
-    public function __construct(ProductSearchService $searchService)
+    public function __construct(ProductSearchService $searchService, RecentProductService $recentProductService)
     {
         $this->searchService = $searchService;
+        $this->recentProductService = $recentProductService;
     }
 
     public function index(Request $request)
@@ -958,17 +961,11 @@ class FrontendController extends Controller
     public function productBrand(Request $request)
     {
         $products = Brand::getProductByBrand($request->slug);
-        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
-        $view = request()->is('e-shop.loc/product-grids') ? 'product-grids' : 'product-lists';
-
-        return view("frontend.pages.{$view}")
-            ->with('products', $products->products)
-            ->with('recent_products', $recent_products);
+        return view('frontend.pages.product-grids', compact('products'));
     }
 
     public function productCat(Request $request)
     {
-        dd($request->all());
         $startTime = microtime(true);
         $category = Category::where('slug', $request->slug)->firstOrFail();
         $ttl = $this->getTtlConfig();

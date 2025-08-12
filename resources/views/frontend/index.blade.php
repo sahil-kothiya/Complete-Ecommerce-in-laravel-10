@@ -138,7 +138,6 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
                         @foreach($product_lists as $product)
                         <div class="product-card-container">
                             @include('frontend.partials.product-card', ['product' => $product])
-                            @include('frontend.partials.product-modal', ['product' => $product])
                         </div>
                         @endforeach
                     </div>
@@ -163,7 +162,6 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
                         @foreach($kidsProducts as $product)
                         <div class="product-card-container category-kids">
                             @include('frontend.partials.product-card', ['product' => $product])
-                            @include('frontend.partials.product-modal', ['product' => $product])
                         </div>
                         @endforeach
                     </div>
@@ -188,7 +186,6 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
                         @foreach($womenProducts as $product)
                         <div class="product-card-container category-women">
                             @include('frontend.partials.product-card', ['product' => $product])
-                            @include('frontend.partials.product-modal', ['product' => $product])
                         </div>
                         @endforeach
                     </div>
@@ -213,7 +210,6 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
                         @foreach($menProducts as $product)
                         <div class="product-card-container category-men">
                             @include('frontend.partials.product-card', ['product' => $product])
-                            @include('frontend.partials.product-modal', ['product' => $product])
                         </div>
                         @endforeach
                     </div>
@@ -550,16 +546,16 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
 
 @push('scripts')
 <script>
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', function(e) {
-            const target = document.querySelector(this.getAttribute('href'));
-            if (target) {
-                e.preventDefault();
-                target.scrollIntoView({
-                    behavior: 'smooth'
-                });
-            }
-        });
-    });
+    // document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    //     anchor.addEventListener('click', function(e) {
+    //         const target = document.querySelector(this.getAttribute('href'));
+    //         if (target) {
+    //             e.preventDefault();
+    //             target.scrollIntoView({
+    //                 behavior: 'smooth'
+    //             });
+    //         }
+    //     });
+    // });
 </script>
 @endpush

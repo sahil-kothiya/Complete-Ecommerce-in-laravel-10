@@ -183,6 +183,7 @@ return [
         App\Providers\RouteServiceProvider::class,
         Intervention\Image\ImageServiceProvider::class,
         App\Providers\ElasticsearchServiceProvider::class,
+        App\Providers\ViewServiceProvider::class,
     ],
 
     /*

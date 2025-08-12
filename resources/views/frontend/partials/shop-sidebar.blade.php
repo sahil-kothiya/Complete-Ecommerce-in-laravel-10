@@ -50,47 +50,82 @@
 </div>
 
 <!-- Recent Products Widget -->
-<div class="single-widget recent-post">
-    <h3 class="title">Recent Products</h3>
-    @php
-    $recentList = $recent_products ?? \App\Models\Product::where('status', 'active')
-    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->orderBy('is_primary', 'desc')])
-    ->select(['id', 'title', 'slug', 'price', 'discount'])
-    ->latest()->limit(3)->get();
-    @endphp
-
-    @foreach($recentList as $product)
-    @php
-    $product = is_array($product) ? (object) $product : $product;
-    $images = $product->images ?? [];
-    $firstImage = is_array($images) || $images instanceof \Illuminate\Support\Collection ? collect($images)->first() : null;
-    $imgPath = is_array($firstImage) ? ($firstImage['image_path'] ?? '') : ($firstImage->image_path ?? '');
-    $imgUrl = $imgPath ? asset($imgPath) : asset('frontend/img/default-product.png');
-    $discounted = $product->price - ($product->price * $product->discount / 100);
-    @endphp
-    <div class="single-post">
-        <div class="image">
-            <img src="{{ $imgUrl }}" alt="{{ $product->title }}" loading="lazy">
-        </div>
-        <div class="content">
-            <h5><a href="{{ route('product-detail', $product->slug) }}">{{ $product->title }}</a></h5>
-            <p class="price">
-                @if($product->discount > 0)
-                <del class="text-muted">${{ number_format($product->price, 2) }}</del>
-                @endif
-                ${{ number_format($discounted, 2) }}
-            </p>
-        </div>
+<div class="single-widget">
+    <div class="">
+        <h3 class="title">Recently Viewed</h3>
+        <!-- @if(isset($recent_products) && count($recent_products) > 0)
+        <button class="clear-recent-btn" onclick="clearRecentProducts()" title="Clear Recent Products">
+            <i class="fa fa-trash"></i>
+        </button>
+        @endif -->
     </div>
-    @endforeach
+
+    <div class="recent-products-container">
+        @if(isset($recent_products) && count($recent_products) > 0)
+        @foreach($recent_products as $product)
+        <div class="single-product card" data-product-id="{{ $product['id'] }}">
+            <div class="card-body">
+                <div class="image mb-2">
+                    <a href="{{ route('product-detail', $product['slug']) }}">
+                        <img src="{{ $product['image_url'] }}" alt="{{ $product['title'] }}" loading="lazy" class="img-fluid">
+                    </a>
+                </div>
+                <div class="content">
+                    <h5 class="product-title">
+                        <a href="{{ route('product-detail', $product['slug']) }}">
+                            {{ Str::limit($product['title'], 40) }}
+                        </a>
+                    </h5>
+                    <p class="price">
+                        @if($product['discount'] > 0)
+                        <del class="text-muted">${{ number_format($product['price'], 2) }}</del>
+                        @endif
+                        <span class="current-price">${{ number_format($product['discounted_price'], 2) }}</span>
+                    </p>
+                    <div class="product-actions mt-2 d-flex">
+                        <a href="{{ route('add-to-cart', $product['slug']) }}"
+                            class="text-dark mr-2 {{ $product['stock'] <= 0 ? 'disabled' : '' }}"
+                            title="{{ $product['stock'] <= 0 ? 'Out of Stock' : 'Add to Cart' }}">
+                            <i class="ti-shopping-cart"></i>
+                        </a>
+                        <a href="#"
+                            class="text-secondary"
+                            title="Quick View"
+                            onclick="event.preventDefault(); $('#productModal{{ $product['id'] }}').modal('show');">
+                            <i class="ti-eye"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @endforeach
+        @else
+        <div class="no-recent-products">
+            <div class="empty-state">
+                <i class="fa fa-clock-o"></i>
+                <p>No recently viewed products</p>
+                <small>Products you view will appear here</small>
+            </div>
+        </div>
+        @endif
+    </div>
+
+    @if(isset($recent_products) && count($recent_products) >= 5)
+    <div class="view-all-recent">
+        <a href="{{ route('recent-products') }}" class="view-all-btn">
+            View All Recent Products <i class="fa fa-arrow-right"></i>
+        </a>
+    </div>
+    @endif
 </div>
 
 <!-- Brands Widget -->
-<!-- <div class="single-widget category">
+<div class="single-widget category">
     <h3 class="title">Brands</h3>
     <ul class="categor-list">
-        @foreach(\Illuminate\Support\Facades\DB::table('brands')->where('status', 'active')->orderBy('title')->get() as $brand)
+        @foreach(App\Models\Brand::where('status', 'active')->orderBy('title')->get() as $brand)
         <li><a href="{{ route('product-brand', $brand->slug) }}">{{ $brand->title }}</a></li>
         @endforeach
     </ul>
-</div> -->
+</div>
