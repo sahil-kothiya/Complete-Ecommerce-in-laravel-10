@@ -77,6 +77,12 @@
 
 				{{-- Right Column --}}
 				<div class="col-md-6">
+					
+					<div class="form-group">
+						<label for="sku">Sku</label>
+						<input type="text" id="sku" name="sku" class="form-control" value="{{ old('sku', $product->sku) }}" placeholder="Enter sku" readonly>
+						@error('sku')<span class="text-danger">{{ $message }}</span>@enderror
+					</div>
 
 					{{-- Sizes --}}
 					<div class="form-group">
@@ -937,8 +943,8 @@
 		toggleAltTextSections();
 
 		// Initialize character counts for existing alt text inputs
-		@if($product - > images - > count())
-		@foreach($product - > images as $image)
+		@if($product->images->count())
+		@foreach($product->images as $image)
 		updateCharCount('existing-{{ $image->id }}');
 		@endforeach
 		@endif

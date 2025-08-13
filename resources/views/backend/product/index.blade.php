@@ -29,6 +29,7 @@
 						<th>Size</th>
 						<th>Condition</th>
 						<th>Brand</th>
+						<th>Sku</th>
 						<th>Stock</th>
 						<th>Photo</th>
 						<th>Status</th>
@@ -46,6 +47,7 @@
 						<th>Size</th>
 						<th>Condition</th>
 						<th>Brand</th>
+						<th>Sku</th>
 						<th>Stock</th>
 						<th>Photo</th>
 						<th>Status</th>
@@ -72,6 +74,7 @@
 						<td>{{$product->size}}</td>
 						<td>{{$product->condition}}</td>
 						<td>{{ $brand->title ?? 'N/A' }}</td>
+						<td>{{ $product->sku ?? 'N/A' }}</td>
 						<td>
 							@if($product->stock > 0)
 							<span class="badge badge-primary">{{$product->stock}}</span>

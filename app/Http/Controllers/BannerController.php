@@ -39,17 +39,28 @@ class BannerController extends Controller
      * @return \Illuminate\Http\Response
      */
     public function store(Request $request)
-    {
+    {   
         $validatedData = $request->validate([
-            'title' => 'required|string|max:50',
-            'description' => 'nullable|string',
-            'photo' => 'required|string',
-            'status' => 'required|in:active,inactive',
-            'discount_id' => 'nullable|exists:discounts,id', // Changed from discount_ids to discount_id
+            'title'        => 'required|string|max:50',
+            'description'  => 'nullable|string',
+            'photo'        => 'required|string',
+            'status'       => 'required|in:active,inactive',
+            'discount_id'  => 'nullable|exists:discounts,id',
+            'link_type'    => 'nullable|in:product,category,url',
+            'link'         => [
+                'nullable',
+                'string',
+                function ($attribute, $value) use ($request) {
+                    if ($request->link_type && empty($value)) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'link' => 'The link field is required when link type is selected.'
+                        ]);
+                    }
+                }
+            ],
         ]);
 
-        $slug = $this->generateUniqueSlug($request->title);
-        $validatedData['slug'] = $slug;
+        $validatedData['slug'] = $this->generateUniqueSlug($request->title);
 
         $banner = Banner::create($validatedData);
 
@@ -62,14 +73,11 @@ class BannerController extends Controller
             $banner->discounts()->sync([$request->discount_id]);
         }
 
-        $message = $banner
-            ? 'Banner successfully added'
-            : 'Error occurred while adding banner';
-
-        return redirect()->route('banner.index')->with(
-            $banner ? 'success' : 'error',
-            $message
-        );
+        return redirect()
+            ->route('banner.index')
+            ->with($banner ? 'success' : 'error', 
+                $banner ? 'Banner successfully added' : 'Error occurred while adding banner'
+            );
     }
 
     /**
@@ -105,11 +113,23 @@ class BannerController extends Controller
         $banner = Banner::findOrFail($id);
 
         $validatedData = $request->validate([
-            'title' => 'required|string|max:50',
-            'description' => 'nullable|string',
-            'photo' => 'required|string',
-            'status' => 'required|in:active,inactive',
-            'discount_id' => 'nullable|exists:discounts,id',
+            'title'        => 'required|string|max:50',
+            'description'  => 'nullable|string',
+            'photo'        => 'required|string',
+            'status'       => 'required|in:active,inactive',
+            'discount_id'  => 'nullable|exists:discounts,id',
+            'link_type'    => 'nullable|in:product,category,url',
+            'link'         => [
+                'nullable',
+                'string',
+                function ($attribute, $value) use ($request) {
+                    if ($request->link_type && empty($value)) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'link' => 'The link field is required when link type is selected.'
+                        ]);
+                    }
+                }
+            ],
         ]);
 
         // Generate new slug only if title has changed
@@ -130,7 +150,9 @@ class BannerController extends Controller
         }
 
 
-        return redirect()->route('banner.index')->with('success', 'Banner successfully updated');
+        return redirect()
+        ->route('banner.index')
+        ->with('success', 'Banner successfully updated');
     }
 
     /**
