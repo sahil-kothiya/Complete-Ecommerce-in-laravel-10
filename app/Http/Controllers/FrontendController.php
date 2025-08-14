@@ -195,7 +195,7 @@ class FrontendController extends Controller
 
         $banners = Banner::with(['discounts.categories'])
             ->where('status', 'active')
-            ->select(['id', 'title', 'description', 'photo'])
+            ->select(['id', 'title', 'description', 'photo', 'link_type', 'link'])
             ->orderByDesc('id')
             ->get();
 

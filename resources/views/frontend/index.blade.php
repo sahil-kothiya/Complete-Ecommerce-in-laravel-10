@@ -21,45 +21,91 @@ $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
 
     <div class="carousel-inner">
         @foreach($banners as $key => $banner)
-        @php
-        $photo = $banner->photo ?? 'images/placeholder-banner.jpg';
-        $webp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $photo);
-        $isFirst = $key === 0;
-        $discount = $banner->discounts->first();
-        @endphp
-        <div class="carousel-item {{ $isFirst ? 'active' : '' }}">
-            <picture>
-                <source srcset="{{ asset($webp) }}" type="image/webp">
-                <img src="{{ asset($photo) }}"
-                    class="d-block w-100"
-                    alt="{{ $banner->title ?? 'Promotional banner' }}"
-                    width="1200" height="550"
-                    loading="{{ $isFirst ? 'eager' : 'lazy' }}"
-                    fetchpriority="{{ $isFirst ? 'high' : 'auto' }}"
-                    decoding="{{ $isFirst ? 'sync' : 'async' }}">
-            </picture>
+            @php
+                $photo = $banner->photo ?? 'images/placeholder-banner.jpg';
+                $webp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $photo);
+                $isFirst = $key === 0;
+                $discount = $banner->discounts->first();
+                
+                // Handle different link types
+                $ctaUrl = '#';
+                $ctaText = 'Shop Now';
+                
+                switch($banner->link_type) {
+                    case 'product':
+                        // If link contains SKU, find product by SKU
+                        if($banner->link) {
+                            $product = \App\Models\Product::where('sku', $banner->link)
+                                        ->orWhere('slug', $banner->link)
+                                        ->first();
+                            if($product) {
+                                $ctaUrl = route('product-detail', $product->slug);
+                                $ctaText = 'View Product';
+                            }
+                        }
+                        break;
+                        
+                    case 'category':
+                        // If link contains category slug
+                        if($banner->link) {
+                            $category = \App\Models\Category::where('slug', $banner->link)->first();
+                            if($category) {
+                                $ctaUrl = route('product-cat', $category->slug);
+                                $ctaText = 'Browse Category';
+                            }
+                        }
+                        break;
+                        
+                    case 'url':
+                        // Direct URL
+                        if($banner->link) {
+                            $ctaUrl = $banner->link;
+                            $ctaText = 'Learn More';
+                        }
+                        break;
+                        
+                    default:
+                        // Fallback to discount-based routing (your existing logic)
+                        $category = $discount?->categories?->first();
+                        $ctaUrl = $category ? route('product-cat', $category->slug) : route('product-grids');
+                        break;
+                }
+            @endphp
+        
+            <div class="carousel-item {{ $isFirst ? 'active' : '' }}">
+                <picture>
+                    <source srcset="{{ asset($webp) }}" type="image/webp">
+                    <img src="{{ asset($photo) }}"
+                        class="d-block w-100"
+                        alt="{{ $banner->title ?? 'Promotional banner' }}"
+                        width="1200" height="550"
+                        loading="{{ $isFirst ? 'eager' : 'lazy' }}"
+                        fetchpriority="{{ $isFirst ? 'high' : 'auto' }}"
+                        decoding="{{ $isFirst ? 'sync' : 'async' }}">
+                </picture>
 
-            <div class="carousel-caption d-none d-md-block text-left">
-                <h1>{{ $banner->title }}</h1>
-                <p>{!! $banner->description !!}</p>
+                <div class="carousel-caption d-none d-md-block text-left">
+                    <h1>{{ $banner->title }}</h1>
+                    <p>{!! $banner->description !!}</p>
 
-                @php
-                $category = $discount?->categories?->first();
-                $ctaUrl = $category ? route('product-cat', $category->slug) : route('product-grids');
-                @endphp
+                    @if($discount)
+                    <p class="text-warning h5">
+                        {{ $discount->title }} -
+                        {{ $discount->type === 'percentage' ? $discount->value . '%' : '₹' . number_format($discount->value, 2) }} OFF
+                    </p>
+                    @endif
 
-                @if($discount && $category)
-                <p class="text-warning h5">
-                    {{ $discount->title }} -
-                    {{ $discount->type === 'percentage' ? $discount->value . '%' : '₹' . number_format($discount->value, 2) }} OFF
-                </p>
-                @endif
-
-                <a class="btn btn-lg btn-primary" href="{{ $ctaUrl }}">
-                    Shop Now <i class="fa fa-arrow-right"></i>
-                </a>
+                    @if($ctaUrl !== '#')
+                    <a class="btn btn-lg btn-primary" 
+                    href="{{ $ctaUrl }}"
+                    @if($banner->link_type === 'url' && !str_starts_with($banner->link, url('/')))
+                    target="_blank" rel="noopener"
+                    @endif>
+                        {{ $ctaText }} <i class="fa fa-arrow-right"></i>
+                    </a>
+                    @endif
+                </div>
             </div>
-        </div>
         @endforeach
     </div>
 
