@@ -145,7 +145,6 @@ $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDisc
 @endforeach
 @endif
 
-
 <!-- Category Banners with defined sizes -->
 @if($categoryBanners?->count())
 <section class="small-banner section">

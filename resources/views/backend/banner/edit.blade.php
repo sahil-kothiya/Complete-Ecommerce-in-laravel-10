@@ -71,7 +71,7 @@
 						<select name="discount_id" class="form-control">
 							<option value="">-- Select Discount --</option>
 							@foreach($discounts as $discount)
-							<option value="{{ $discount->id }}" {{ old('discount_id', $banner->discount_id) == $discount->id ? 'selected' : '' }}>
+							<option value="{{ $discount->id }}" {{ old('discount_id', $banner->discounts->first()->id ?? null) == $discount->id ? 'selected' : '' }}>
 								{{ $discount->title }} -
 								{{ $discount->type === 'percentage' ? $discount->value . '%' : '₹' . number_format($discount->value, 2) }}
 							</option>
