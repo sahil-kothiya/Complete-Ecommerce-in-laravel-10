@@ -6,10 +6,26 @@ use Illuminate\Database\Eloquent\Model;
 
 class Category extends Model
 {
-    protected $fillable = ['title', 'slug', 'summary', 'photo', 'status', 'is_parent', 'parent_id', 'added_by', 'code', 'code_locked', 'code_generated_at'];
-
-    protected $casts = [
-        'is_parent' => 'boolean',
+    protected $fillable = [
+        'title',
+        'slug',
+        'summary',
+        'photo',
+        'parent_id',
+        'level',
+        'path',
+        'sort_order',
+        'has_children',
+        'children_count',
+        'products_count',
+        'status',
+        'is_featured',
+        'seo_title',
+        'seo_description',
+        'added_by',
+        'code',
+        'code_locked',
+        'code_generated_at'
     ];
 
     // Relationships
@@ -33,6 +49,15 @@ class Category extends Model
         return $this->hasMany(Product::class, 'child_cat_id')->where('status', 'active');
     }
 
+    /**
+     * Relationship: Category ↔ Brands (Many-to-Many)
+     */
+    public function brands()
+    {
+        return $this->belongsToMany(Brand::class, 'brand_category', 'category_id', 'brand_id')
+            ->withTimestamps();
+    }
+
     // Scopes
     public function scopeActive($query)
     {
@@ -42,15 +67,10 @@ class Category extends Model
     // Static Methods
     public static function getAllCategory()
     {
-        return self::select('id', 'title', 'slug', 'parent_id', 'status')
-            ->with(['parent:id,title'])
+        return self::select('id', 'title', 'slug', 'parent_id', 'status', 'photo')
+            ->with(['parent:id,title,parent_id'])
             ->orderByDesc('id')
             ->paginate(10);
-    }
-
-    public static function markAsParent(array $catIds)
-    {
-        return self::whereIn('id', $catIds)->update(['is_parent' => 1]);
     }
 
     public static function getChildByParentID($id)
@@ -60,19 +80,14 @@ class Category extends Model
 
     public static function getAllParentWithChild()
     {
-        return self::with('children')->active()->where('is_parent', 1)->orderBy('title')->get();
+        return self::with('children')->active()->whereNull('parent_id')->orderBy('title')->get();
     }
-
-    // public static function getProductByCat($slug)
-    // {   
-    //     return self::with('products')->where('slug', $slug)->first();
-    // }
 
     public static function getProductByCat($slug)
     {
         return self::where('slug', $slug)
             ->with(['products' => function ($query) {
-                $query->where('status', 'active')->paginate(12); // or ->limit(12)
+                $query->where('status', 'active')->paginate(12); // Note: paginate inside with() won’t work as expected
             }])
             ->first();
     }
@@ -90,5 +105,39 @@ class Category extends Model
     public function discounts()
     {
         return $this->belongsToMany(Discount::class, 'category_discount');
+    }
+
+    // Additional methods for tree management
+    public function updateSubtreePathAndLevel($newPath, $newLevel)
+    {
+        $oldPath = $this->path;
+        $this->path = $newPath;
+        $this->level = $newLevel;
+        $this->saveQuietly();
+
+        foreach ($this->children as $child) {
+            $childPath = $newPath ? $newPath . '/' . $this->id : (string) $this->id;
+            $child->updateSubtreePathAndLevel($childPath, $newLevel + 1);
+        }
+    }
+
+    /**
+     * Get full parent chain like "Electronics > Mobiles > Samsung"
+     */
+    public function getParentChainAttribute()
+    {
+        $chain = [];
+        $parent = $this->parent;
+
+        while ($parent) {
+            array_unshift($chain, $parent->title);
+            // 👇 load parent’s parent if not already loaded
+            if (!$parent->relationLoaded('parent')) {
+                $parent->load('parent');
+            }
+            $parent = $parent->parent;
+        }
+
+        return $chain ? implode(' > ', $chain) : '';
     }
 }

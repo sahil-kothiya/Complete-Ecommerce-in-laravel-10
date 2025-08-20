@@ -167,6 +167,11 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::get('/notifications', [NotificationController::class, 'index'])->name('all.notification');
     Route::delete('/notification/{id}', [NotificationController::class, 'delete'])->name('notification.delete');
 
+    Route::get('category/tree', [CategoryController::class, 'tree'])->name('category.tree');
+    Route::get('category/get-tree-data', [CategoryController::class, 'getTreeData'])->name('category.get-tree-data');
+    Route::post('category/update-tree', [CategoryController::class, 'updateTree'])->name('category.update-tree');
+    Route::post('category/get-child-by-parent', [CategoryController::class, 'getChildByParent'])->name('category.get-child-by-parent');
+
     Route::resources([
         'users' => UsersController::class,
         'banner' => BannerController::class,
@@ -184,7 +189,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     ]);
 
     Route::delete('/product/{product}/image/{image}/delete', [ProductController::class, 'deleteImage'])
-    ->name('product.image.delete');
+        ->name('product.image.delete');
 
     Route::post('/brand/store-ajax', [BrandController::class, 'storeAjax'])->name('brand.store.ajax');
 });

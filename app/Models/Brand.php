@@ -7,26 +7,36 @@ use Illuminate\Database\Eloquent\Model;
 
 class Brand extends Model
 {
-    protected $fillable = ['title', 'slug', 'status', 'code', 'code_locked', 'code_generated_at'];
+    protected $fillable = [
+        'title',
+        'slug',
+        'status',
+        'code',
+        'code_locked',
+        'code_generated_at'
+    ];
 
-    // public static function getProductByBrand($id){
-    //     return Product::where('brand_id',$id)->paginate(10);
-    // }
+    /**
+     * Relationship: Brand → Products (One-to-Many)
+     */
     public function products()
     {
-        return $this->hasMany('App\Models\Product', 'brand_id', 'id')->where('status', 'active');
+        return $this->hasMany(Product::class, 'brand_id', 'id')
+                    ->where('status', 'active');
     }
-    // public static function getProductByBrand($slug)
-    // {
-    //     // dd($slug);
-    //     return Brand::with(['products' => function ($query) {
-    //         $query->where('status', 'active');
-    //     }])->where('slug', $slug)->paginate(10);
 
-    //     return Brand::with('products')->where('slug', $slug)->first();
-    //     // return Product::where('cat_id',$id)->where('child_cat_id',null)->paginate(10);
-    // }
+    /**
+     * Relationship: Brand ↔ Categories (Many-to-Many)
+     */
+    public function categories()
+    {
+        return $this->belongsToMany(Category::class, 'brand_category', 'brand_id', 'category_id')
+                    ->withTimestamps();
+    }
 
+    /**
+     * Static helper: Get products by brand slug
+     */
     public static function getProductByBrand($slug)
     {
         return Product::with('brand:id,title,slug')
@@ -37,6 +47,4 @@ class Brand extends Model
             ->paginate(9)
             ->appends(request()->query()); // Keeps filters in pagination links
     }
-
-
 }

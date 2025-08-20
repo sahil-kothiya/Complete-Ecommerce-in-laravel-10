@@ -10,7 +10,9 @@
 	</div>
 	<div class="card-header py-3">
 		<h6 class="m-0 font-weight-bold text-primary float-left">Category Lists</h6>
-		<a href="{{route('category.create')}}" class="btn btn-primary btn-sm float-right" data-toggle="tooltip" data-placement="bottom" title="Add User"><i class="fas fa-plus"></i> Add Category</a>
+		<a href="{{route('category.tree')}}" class="btn btn-primary btn-sm float-right" data-toggle="tooltip" data-placement="bottom" title="Sort Category"><i class="fas fa-plus"></i> Sort Category</a>
+
+		<a href="{{route('category.create')}}" class="btn btn-primary btn-sm float-right" data-toggle="tooltip" data-placement="bottom" title="Add Category"><i class="fas fa-plus"></i> Add Category</a>
 	</div>
 	<div class="card-body">
 		<div class="table-responsive">
@@ -46,11 +48,11 @@
 					@php
 					@endphp
 					<tr>
-						<td>{{$category->id}}</td>
+						<td>{{$loop->iteration}}</td>
 						<td>{{$category->title}}</td>
 						<td>{{$category->slug}}</td>
 						<td>{{(is_null($category->parent_id) ? 'Yes': 'No')}}</td>
-						<td>{{$category->parent->title ?? ''}}</td>
+						<td>{{$category->parent_chain ?? ''}}</td>
 						<td>
 							@if($category->photo)
 							<img src="{{$category->photo}}" class="img-fluid" style="max-width:80px" alt="{{$category->photo}}" loading="lazy">
@@ -77,7 +79,13 @@
 					@endforeach
 				</tbody>
 			</table>
-			<span style="float:right">{{$categories->links()}}</span>
+
+			{{-- Laravel Pagination --}}
+			<div class="row mt-3">
+				<div class="col-md-12 d-flex justify-content-end">
+					{{ $categories->links('pagination::bootstrap-4') }}
+				</div>
+			</div>
 			@else
 			<h6 class="text-center">No Categories found!!! Please create Category</h6>
 			@endif

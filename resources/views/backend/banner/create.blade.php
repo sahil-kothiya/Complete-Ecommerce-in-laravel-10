@@ -12,46 +12,89 @@
 
 			<div class="row">
 				<div class="col-md-6">
+					{{-- Title --}}
 					<div class="form-group">
 						<label for="inputTitle" class="col-form-label">Title <span class="text-danger">*</span></label>
-						<input id="inputTitle" type="text" name="title" placeholder="Enter title" value="{{old('title')}}" class="form-control" required>
+						<input id="inputTitle" type="text" name="title"
+							placeholder="Enter title"
+							value="{{ old('title') }}"
+							class="form-control" required>
 						@error('title')
-						<span class="text-danger">{{$message}}</span>
+						<span class="text-danger">{{ $message }}</span>
 						@enderror
 					</div>
 
+					{{-- Description --}}
 					<div class="form-group">
 						<label for="description">Description</label>
 						<textarea id="description" name="description" class="form-control">{{ old('description') }}</textarea>
-						@error('description')<span class="text-danger">{{ $message }}</span>@enderror
-					</div>
-
-					<div class="form-group">
-						<label for="link_type" class="col-form-label">Link Type </label>
-						<select name="link_type" class="form-control">
-							<option value="">-- Select Link Type --</option>
-							<option value="product" {{ old('link_type') == 'product' ? 'selected' : '' }}> Product </option>
-							<option value="category" {{ old('link_type') == 'category' ? 'selected' : '' }}> Category </option>
-							<option value="url" {{ old('link_type') == 'url' ? 'selected' : '' }}> URL </option>
-						</select>
-						@error('link_type')
+						@error('description')
 						<span class="text-danger">{{ $message }}</span>
 						@enderror
 					</div>
 
-					<div class="form-group">
-						<label for="link" class="col-form-label">Redirect URL / SKU </label>
-						<input id="link" type="text" name="link" placeholder="e.g. /product/sku-123 OR /category/electronics OR https://example.com" value="{{ old('link') }}" class="form-control">
-						@error('link')
-						<span class="text-danger">{{ $message }}</span>
-						@enderror
+					{{-- Link type, discount, and redirect in one row --}}
+					<div class="row">
+						{{-- Link type --}}
+						<div class="col-md-4">
+							<div class="form-group">
+								<label for="link_type" class="col-form-label">Link Type <span class="text-danger">*</span></label>
+								<select name="link_type" id="link_type" class="form-control">
+									<option value="">-- Select Link Type --</option>
+									<option value="product" {{ old('link_type') == 'product' ? 'selected' : '' }}>Product</option>
+									<option value="category" {{ old('link_type') == 'category' ? 'selected' : '' }}>Category</option>
+									<option value="url" {{ old('link_type') == 'url' ? 'selected' : '' }}>URL</option>
+									<option value="discount" {{ old('link_type') == 'discount' ? 'selected' : '' }}>Discount</option>
+								</select>
+								@error('link_type')
+								<span class="text-danger">{{ $message }}</span>
+								@enderror
+							</div>
+						</div>
+
+						{{-- Discount field (only if link_type = discount) --}}
+						<div class="col-md-8" id="discount-field"
+							style="display: {{ old('link_type') == 'discount' ? 'block' : 'none' }};">
+							<div class="form-group">
+								<label for="discount_id" class="col-form-label">Discount</label>
+								<select name="discount_id" class="form-control">
+									<option value="">-- Select Discount --</option>
+									@foreach($discounts as $discount)
+									<option value="{{ $discount->id }}" {{ old('discount_id') == $discount->id ? 'selected' : '' }}>
+										{{ $discount->title }} -
+										{{ $discount->type === 'percentage' ? $discount->value . '%' : '₹' . number_format($discount->value, 2) }}
+									</option>
+									@endforeach
+								</select>
+								@error('discount_id')
+								<span class="text-danger">{{ $message }}</span>
+								@enderror
+							</div>
+						</div>
+
+						{{-- Redirect field (only if product/category/url) --}}
+						<div class="col-md-8" id="link-field"
+							style="display: {{ old('link_type') && old('link_type') != 'discount' ? 'block' : 'none' }};">
+							<div class="form-group">
+								<label for="link" class="col-form-label">Redirect URL / SKU</label>
+								<input id="link" type="text" name="link"
+									placeholder="e.g. /product/sku-123 OR /category/electronics OR https://example.com"
+									value="{{ old('link') }}"
+									class="form-control">
+								@error('link')
+								<span class="text-danger">{{ $message }}</span>
+								@enderror
+							</div>
+						</div>
 					</div>
 
+					{{-- Buttons --}}
 					<div class="form-group mb-3">
 						<button type="reset" class="btn btn-warning">Reset</button>
-						<button class="btn btn-success" type="submit">Submit</button>
+						<button type="submit" class="btn btn-success">Submit</button>
 					</div>
 				</div>
+
 
 				<div class="col-md-6">
 					<div class="form-group">
@@ -62,22 +105,6 @@
 						</select>
 						@error('status')
 						<span class="text-danger">{{$message}}</span>
-						@enderror
-					</div>
-
-					<div class="form-group">
-						<label for="discount_id" class="col-form-label">Discount </label>
-						<select name="discount_id" class="form-control">
-							<option value="">-- Select Discount --</option>
-							@foreach($discounts as $discount)
-							<option value="{{ $discount->id }}" {{ old('discount_id') == $discount->id ? 'selected' : '' }}>
-								{{ $discount->title }} -
-								{{ $discount->type === 'percentage' ? $discount->value . '%' : '₹' . number_format($discount->value, 2) }}
-							</option>
-							@endforeach
-						</select>
-						@error('discount_id')
-						<span class="text-danger">{{ $message }}</span>
 						@enderror
 					</div>
 
@@ -115,6 +142,7 @@
 
 @push('styles')
 <link rel="stylesheet" href="{{asset('backend/summernote/summernote.min.css')}}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/sweetalert2/11.7.32/sweetalert2.min.css">
 <style>
 	.table-responsive {
 		overflow-x: auto;
@@ -240,19 +268,19 @@
 		opacity: 1;
 	}
 
-	/* Notification styles */
-	.notification-toast {
-		border-radius: 6px;
-		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important;
+	/* SweetAlert2 custom styles */
+	.swal2-popup {
+		border-radius: 10px;
+		font-family: inherit;
 	}
 
-	.notification-toast .close {
-		color: inherit;
-		opacity: 0.8;
+	.swal2-title {
+		font-size: 1.5rem;
+		font-weight: 600;
 	}
 
-	.notification-toast .close:hover {
-		opacity: 1;
+	.swal2-content {
+		font-size: 1rem;
 	}
 
 	/* Animation for showing preview */
@@ -266,11 +294,18 @@
 			max-height: 0;
 			transform: translateY(-10px);
 		}
+
 		to {
 			opacity: 1;
 			max-height: 200px;
 			transform: translateY(0);
 		}
+	}
+
+	/* Smooth transitions for showing/hiding fields */
+	#discount-field,
+	#link-field {
+		transition: all 0.3s ease;
 	}
 </style>
 @endpush
@@ -278,6 +313,7 @@
 @push('scripts')
 <script src="/vendor/laravel-filemanager/js/stand-alone-button.js"></script>
 <script src="{{asset('backend/summernote/summernote.min.js')}}"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert2/11.7.32/sweetalert2.all.min.js"></script>
 <script>
 	// File manager initialization
 	$('#lfm').filemanager('image');
@@ -302,34 +338,46 @@
 		console.warn('Image failed to load:', img.src);
 	}
 
-	// Function to show notification messages
+	// Function to show SweetAlert notifications
 	function showNotification(message, type = 'info') {
-		// Remove existing notifications
-		$('.notification-toast').remove();
+		const config = {
+			title: type === 'success' ? 'Success!' : type === 'error' ? 'Error!' : type === 'warning' ? 'Warning!' : 'Info!',
+			text: message,
+			icon: type === 'success' ? 'success' : type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'info',
+			confirmButtonText: 'OK',
+			confirmButtonColor: type === 'success' ? '#28a745' : type === 'error' ? '#dc3545' : type === 'warning' ? '#ffc107' : '#17a2b8',
+			timer: type === 'success' ? 3000 : null,
+			timerProgressBar: type === 'success',
+			showCloseButton: true,
+			focusConfirm: false
+		};
 
-		// Create notification element
-		const notificationClass = type === 'success' ? 'alert-success' :
-			type === 'error' ? 'alert-danger' : 'alert-info';
+		Swal.fire(config);
+	}
 
-		const $notification = $(`
-			<div class="alert ${notificationClass} notification-toast alert-dismissible" 
-				 style="position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 350px;">
-				<button type="button" class="close" data-dismiss="alert" aria-label="Close">
-					<span aria-hidden="true">&times;</span>
-				</button>
-				<strong>${type === 'success' ? 'Success!' : type === 'error' ? 'Error!' : 'Info!'}</strong> ${message}
-			</div>
-		`);
+	// Function to toggle discount/link fields based on link type
+	function toggleLinkFields() {
+		const linkType = $('#link_type').val();
+		const $discountField = $('#discount-field');
+		const $linkField = $('#link-field');
 
-		// Add to page
-		$('body').append($notification);
-
-		// Auto-hide after 4 seconds
-		setTimeout(function() {
-			$notification.fadeOut(400, function() {
-				$(this).remove();
-			});
-		}, 4000);
+		if (linkType === 'discount') {
+			$discountField.slideDown(300);
+			$linkField.slideUp(300);
+			// Clear link field when discount is selected
+			$('#link').val('');
+		} else if (linkType === '') {
+			$discountField.slideUp(300);
+			$linkField.slideUp(300);
+			// Clear both fields when no link type is selected
+			$('#link').val('');
+			$('select[name="discount_id"]').val('');
+		} else {
+			$discountField.slideUp(300);
+			$linkField.slideDown(300);
+			// Clear discount field when other link types are selected
+			$('select[name="discount_id"]').val('');
+		}
 	}
 
 	// Function to update image preview
@@ -427,6 +475,14 @@
 			height: 150
 		});
 
+		// Initialize field visibility based on current link type value
+		toggleLinkFields();
+
+		// Handle link type change
+		$('#link_type').on('change', function() {
+			toggleLinkFields();
+		});
+
 		// Add zoom functionality to preview images
 		$(document).on('click', '.image-preview', function(e) {
 			e.preventDefault();
@@ -457,27 +513,74 @@
 			}, 500);
 		});
 
-		// Reset functionality - clear image preview when form is reset
-		$('button[type="reset"]').on('click', function() {
-			setTimeout(function() {
-				$('#selected-images').hide();
-				$('#holder').empty();
-			}, 100);
+		// Reset functionality - clear image preview and reset field visibility when form is reset
+		$('button[type="reset"]').on('click', function(e) {
+			e.preventDefault();
+
+			Swal.fire({
+				title: 'Reset Form?',
+				text: 'Are you sure you want to reset all form data?',
+				icon: 'warning',
+				showCancelButton: true,
+				confirmButtonColor: '#dc3545',
+				cancelButtonColor: '#6c757d',
+				confirmButtonText: 'Yes, Reset',
+				cancelButtonText: 'Cancel'
+			}).then((result) => {
+				if (result.isConfirmed) {
+					// Reset the form
+					$('form')[0].reset();
+
+					// Clear Summernote content
+					$('#description').summernote('code', '');
+
+					// Clear image preview and reset field visibility
+					setTimeout(function() {
+						$('#selected-images').hide();
+						$('#holder').empty();
+						toggleLinkFields(); // Reset field visibility
+					}, 100);
+
+					// Show success message
+					showNotification('Form has been reset successfully!', 'success');
+				}
+			});
 		});
 
 		// Form submission handling
 		$('form').on('submit', function(e) {
 			$('#description').val($('#description').summernote('code'));
 
-			// Original validation for link and link_type
+			// Updated validation for link and link_type
 			let link = $.trim($('input[name="link"]').val());
 			let linkType = $.trim($('select[name="link_type"]').val());
+			let discountId = $.trim($('select[name="discount_id"]').val());
 
+			// Validation for non-discount link types
+			if (linkType !== 'discount' && linkType !== '' && link === '') {
+				e.preventDefault();
+				showNotification('Please provide a Link/URL when selecting ' + linkType + ' link type.', 'error');
+				$('input[name="link"]').focus();
+				return;
+			}
+
+			// Validation for discount link type
+			if (linkType === 'discount' && discountId === '') {
+				e.preventDefault();
+				showNotification('Please select a Discount when choosing Discount link type.', 'error');
+				$('select[name="discount_id"]').focus();
+				return;
+			}
+
+			// Validation for providing link without link type
 			if (link !== '' && linkType === '') {
 				e.preventDefault();
 				showNotification('Please select Link Type when providing a Link.', 'error');
 				$('select[name="link_type"]').focus();
+				return;
 			}
+
+			// If all validations pass, form will submit normally
 		});
 
 		// Check if there's an old photo value (for validation errors)

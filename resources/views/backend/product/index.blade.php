@@ -62,7 +62,7 @@
 					$primaryImage = $product->images->firstWhere('is_primary', 1);
 					@endphp
 					<tr>
-						<td>{{$product->id}}</td>
+						<td>{{$loop->iteration}}</td>
 						<td>{{$product->title}}</td>
 						<td>
 							{{$product->cat_info['title']}}

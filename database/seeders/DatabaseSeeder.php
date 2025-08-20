@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use Elasticsearch\Endpoints\Cat\Master;
 use Illuminate\Database\Seeder;
 
 
@@ -18,10 +19,12 @@ class DatabaseSeeder extends Seeder
         $this->call(BannerSeeder::class);
         $this->call(SettingsTableSeeder::class);
         $this->call(CouponSeeder::class);
-        $this->call(BrandsTableSeeder::class);
-        $this->call(CategoriesTableSeeder::class);
-        $this->call(BulkUsersSeeder::class); // 1 Million
+        $this->call(MasterSeeder::class);
+        $this->call(ProductSeeder::class);
+        // $this->call(BrandsTableSeeder::class);
+        // $this->call(CategoriesTableSeeder::class);
+        // $this->call(BulkUsersSeeder::class); // 1 Million
         // $this->call(BulkProductsTableSeeder::class); // 10 Million
-        $this->call(BulkProductsTableSeederNew::class); // 10 Million
+        // $this->call(BulkProductsTableSeederNew::class); // 10 Million
     }
 }

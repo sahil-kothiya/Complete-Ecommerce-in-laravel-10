@@ -46,7 +46,7 @@ class BannerController extends Controller
             'photo'        => 'required|string',
             'status'       => 'required|in:active,inactive',
             'discount_id'  => 'nullable|exists:discounts,id',
-            'link_type'    => 'nullable|in:product,category,url',
+            'link_type'    => 'nullable|in:product,category,url,discount',
             'link'         => [
                 'nullable',
                 'string',
@@ -118,7 +118,7 @@ class BannerController extends Controller
             'photo'        => 'required|string',
             'status'       => 'required|in:active,inactive',
             'discount_id'  => 'nullable|exists:discounts,id',
-            'link_type'    => 'nullable|in:product,category,url',
+            'link_type'    => 'nullable|in:product,category,url,discount',
             'link'         => [
                 'nullable',
                 'string',
