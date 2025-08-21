@@ -32,6 +32,7 @@
 </div> -->
 
 <!-- Price Filter Widget -->
+@if(!isset($category) || in_array('price', $category->enabled_filters ?? []))
 <div class="single-widget range">
     <h3 class="title">Shop by Price</h3>
     <div class="price-filter">
@@ -48,6 +49,7 @@
         </div>
     </div>
 </div>
+@endif
 
 <!-- Recent Products Widget -->
 <div class="single-widget">
@@ -121,11 +123,16 @@
 </div>
 
 <!-- Brands Widget -->
+@if(!isset($category) || in_array('brand', $category->enabled_filters ?? []))
 <div class="single-widget category">
     <h3 class="title">Brands</h3>
     <ul class="categor-list">
-        @foreach(App\Models\Brand::where('status', 'active')->orderBy('title')->get() as $brand)
+        @php
+        $brands = isset($category) ? $category->brands->where('status', 'active')->sortBy('title') : App\Models\Brand::where('status', 'active')->orderBy('title')->get();
+        @endphp
+        @foreach($brands as $brand)
         <li><a href="{{ route('product-brand', $brand->slug) }}">{{ $brand->title }}</a></li>
         @endforeach
     </ul>
 </div>
+@endif

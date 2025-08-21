@@ -25,7 +25,12 @@ class Category extends Model
         'added_by',
         'code',
         'code_locked',
-        'code_generated_at'
+        'code_generated_at',
+        'enabled_filters',
+    ];
+
+    protected $casts = [
+        'enabled_filters' => 'array',
     ];
 
     // Relationships

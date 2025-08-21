@@ -8,11 +8,25 @@
 			@include('backend.layouts.notification')
 		</div>
 	</div>
-	<div class="card-header py-3">
-		<h6 class="m-0 font-weight-bold text-primary float-left">Category Lists</h6>
-		<a href="{{route('category.tree')}}" class="btn btn-primary btn-sm float-right" data-toggle="tooltip" data-placement="bottom" title="Sort Category"><i class="fas fa-plus"></i> Sort Category</a>
+	<div class="card-header py-3 d-flex justify-content-between align-items-center">
+		<h6 class="m-0 font-weight-bold text-primary">Category Lists</h6>
+		<div class="btn-group" role="group" aria-label="Category Actions">
+			<a href="{{ route('category.tree') }}"
+				class="btn btn-warning btn-sm"
+				data-toggle="tooltip"
+				data-placement="bottom"
+				title="Sort Category">
+				<i class="fas fa-sort"></i> Sort Categories
+			</a>
 
-		<a href="{{route('category.create')}}" class="btn btn-primary btn-sm float-right" data-toggle="tooltip" data-placement="bottom" title="Add Category"><i class="fas fa-plus"></i> Add Category</a>
+			<a href="{{ route('category.create') }}"
+				class="btn btn-success btn-sm ml-2"
+				data-toggle="tooltip"
+				data-placement="bottom"
+				title="Add Category">
+				<i class="fas fa-plus"></i> Add Category
+			</a>
+		</div>
 	</div>
 	<div class="card-body">
 		<div class="table-responsive">

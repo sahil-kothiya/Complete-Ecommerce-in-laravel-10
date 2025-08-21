@@ -30,7 +30,14 @@ class CategoryController extends Controller
     public function create()
     {
         $all_cats = Category::orderBy('title', 'ASC')->get();
-        return view('backend.category.create', compact('all_cats'));
+        $brands = \App\Models\Brand::orderBy('title')->get();
+        $available_filters = [
+            'price' => 'Price Range',
+            'brand' => 'Brands',
+            'rating' => 'Customer Ratings',
+            'discount' => 'Discounts',
+        ];
+        return view('backend.category.create', compact('all_cats', 'brands', 'available_filters'));
     }
 
     /**
@@ -51,6 +58,10 @@ class CategoryController extends Controller
             'is_featured' => 'boolean',
             'seo_title' => 'nullable|string',
             'seo_description' => 'nullable|string',
+            'enabled_filters' => 'nullable|array',
+            'enabled_filters.*' => 'string|in:price,brand,rating,discount',
+            'brands' => 'nullable|array',
+            'brands.*' => 'exists:brands,id',
         ]);
 
         $validatedData['slug'] = generateUniqueSlug($request->title, Category::class);
@@ -72,6 +83,8 @@ class CategoryController extends Controller
         $validatedData['children_count'] = 0;
         $validatedData['products_count'] = 0;
         $validatedData['is_featured'] = $request->input('is_featured', false);
+
+        $validatedData['enabled_filters'] = $request->input('enabled_filters', []);
 
         // Process photo to store relative path
         if ($request->filled('photo')) {
@@ -108,6 +121,7 @@ class CategoryController extends Controller
         }
 
         $category = Category::create($validatedData);
+        $category->brands()->sync($request->input('brands', []));
 
         return redirect()->route('category.index')->with(
             $category ? 'success' : 'error',
@@ -136,7 +150,14 @@ class CategoryController extends Controller
     {
         $category = Category::findOrFail($id);
         $all_cats = Category::orderBy('title', 'ASC')->get();
-        return view('backend.category.edit', compact('category', 'all_cats'));
+        $brands = \App\Models\Brand::orderBy('title')->get();
+        $available_filters = [
+            'price' => 'Price Range',
+            'brand' => 'Brands',
+            'rating' => 'Customer Ratings',
+            'discount' => 'Discounts',
+        ];
+        return view('backend.category.edit', compact('category', 'all_cats', 'brands', 'available_filters'));
     }
 
     /**
@@ -160,6 +181,10 @@ class CategoryController extends Controller
             'is_featured' => 'boolean',
             'seo_title' => 'nullable|string',
             'seo_description' => 'nullable|string',
+            'enabled_filters' => 'nullable|array',
+            'enabled_filters.*' => 'string|in:price,brand,rating,discount',
+            'brands' => 'nullable|array',
+            'brands.*' => 'exists:brands,id',
         ]);
 
         $validatedData['code_locked'] = $request->has('code_locked') ? 1 : 0;
@@ -183,6 +208,8 @@ class CategoryController extends Controller
             $validatedData['photo'] = $this->convertToRelativePath($request->photo);
         }
 
+        $validatedData['enabled_filters'] = $request->input('enabled_filters', []);
+
         // Handle parent change
         $newParentId = $request->parent_id;
         $oldParentId = $category->parent_id;
@@ -195,48 +222,34 @@ class CategoryController extends Controller
             // Update old parent
             if ($oldParentId) {
                 $oldParent = Category::find($oldParentId);
-                $oldParent->children_count = max(0, $oldParent->children_count - 1);
-                $oldParent->has_children = $oldParent->children_count > 0;
-                $oldParent->save();
+                if ($oldParent) {
+                    $oldParent->children_count = max(0, $oldParent->children_count - 1);
+                    $oldParent->has_children = $oldParent->children_count > 0;
+                    $oldParent->save();
+                }
             }
 
-            // Compute new level and path
+            // Update new parent
             if ($newParentId) {
-                $newParent = Category::findOrFail($newParentId);
-                $newLevel = $newParent->level + 1;
-                $newPath = $newParent->path ? $newParent->path . '/' . $newParent->id : (string)$newParent->id;
-
-                // Update new parent
-                $newParent->children_count += 1;
+                $newParent = Category::find($newParentId);
+                $validatedData['level'] = $newParent->level + 1;
+                $validatedData['path'] = $newParent->path ? $newParent->path . '/' . $newParent->id : (string)$newParent->id;
+                $newParent->children_count = $newParent->children_count + 1;
                 $newParent->has_children = true;
                 $newParent->save();
             } else {
-                $newLevel = 0;
-                $newPath = null;
+                $validatedData['level'] = 0;
+                $validatedData['path'] = null;
             }
-
-            // Update subtree
-            $category->updateSubtreePathAndLevel($newPath, $newLevel);
-
-            $validatedData['parent_id'] = $newParentId;
-            $validatedData['level'] = $newLevel;
-            $validatedData['path'] = $newPath;
         }
 
-        // Update sort_order if changed or auto if not provided
-        if ($request->has('sort_order') || !$category->sort_order) {
-            $validatedData['sort_order'] = $request->sort_order ?? (Category::where('parent_id', $category->parent_id)->max('sort_order') + 1);
-        }
+        $category->update($validatedData);
 
-        $status = $category->update($validatedData);
-
-        $message = $status
-            ? 'Category successfully updated'
-            : 'Error occurred, Please try again!';
+        $category->brands()->sync($request->input('brands', []));
 
         return redirect()->route('category.index')->with(
-            $status ? 'success' : 'error',
-            $message
+            'success',
+            'Category successfully updated'
         );
     }
 
@@ -251,19 +264,12 @@ class CategoryController extends Controller
         $category = Category::findOrFail($id);
         $child_cat_id = Category::where('parent_id', $id)->pluck('id');
 
-        // Update parent if exists
-        if ($category->parent_id) {
-            $parent = Category::find($category->parent_id);
-            $parent->children_count = max(0, $parent->children_count - 1);
-            $parent->has_children = $parent->children_count > 0;
-            $parent->save();
-        }
-
         $status = $category->delete();
 
-        if ($status && $child_cat_id->count() > 0) {
-            // Shift children to root or handle as needed
-            Category::whereIn('id', $child_cat_id)->update(['parent_id' => null, 'level' => 0, 'path' => null]);
+        if ($status) {
+            if (count($child_cat_id) > 0) {
+                Category::whereIn('id', $child_cat_id)->update(['parent_id' => null, 'level' => 0, 'path' => null]);
+            }
         }
 
         $message = $status

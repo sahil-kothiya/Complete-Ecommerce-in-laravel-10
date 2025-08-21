@@ -81,6 +81,7 @@
 				<h6 class="collapse-header">Category Options:</h6>
 				<a class="collapse-item" href="{{route('category.index')}}">Category</a>
 				<a class="collapse-item" href="{{route('category.create')}}">Add Category</a>
+				<a class="collapse-item" href="{{route('category.tree')}}">Tree Manager</a>
 			</div>
 		</div>
 	</li>

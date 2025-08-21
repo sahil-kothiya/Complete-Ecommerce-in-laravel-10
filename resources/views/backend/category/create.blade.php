@@ -110,11 +110,39 @@
                         <span class="text-danger">{{ $message }}</span>
                         @enderror
                     </div>
+
+                    <div class="form-group">
+                        <label>Enabled Filters</label>
+                        @foreach($available_filters as $key => $label)
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="enabled_filters[]" value="{{ $key }}" id="filter_{{ $key }}" {{ in_array($key, old('enabled_filters', [])) ? 'checked' : '' }} tabindex="10">
+                            <label class="form-check-label" for="filter_{{ $key }}">
+                                {{ $label }}
+                            </label>
+                        </div>
+                        @endforeach
+                        @error('enabled_filters')
+                        <span class="text-danger">{{ $message }}</span>
+                        @enderror
+                    </div>
+
+                    <div class="form-group">
+                        <label for="brands">Associated Brands</label>
+                        <select name="brands[]" id="brands" class="form-control" multiple tabindex="11">
+                            @foreach($brands as $brand)
+                            <option value="{{ $brand->id }}" {{ in_array($brand->id, old('brands', [])) ? 'selected' : '' }}>{{ $brand->title }}</option>
+                            @endforeach
+                        </select>
+                        <small class="form-text text-muted">Select brands available in this category. Hold Ctrl/Cmd to select multiple.</small>
+                        @error('brands')
+                        <span class="text-danger">{{ $message }}</span>
+                        @enderror
+                    </div>
                 </div>
             </div>
 
             <div class="form-group mb-3">
-                <button class="btn btn-success" type="submit" tabindex="10">Submit</button>
+                <button class="btn btn-success" type="submit" tabindex="12">Submit</button>
             </div>
         </form>
     </div>

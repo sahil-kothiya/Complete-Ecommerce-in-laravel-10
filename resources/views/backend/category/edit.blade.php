@@ -1,3 +1,4 @@
+<!-- resources/views/backend/category/edit.blade.php -->
 @extends('backend.layouts.master')
 
 @section('main-content')
@@ -5,7 +6,7 @@
 <div class="card">
 	<h5 class="card-header">Edit Category</h5>
 	<div class="card-body">
-		<form method="post" action="{{route('category.update', $category->id)}}">
+		<form method="post" action="{{ route('category.update', $category->id) }}">
 			@csrf
 			@method('PATCH')
 			<div class="row">
@@ -121,14 +122,12 @@
 							@if($category->photo)
 							<div id="existing-images">
 								<label class="text-muted small">Current Image:</label>
-								<div id="existing-holder" class="img-fluid" style="margin-bottom: 10px;">
-									<div class="image-container">
-										<img src="{{ $category->photo ? asset($category->photo) : '' }}"
-											class="img-thumbnail image-preview"
-											alt="Category Image"
-											data-fallback-text="{{ $category->title }} - Image"
-											onerror="handleImageError(this)">
-									</div>
+								<div id="existing-holder" class="img-fluid">
+									<img src="{{ $category->photo ? asset($category->photo) : '' }}"
+										class="img-thumbnail image-preview"
+										alt="Category Image"
+										data-fallback-text="{{ $category->title }} - Image"
+										onerror="handleImageError(this)">
 								</div>
 							</div>
 							@endif
@@ -142,11 +141,42 @@
 						<span class="text-danger">{{ $message }}</span>
 						@enderror
 					</div>
+
+					<div class="form-group">
+						<label>Enabled Filters</label>
+						<div class="d-flex flex-wrap">
+							@foreach($available_filters as $key => $label)
+							<div class="form-check form-check-inline">
+								<input class="form-check-input" type="checkbox" name="enabled_filters[]" value="{{ $key }}" id="filter_{{ $key }}"
+									{{ in_array($key, old('enabled_filters', is_array($category->enabled_filters) ? $category->enabled_filters : [])) ? 'checked' : '' }} tabindex="11">
+								<label class="form-check-label" for="filter_{{ $key }}">
+									{{ $label }}
+								</label>
+							</div>
+							@endforeach
+						</div>
+						@error('enabled_filters')
+						<span class="text-danger">{{ $message }}</span>
+						@enderror
+					</div>
+
+					<div class="form-group">
+						<label for="brands">Associated Brands</label>
+						<select name="brands[]" id="brands" class="form-control selectpicker" multiple data-live-search="true" tabindex="12">
+							@foreach($brands as $brand)
+							<option value="{{ $brand->id }}" {{ in_array($brand->id, old('brands', $category->brands->pluck('id')->toArray() ?? [])) ? 'selected' : '' }}>{{ $brand->title }}</option>
+							@endforeach
+						</select>
+						<small class="form-text text-muted">Select brands available in this category. Hold Ctrl/Cmd to select multiple.</small>
+						@error('brands')
+						<span class="text-danger">{{ $message }}</span>
+						@enderror
+					</div>
 				</div>
 			</div>
 
 			<div class="form-group mb-3">
-				<button class="btn btn-success" type="submit" tabindex="11">Update</button>
+				<button class="btn btn-success" type="submit" tabindex="13">Update</button>
 			</div>
 		</form>
 	</div>
@@ -156,6 +186,7 @@
 
 @push('styles')
 <link rel="stylesheet" href="{{ asset('backend/summernote/summernote.min.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/css/bootstrap-select.min.css" />
 <style>
 	#image-preview-area {
 		position: relative;
@@ -244,83 +275,38 @@
 	.image-container * {
 		box-sizing: border-box;
 	}
+
+	/* Inline checkbox styling */
+	.form-check-inline {
+		margin-right: 1.5rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.form-check-inline .form-check-label {
+		margin-left: 0.25rem;
+		font-size: 0.9rem;
+	}
+
+	@media (max-width: 576px) {
+		.form-check-inline {
+			margin-right: 1rem;
+		}
+	}
 </style>
 @endpush
 
 @push('scripts')
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
 <script src="/vendor/laravel-filemanager/js/stand-alone-button.js"></script>
 <script src="{{ asset('backend/summernote/summernote.min.js') }}"></script>
 <script>
-	$('#lfm').filemanager('image');
-
-	let originalImagePath = '{{ $category->photo }}';
-
-	function handleImageError(img) {
-		const fallbackText = img.getAttribute('data-fallback-text') || 'Image not available';
-		const container = img.parentElement;
-
-		const fallback = document.createElement('div');
-		fallback.className = 'image-not-found';
-		fallback.innerHTML = `
-            <i class="fa fa-image"></i>
-            <span>${fallbackText}</span>
-        `;
-
-		container.insertBefore(fallback, img);
-		img.style.display = 'none';
-
-		console.warn('Image failed to load:', img.src);
-	}
-
-	function updateImagePreview() {
-		console.log('updateImagePreview called');
-		let imageInput = $('#thumbnail').val().trim();
-		let $holder = $('#holder');
-		let $newImagesDiv = $('#new-images');
-
-		$holder.empty();
-
-		if (!imageInput) {
-			console.log('No image input found');
-			$newImagesDiv.hide();
-			return;
-		}
-
-		if (imageInput === originalImagePath) {
-			$newImagesDiv.hide();
-			return;
-		}
-
-		$newImagesDiv.show();
-
-		let url = imageInput.trim();
-		if (url) {
-			// Convert relative path to absolute URL for preview
-			if (url.startsWith('/storage')) {
-				url = '{{ config('
-				app.url ') }}' + url;
-			}
-			let container = $('<div class="image-container"></div>');
-			let img = $('<img />', {
-				src: url,
-				class: 'img-thumbnail image-preview',
-				alt: 'New Category Image',
-				'data-fallback-text': 'New Image'
-			});
-
-			img.on('error', function() {
-				handleImageError(this);
-			});
-
-			container.append(img);
-			$holder.append(container);
-		}
-
-		console.log('New image preview created');
-	}
-
 	$(document).ready(function() {
 		console.log('Document ready - Category Edit Form');
+
+		$('#brands').selectpicker({
+			liveSearch: true,
+			noneSelectedText: 'Select brands'
+		});
 
 		$('#summary').summernote({
 			placeholder: "Write short description.....",
@@ -333,6 +319,73 @@
 			tabsize: 2,
 			height: 150
 		});
+
+		$('#lfm').filemanager('image');
+
+		let originalImagePath = '{{ $category->photo }}';
+
+		function handleImageError(img) {
+			const fallbackText = img.getAttribute('data-fallback-text') || 'Image not available';
+			const container = img.parentElement;
+
+			const fallback = document.createElement('div');
+			fallback.className = 'image-not-found';
+			fallback.innerHTML = `
+                <i class="fa fa-image"></i>
+                <span>${fallbackText}</span>
+            `;
+
+			container.insertBefore(fallback, img);
+			img.style.display = 'none';
+
+			console.warn('Image failed to load:', img.src);
+		}
+
+		function updateImagePreview() {
+			console.log('updateImagePreview called');
+			let imageInput = $('#thumbnail').val().trim();
+			let $holder = $('#holder');
+			let $newImagesDiv = $('#new-images');
+
+			$holder.empty();
+
+			if (!imageInput) {
+				console.log('No image input found');
+				$newImagesDiv.hide();
+				return;
+			}
+
+			if (imageInput === originalImagePath) {
+				$newImagesDiv.hide();
+				return;
+			}
+
+			$newImagesDiv.show();
+
+			let url = imageInput.trim();
+			if (url) {
+				if (url.startsWith('/storage')) {
+					url = '{{ config('
+					app.url ') }}' + url;
+				}
+				let container = $('<div class="image-container"></div>');
+				let img = $('<img />', {
+					src: url,
+					class: 'img-thumbnail image-preview',
+					alt: 'New Category Image',
+					'data-fallback-text': 'New Image'
+				});
+
+				img.on('error', function() {
+					handleImageError(this);
+				});
+
+				container.append(img);
+				$holder.append(container);
+			}
+
+			console.log('New image preview created');
+		}
 
 		$('#thumbnail').on('input change', function() {
 			console.log('Thumbnail input changed');

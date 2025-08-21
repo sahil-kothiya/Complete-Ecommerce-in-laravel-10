@@ -35,7 +35,9 @@ class MasterSeeder extends Seeder
             'is_featured' => true,
             'seo_title' => 'Electronics - Latest Gadgets & Devices',
             'seo_description' => 'Shop latest electronics including smartphones, laptops, audio devices and more.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount']),
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         $fashion = Category::create([
@@ -54,7 +56,8 @@ class MasterSeeder extends Seeder
             'is_featured' => true,
             'seo_title' => 'Fashion - Clothing & Accessories',
             'seo_description' => 'Discover latest fashion trends for men, women, and kids.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         $home = Category::create([
@@ -73,7 +76,8 @@ class MasterSeeder extends Seeder
             'is_featured' => true,
             'seo_title' => 'Home & Kitchen - Furniture & Appliances',
             'seo_description' => 'Transform your home with our furniture and kitchen appliances.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         $sports = Category::create([
@@ -92,7 +96,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Sports & Fitness - Equipment & Gear',
             'seo_description' => 'Get fit with our range of sports and fitness equipment.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         $beauty = Category::create([
@@ -111,7 +116,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Beauty & Personal Care Products',
             'seo_description' => 'Discover beauty and personal care products for your daily routine.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         /** --------------------------
@@ -133,7 +139,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Mobile Phones & Accessories',
             'seo_description' => 'Latest smartphones and mobile accessories.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         $laptops = Category::create([
@@ -152,7 +159,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Laptops & Computer Accessories',
             'seo_description' => 'Find the perfect laptop for work, gaming, or study.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         $audio = Category::create([
@@ -171,7 +179,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Audio Equipment - Headphones & Speakers',
             'seo_description' => 'Premium audio equipment for music lovers.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         /** --------------------------
@@ -193,7 +202,8 @@ class MasterSeeder extends Seeder
             'is_featured' => true,
             'seo_title' => 'Latest Smartphones',
             'seo_description' => 'Shop latest smartphones with best features and prices.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         /** --------------------------
@@ -215,7 +225,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Men\'s Fashion & Clothing',
             'seo_description' => 'Stylish clothing and accessories for men.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         $women = Category::create([
@@ -234,7 +245,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Women\'s Fashion & Clothing',
             'seo_description' => 'Trendy clothing and accessories for women.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         $kids = Category::create([
@@ -253,7 +265,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Kids Fashion & Clothing',
             'seo_description' => 'Comfortable and stylish clothing for kids.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         /** --------------------------
@@ -275,7 +288,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Men\'s Shoes',
             'seo_description' => 'Comfortable and stylish shoes for men.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         /** --------------------------
@@ -297,7 +311,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Home & Office Furniture',
             'seo_description' => 'Quality furniture for your home and office.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         $kitchenAppliances = Category::create([
@@ -316,7 +331,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Kitchen Appliances & Cookware',
             'seo_description' => 'Modern kitchen appliances for efficient cooking.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         /** --------------------------
@@ -338,7 +354,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Gym & Fitness Equipment',
             'seo_description' => 'Build your home gym with our fitness equipment.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         $outdoor = Category::create([
@@ -357,7 +374,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Outdoor Sports & Adventure Gear',
             'seo_description' => 'Gear up for outdoor adventures and sports.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         /** --------------------------
@@ -379,7 +397,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Skin Care Products',
             'seo_description' => 'Premium skincare products for healthy skin.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         $makeup = Category::create([
@@ -398,7 +417,8 @@ class MasterSeeder extends Seeder
             'is_featured' => false,
             'seo_title' => 'Makeup & Cosmetics',
             'seo_description' => 'Professional makeup and cosmetic products.',
-            'added_by' => 1
+            'added_by' => 1,
+            'enabled_filters' => json_encode(['price', 'brand', 'rating', 'discount'])
         ]);
 
         /** --------------------------
