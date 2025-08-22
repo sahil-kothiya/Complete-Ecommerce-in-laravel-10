@@ -32,7 +32,7 @@
 </div> -->
 
 <!-- Price Filter Widget -->
-@if(!isset($category) || in_array('price', $category->enabled_filters ?? []))
+@if(!isset($category) || $category->filters->where('name', 'price')->count())
 <div class="single-widget range">
     <h3 class="title">Shop by Price</h3>
     <div class="price-filter">
@@ -123,7 +123,7 @@
 </div>
 
 <!-- Brands Widget -->
-@if(!isset($category) || in_array('brand', $category->enabled_filters ?? []))
+@if(!isset($category) || $category->filters->where('name', 'brand')->count())
 <div class="single-widget category">
     <h3 class="title">Brands</h3>
     <ul class="categor-list">

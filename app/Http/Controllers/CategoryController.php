@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Brand;
 use Illuminate\Http\Request;
 use App\Models\Category;
+use App\Models\Filter;
 use Helper;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -31,13 +33,8 @@ class CategoryController extends Controller
     {
         $all_cats = Category::orderBy('title', 'ASC')->get();
         $brands = \App\Models\Brand::orderBy('title')->get();
-        $available_filters = [
-            'price' => 'Price Range',
-            'brand' => 'Brands',
-            'rating' => 'Customer Ratings',
-            'discount' => 'Discounts',
-        ];
-        return view('backend.category.create', compact('all_cats', 'brands', 'available_filters'));
+        $filters = Filter::active()->orderBy('title')->get();
+        return view('backend.category.create', compact('all_cats', 'brands', 'filters'));
     }
 
     /**
@@ -58,8 +55,8 @@ class CategoryController extends Controller
             'is_featured' => 'boolean',
             'seo_title' => 'nullable|string',
             'seo_description' => 'nullable|string',
-            'enabled_filters' => 'nullable|array',
-            'enabled_filters.*' => 'string|in:price,brand,rating,discount',
+            'filter_ids' => 'nullable|array',
+            'filter_ids.*' => 'exists:filters,id',
             'brands' => 'nullable|array',
             'brands.*' => 'exists:brands,id',
         ]);
@@ -83,8 +80,6 @@ class CategoryController extends Controller
         $validatedData['children_count'] = 0;
         $validatedData['products_count'] = 0;
         $validatedData['is_featured'] = $request->input('is_featured', false);
-
-        $validatedData['enabled_filters'] = $request->input('enabled_filters', []);
 
         // Process photo to store relative path
         if ($request->filled('photo')) {
@@ -121,23 +116,15 @@ class CategoryController extends Controller
         }
 
         $category = Category::create($validatedData);
+
+        // Attach filters and brands
+        $category->filters()->sync($request->input('filter_ids', []));
         $category->brands()->sync($request->input('brands', []));
 
         return redirect()->route('category.index')->with(
             $category ? 'success' : 'error',
             $category ? 'Category successfully added' : 'Error occurred, please try again!'
         );
-    }
-
-    /**
-     * Display the specified resource.
-     *
-     * @param  int  $id
-     * @return \Illuminate\Http\Response
-     */
-    public function show($id)
-    {
-        // Implement if needed
     }
 
     /**
@@ -150,14 +137,9 @@ class CategoryController extends Controller
     {
         $category = Category::findOrFail($id);
         $all_cats = Category::orderBy('title', 'ASC')->get();
-        $brands = \App\Models\Brand::orderBy('title')->get();
-        $available_filters = [
-            'price' => 'Price Range',
-            'brand' => 'Brands',
-            'rating' => 'Customer Ratings',
-            'discount' => 'Discounts',
-        ];
-        return view('backend.category.edit', compact('category', 'all_cats', 'brands', 'available_filters'));
+        $brands = Brand::orderBy('title')->get();
+        $filters = Filter::active()->orderBy('title')->get();
+        return view('backend.category.edit', compact('category', 'all_cats', 'brands', 'filters'));
     }
 
     /**
@@ -181,8 +163,8 @@ class CategoryController extends Controller
             'is_featured' => 'boolean',
             'seo_title' => 'nullable|string',
             'seo_description' => 'nullable|string',
-            'enabled_filters' => 'nullable|array',
-            'enabled_filters.*' => 'string|in:price,brand,rating,discount',
+            'filter_ids' => 'nullable|array',
+            'filter_ids.*' => 'exists:filters,id',
             'brands' => 'nullable|array',
             'brands.*' => 'exists:brands,id',
         ]);
@@ -207,8 +189,6 @@ class CategoryController extends Controller
         if ($request->filled('photo')) {
             $validatedData['photo'] = $this->convertToRelativePath($request->photo);
         }
-
-        $validatedData['enabled_filters'] = $request->input('enabled_filters', []);
 
         // Handle parent change
         $newParentId = $request->parent_id;
@@ -245,6 +225,8 @@ class CategoryController extends Controller
 
         $category->update($validatedData);
 
+        // Sync filters and brands
+        $category->filters()->sync($request->input('filter_ids', []));
         $category->brands()->sync($request->input('brands', []));
 
         return redirect()->route('category.index')->with(

@@ -27,7 +27,6 @@
 		Banner
 	</div>
 
-	<!-- Nav Item - Pages Collapse Menu -->
 	<!-- Nav Item - Charts -->
 	<li class="nav-item">
 		<a class="nav-link" href="{{route('file-manager')}}">
@@ -48,8 +47,10 @@
 			</div>
 		</div>
 	</li>
+
 	<!-- Divider -->
 	<hr class="sidebar-divider">
+
 	<!-- Heading -->
 	<div class="sidebar-heading">
 		Shop
@@ -86,7 +87,22 @@
 		</div>
 	</li>
 
-	{{-- Brands --}}
+	<!-- Filter Management -->
+	<li class="nav-item">
+		<a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#filterCollapse" aria-expanded="true" aria-controls="filterCollapse">
+			<i class="fas fa-filter"></i>
+			<span>Filter Management</span>
+		</a>
+		<div id="filterCollapse" class="collapse" aria-labelledby="headingFilter" data-parent="#accordionSidebar">
+			<div class="bg-white py-2 collapse-inner rounded">
+				<h6 class="collapse-header">Filter Options:</h6>
+				<a class="collapse-item" href="{{route('filter.index')}}">Filters</a>
+				<!-- <a class="collapse-item" href="{{route('filter.create')}}">Add Filter</a> -->
+			</div>
+		</div>
+	</li>
+
+	<!-- Brands -->
 	<li class="nav-item">
 		<a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#brandCollapse" aria-expanded="true" aria-controls="brandCollapse">
 			<i class="fas fa-table"></i>
@@ -101,9 +117,7 @@
 		</div>
 	</li>
 
-
-
-	{{-- Products --}}
+	<!-- Products -->
 	<li class="nav-item">
 		<a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#productCollapse" aria-expanded="true" aria-controls="productCollapse">
 			<i class="fas fa-cubes"></i>
@@ -118,8 +132,7 @@
 		</div>
 	</li>
 
-
-	{{-- Shipping --}}
+	<!-- Shipping -->
 	<li class="nav-item">
 		<a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#shippingCollapse" aria-expanded="true" aria-controls="shippingCollapse">
 			<i class="fas fa-truck"></i>
@@ -134,7 +147,7 @@
 		</div>
 	</li>
 
-	<!--Orders -->
+	<!-- Orders -->
 	<li class="nav-item">
 		<a class="nav-link" href="{{route('order.index')}}">
 			<i class="fas fa-hammer fa-chart-area"></i>
@@ -215,6 +228,7 @@
 
 	<!-- Divider -->
 	<hr class="sidebar-divider d-none d-md-block">
+
 	<!-- Heading -->
 	<div class="sidebar-heading">
 		General Settings

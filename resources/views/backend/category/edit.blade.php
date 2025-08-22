@@ -59,34 +59,53 @@
 					</div>
 
 					<div class="row">
-						<div class="col-md-5">
-							<div class="form-group">
-								<label for="code" class="col-form-label">Code</label>
-								<input type="text" id="code" name="code" class="form-control text-uppercase" maxlength="3" value="{{ old('code', $category->code) }}" readonly>
+						<div class="col-md-6">
+							<div class="form-group" id="parent_cat_div">
+								<label for="parent_id">Parent Category</label>
+								<select name="parent_id" class="form-control" tabindex="7">
+									<option value="">--Select any category--</option>
+									@foreach($all_cats as $cat)
+									<option value="{{ $cat->id }}" {{ old('parent_id', $category->parent_id) == $cat->id ? 'selected' : '' }} {{ $cat->id == $category->id ? 'disabled' : '' }}>{{ $cat->title }}</option>
+									@endforeach
+								</select>
+								@error('parent_id')
+								<span class="text-danger">{{ $message }}</span>
+								@enderror
 							</div>
 						</div>
-
-						<div class="col-md-7">
+						<div class="col-md-6">
 							<div class="form-group">
-								<label for="code_locked" class="col-form-label">Lock Code</label><br>
-								<input type="checkbox" name="code_locked" id="code_locked" value="1" {{ old('code_locked', $category->code_locked) ? 'checked' : '' }} tabindex="6">
-								<label for="code_locked">Prevent automatic code changes</label>
+								<label for="brands">Associated Brands</label>
+								<select name="brands[]" id="brands" class="form-control selectpicker" multiple data-live-search="true" tabindex="12">
+									@foreach($brands as $brand)
+									<option value="{{ $brand->id }}" {{ in_array($brand->id, old('brands', $category->brands->pluck('id')->toArray() ?? [])) ? 'selected' : '' }}>{{ $brand->title }}</option>
+									@endforeach
+								</select>
+								@error('brands')
+								<span class="text-danger">{{ $message }}</span>
+								@enderror
 							</div>
 						</div>
 					</div>
 
-					<div class="form-group" id="parent_cat_div">
-						<label for="parent_id">Parent Category</label>
-						<select name="parent_id" class="form-control" tabindex="7">
-							<option value="">--Select any category--</option>
-							@foreach($all_cats as $cat)
-							<option value="{{ $cat->id }}" {{ old('parent_id', $category->parent_id) == $cat->id ? 'selected' : '' }} {{ $cat->id == $category->id ? 'disabled' : '' }}>{{ $cat->title }}</option>
+					<div class="form-group">
+						<label>Enabled Filters</label>
+						<div class="d-flex flex-wrap">
+							@foreach($filters as $filter)
+							<div class="form-check form-check-inline">
+								<input class="form-check-input" type="checkbox" name="filter_ids[]" value="{{ $filter->id }}" id="filter_{{ $filter->id }}"
+									{{ in_array($filter->id, old('filter_ids', $category->filters->pluck('id')->toArray() ?? [])) ? 'checked' : '' }} tabindex="11">
+								<label class="form-check-label" for="filter_{{ $filter->id }}">
+									{{ $filter->title }}
+								</label>
+							</div>
 							@endforeach
-						</select>
-						@error('parent_id')
+						</div>
+						@error('filter_ids')
 						<span class="text-danger">{{ $message }}</span>
 						@enderror
 					</div>
+
 				</div>
 
 				<div class="col-md-6">
@@ -104,6 +123,23 @@
 						@error('seo_description')
 						<span class="text-danger">{{ $message }}</span>
 						@enderror
+					</div>
+
+					<div class="row">
+						<div class="col-md-5">
+							<div class="form-group">
+								<label for="code" class="col-form-label">Code</label>
+								<input type="text" id="code" name="code" class="form-control text-uppercase" maxlength="3" value="{{ old('code', $category->code) }}" readonly>
+							</div>
+						</div>
+
+						<div class="col-md-7">
+							<div class="form-group">
+								<label for="code_locked" class="col-form-label">Lock Code</label><br>
+								<input type="checkbox" name="code_locked" id="code_locked" value="1" {{ old('code_locked', $category->code_locked) ? 'checked' : '' }} tabindex="6">
+								<label for="code_locked">Prevent automatic code changes</label>
+							</div>
+						</div>
 					</div>
 
 					<div class="form-group">
@@ -138,37 +174,6 @@
 							</div>
 						</div>
 						@error('photo')
-						<span class="text-danger">{{ $message }}</span>
-						@enderror
-					</div>
-
-					<div class="form-group">
-						<label>Enabled Filters</label>
-						<div class="d-flex flex-wrap">
-							@foreach($available_filters as $key => $label)
-							<div class="form-check form-check-inline">
-								<input class="form-check-input" type="checkbox" name="enabled_filters[]" value="{{ $key }}" id="filter_{{ $key }}"
-									{{ in_array($key, old('enabled_filters', is_array($category->enabled_filters) ? $category->enabled_filters : [])) ? 'checked' : '' }} tabindex="11">
-								<label class="form-check-label" for="filter_{{ $key }}">
-									{{ $label }}
-								</label>
-							</div>
-							@endforeach
-						</div>
-						@error('enabled_filters')
-						<span class="text-danger">{{ $message }}</span>
-						@enderror
-					</div>
-
-					<div class="form-group">
-						<label for="brands">Associated Brands</label>
-						<select name="brands[]" id="brands" class="form-control selectpicker" multiple data-live-search="true" tabindex="12">
-							@foreach($brands as $brand)
-							<option value="{{ $brand->id }}" {{ in_array($brand->id, old('brands', $category->brands->pluck('id')->toArray() ?? [])) ? 'selected' : '' }}>{{ $brand->title }}</option>
-							@endforeach
-						</select>
-						<small class="form-text text-muted">Select brands available in this category. Hold Ctrl/Cmd to select multiple.</small>
-						@error('brands')
 						<span class="text-danger">{{ $message }}</span>
 						@enderror
 					</div>
@@ -276,7 +281,7 @@
 		box-sizing: border-box;
 	}
 
-	/* Inline checkbox styling */
+	/* Inline checkbox styling for filters */
 	.form-check-inline {
 		margin-right: 1.5rem;
 		margin-bottom: 0.5rem;
@@ -300,13 +305,72 @@
 <script src="/vendor/laravel-filemanager/js/stand-alone-button.js"></script>
 <script src="{{ asset('backend/summernote/summernote.min.js') }}"></script>
 <script>
+	$('#lfm').filemanager('image');
+
+	function handleImageError(img) {
+		const fallbackText = img.getAttribute('data-fallback-text') || 'Image not available';
+		const container = img.parentElement;
+
+		const fallback = document.createElement('div');
+		fallback.className = 'image-not-found';
+		fallback.innerHTML = `
+            <i class="fa fa-image"></i>
+            <span>${fallbackText}</span>
+        `;
+
+		container.insertBefore(fallback, img);
+		img.style.display = 'none';
+
+		console.warn('Image failed to load:', img.src);
+	}
+
+	function updateImagePreview() {
+		console.log('updateImagePreview called');
+		let imageInput = $('#thumbnail').val().trim();
+		let $holder = $('#holder');
+		let $newImagesDiv = $('#new-images');
+		let $previewLabel = $newImagesDiv.find('label');
+
+		$holder.empty();
+
+		if (!imageInput) {
+			console.log('No image input found');
+			$newImagesDiv.hide();
+			$previewLabel.hide();
+			return;
+		}
+
+		$newImagesDiv.show();
+		$previewLabel.show();
+
+		let url = imageInput.trim();
+		if (url) {
+			// Convert relative path to absolute URL for preview
+			if (url.startsWith('/storage')) {
+				url = '{{ config('
+				app.url ') }}' + url;
+			}
+			let container = $('<div class="image-container"></div>');
+			let img = $('<img />', {
+				src: url,
+				class: 'img-thumbnail image-preview',
+				alt: 'New Category Image',
+				'data-fallback-text': 'New Image'
+			});
+
+			img.on('error', function() {
+				handleImageError(this);
+			});
+
+			container.append(img);
+			$holder.append(container);
+		}
+
+		console.log('New image preview created');
+	}
+
 	$(document).ready(function() {
 		console.log('Document ready - Category Edit Form');
-
-		$('#brands').selectpicker({
-			liveSearch: true,
-			noneSelectedText: 'Select brands'
-		});
 
 		$('#summary').summernote({
 			placeholder: "Write short description.....",
@@ -319,73 +383,6 @@
 			tabsize: 2,
 			height: 150
 		});
-
-		$('#lfm').filemanager('image');
-
-		let originalImagePath = '{{ $category->photo }}';
-
-		function handleImageError(img) {
-			const fallbackText = img.getAttribute('data-fallback-text') || 'Image not available';
-			const container = img.parentElement;
-
-			const fallback = document.createElement('div');
-			fallback.className = 'image-not-found';
-			fallback.innerHTML = `
-                <i class="fa fa-image"></i>
-                <span>${fallbackText}</span>
-            `;
-
-			container.insertBefore(fallback, img);
-			img.style.display = 'none';
-
-			console.warn('Image failed to load:', img.src);
-		}
-
-		function updateImagePreview() {
-			console.log('updateImagePreview called');
-			let imageInput = $('#thumbnail').val().trim();
-			let $holder = $('#holder');
-			let $newImagesDiv = $('#new-images');
-
-			$holder.empty();
-
-			if (!imageInput) {
-				console.log('No image input found');
-				$newImagesDiv.hide();
-				return;
-			}
-
-			if (imageInput === originalImagePath) {
-				$newImagesDiv.hide();
-				return;
-			}
-
-			$newImagesDiv.show();
-
-			let url = imageInput.trim();
-			if (url) {
-				if (url.startsWith('/storage')) {
-					url = '{{ config('
-					app.url ') }}' + url;
-				}
-				let container = $('<div class="image-container"></div>');
-				let img = $('<img />', {
-					src: url,
-					class: 'img-thumbnail image-preview',
-					alt: 'New Category Image',
-					'data-fallback-text': 'New Image'
-				});
-
-				img.on('error', function() {
-					handleImageError(this);
-				});
-
-				container.append(img);
-				$holder.append(container);
-			}
-
-			console.log('New image preview created');
-		}
 
 		$('#thumbnail').on('input change', function() {
 			console.log('Thumbnail input changed');

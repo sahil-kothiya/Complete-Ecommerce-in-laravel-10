@@ -3,6 +3,9 @@
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Auth;
+use UniSharp\LaravelFilemanager\Lfm;
+
 use App\Http\Controllers\{
     AdminController,
     Auth\ForgotPasswordController,
@@ -14,6 +17,7 @@ use App\Http\Controllers\{
     CategoryController,
     CouponController,
     DiscountController,
+    FilterController,
     FrontendController,
     HomeController,
     MessageController,
@@ -34,7 +38,6 @@ use App\Http\Controllers\{
     UsersController,
     WishlistController
 };
-use UniSharp\LaravelFilemanager\Lfm;
 
 // Utility
 Route::get('/check-redis-cache', fn() => response()->json([
@@ -186,6 +189,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
         'order' => OrderController::class,
         'shipping' => ShippingController::class,
         'coupon' => CouponController::class,
+        'filter' => FilterController::class,
     ]);
 
     Route::delete('/product/{product}/image/{image}/delete', [ProductController::class, 'deleteImage'])

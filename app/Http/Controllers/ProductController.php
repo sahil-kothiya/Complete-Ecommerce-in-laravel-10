@@ -41,7 +41,8 @@ class ProductController extends Controller
     public function create()
     {
         $brands = Brand::get();
-        $categories = Category::where('is_parent', 1)->get();
+        // $categories = Category::where('is_parent', 1)->get();
+        $categories = Category::all();
         return view('backend.product.create', compact('categories', 'brands'));
     }
 
@@ -52,7 +53,7 @@ class ProductController extends Controller
      * @return \Illuminate\Http\Response
      */
     public function store(Request $request)
-    {   
+    {
         // dd($request->all());
         $validatedData = $request->validate([
             'title' => 'required|string|max:255',
@@ -232,7 +233,8 @@ class ProductController extends Controller
     {
         $brands = Brand::get();
         $product = Product::with('images')->findOrFail($id); // eager loading images
-        $categories = Category::where('is_parent', 1)->get();
+        // $categories = Category::where('is_parent', 1)->get();
+        $categories = Category::all();
         $items = Product::where('id', $id)->get();
 
         return view('backend.product.edit', compact('product', 'brands', 'categories', 'items'));
@@ -528,24 +530,24 @@ class ProductController extends Controller
             // Find the image - adjust this based on your model structure
             // If you have a separate ProductImage model:
             $image = $product->images()->findOrFail($imageId);
-            
+
             // Or if images are stored differently, adjust accordingly
             // $image = ProductImage::where('product_id', $product->id)->findOrFail($imageId);
-            
+
             // Store image path for file deletion
             $imagePath = $image->image_path;
-            
+
             // Check if this is the primary image
             $wasPrimary = $image->is_primary;
-            
+
             // Delete the database record
             $image->delete();
-            
+
             // Delete the physical file if it exists
             if ($imagePath && file_exists(public_path($imagePath))) {
                 unlink(public_path($imagePath));
             }
-            
+
             // If deleted image was primary, set another image as primary (if any exist)
             if ($wasPrimary) {
                 $nextImage = $product->images()->first();
@@ -553,23 +555,22 @@ class ProductController extends Controller
                     $nextImage->update(['is_primary' => true]);
                 }
             }
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Image deleted successfully!',
                 'remaining_count' => $product->images()->count()
             ]);
-            
         } catch (\Exception $e) {
             Log::error('Error deleting product image: ' . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to delete image. Please try again.'
             ], 500);
         }
     }
-    
+
     // Alternative method if you don't have separate ProductImage model
     // and store images differently (adjust based on your implementation)
     public function deleteImageAlternative(Product $product, $imageId)
@@ -577,37 +578,36 @@ class ProductController extends Controller
         try {
             // If images are stored as JSON or comma-separated in product table
             $images = json_decode($product->images, true) ?? [];
-            
+
             if (!isset($images[$imageId])) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Image not found.'
                 ], 404);
             }
-            
+
             // Get image path before removal
             $imagePath = $images[$imageId]['path'] ?? $images[$imageId];
-            
+
             // Remove from array
             unset($images[$imageId]);
-            
+
             // Update product
             $product->update(['images' => json_encode(array_values($images))]);
-            
+
             // Delete physical file
             if ($imagePath && file_exists(public_path($imagePath))) {
                 unlink(public_path($imagePath));
             }
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Image deleted successfully!',
                 'remaining_count' => count($images)
             ]);
-            
         } catch (\Exception $e) {
             Log::error('Error deleting product image: ' . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to delete image. Please try again.'

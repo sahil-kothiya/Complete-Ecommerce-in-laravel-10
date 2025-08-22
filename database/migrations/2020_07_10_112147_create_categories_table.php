@@ -38,7 +38,6 @@ class CreateCategoriesTable extends Migration
             $table->boolean('is_featured')->default(false);
             $table->string('seo_title')->nullable();
             $table->text('seo_description')->nullable();
-            $table->json('enabled_filters')->nullable();
 
             // User tracking
             $table->unsignedBigInteger('added_by')->nullable();

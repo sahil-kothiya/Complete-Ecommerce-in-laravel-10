@@ -57,18 +57,54 @@
                         </div>
                     </div>
 
-                    <div class="form-group" id="parent_cat_div">
-                        <label for="parent_id">Parent Category</label>
-                        <select name="parent_id" class="form-control" tabindex="6">
-                            <option value="">--Select any category--</option>
-                            @foreach($all_cats as $cat)
-                            <option value="{{ $cat->id }}" {{ old('parent_id') == $cat->id ? 'selected' : '' }}>{{ $cat->title }}</option>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group" id="parent_cat_div">
+                                <label for="parent_id">Parent Category</label>
+                                <select name="parent_id" class="form-control" tabindex="6">
+                                    <option value="">--Select any category--</option>
+                                    @foreach($all_cats as $cat)
+                                    <option value="{{ $cat->id }}" {{ old('parent_id') == $cat->id ? 'selected' : '' }}>{{ $cat->title }}</option>
+                                    @endforeach
+                                </select>
+                                @error('parent_id')
+                                <span class="text-danger">{{ $message }}</span>
+                                @enderror
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="brands">Associated Brands</label>
+                                <select name="brands[]" id="brands" class="form-control selectpicker" multiple data-live-search="true" tabindex="11">
+                                    @foreach($brands as $brand)
+                                    <option value="{{ $brand->id }}" {{ in_array($brand->id, old('brands', [])) ? 'selected' : '' }}>{{ $brand->title }}</option>
+                                    @endforeach
+                                </select>
+                                @error('brands')
+                                <span class="text-danger">{{ $message }}</span>
+                                @enderror
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Enabled Filters</label>
+                        <div class="d-flex flex-wrap">
+                            @foreach($filters as $filter)
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="checkbox" name="filter_ids[]" value="{{ $filter->id }}" id="filter_{{ $filter->id }}" {{ in_array($filter->id, old('filter_ids', [])) ? 'checked' : '' }} tabindex="10">
+                                <label class="form-check-label" for="filter_{{ $filter->id }}">
+                                    {{ $filter->title }}
+                                </label>
+                            </div>
                             @endforeach
-                        </select>
-                        @error('parent_id')
+                        </div>
+                        @error('filter_ids')
                         <span class="text-danger">{{ $message }}</span>
                         @enderror
                     </div>
+
                 </div>
 
                 <div class="col-md-6">
@@ -110,34 +146,6 @@
                         <span class="text-danger">{{ $message }}</span>
                         @enderror
                     </div>
-
-                    <div class="form-group">
-                        <label>Enabled Filters</label>
-                        @foreach($available_filters as $key => $label)
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="enabled_filters[]" value="{{ $key }}" id="filter_{{ $key }}" {{ in_array($key, old('enabled_filters', [])) ? 'checked' : '' }} tabindex="10">
-                            <label class="form-check-label" for="filter_{{ $key }}">
-                                {{ $label }}
-                            </label>
-                        </div>
-                        @endforeach
-                        @error('enabled_filters')
-                        <span class="text-danger">{{ $message }}</span>
-                        @enderror
-                    </div>
-
-                    <div class="form-group">
-                        <label for="brands">Associated Brands</label>
-                        <select name="brands[]" id="brands" class="form-control" multiple tabindex="11">
-                            @foreach($brands as $brand)
-                            <option value="{{ $brand->id }}" {{ in_array($brand->id, old('brands', [])) ? 'selected' : '' }}>{{ $brand->title }}</option>
-                            @endforeach
-                        </select>
-                        <small class="form-text text-muted">Select brands available in this category. Hold Ctrl/Cmd to select multiple.</small>
-                        @error('brands')
-                        <span class="text-danger">{{ $message }}</span>
-                        @enderror
-                    </div>
                 </div>
             </div>
 
@@ -152,6 +160,7 @@
 
 @push('styles')
 <link rel="stylesheet" href="{{ asset('backend/summernote/summernote.min.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/css/bootstrap-select.min.css" />
 <style>
     #image-preview-area {
         position: relative;
@@ -239,10 +248,28 @@
     .image-container * {
         box-sizing: border-box;
     }
+
+    /* Inline checkbox styling for filters */
+    .form-check-inline {
+        margin-right: 1.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .form-check-inline .form-check-label {
+        margin-left: 0.25rem;
+        font-size: 0.9rem;
+    }
+
+    @media (max-width: 576px) {
+        .form-check-inline {
+            margin-right: 1rem;
+        }
+    }
 </style>
 @endpush
 
 @push('scripts')
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
 <script src="/vendor/laravel-filemanager/js/stand-alone-button.js"></script>
 <script src="{{ asset('backend/summernote/summernote.min.js') }}"></script>
 <script>

@@ -26,11 +26,6 @@ class Category extends Model
         'code',
         'code_locked',
         'code_generated_at',
-        'enabled_filters',
-    ];
-
-    protected $casts = [
-        'enabled_filters' => 'array',
     ];
 
     // Relationships
@@ -60,6 +55,15 @@ class Category extends Model
     public function brands()
     {
         return $this->belongsToMany(Brand::class, 'brand_category', 'category_id', 'brand_id')
+            ->withTimestamps();
+    }
+
+    /**
+     * Relationship: Category ↔ Filters (Many-to-Many)
+     */
+    public function filters()
+    {
+        return $this->belongsToMany(Filter::class, 'category_filter', 'category_id', 'filter_id')
             ->withTimestamps();
     }
 

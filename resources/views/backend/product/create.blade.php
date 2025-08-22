@@ -955,7 +955,7 @@
 				e.preventDefault();
 			}
 		});
-		
+
 	});
 </script>
 @endpush
