@@ -51,7 +51,8 @@ class FrontendController extends Controller
             'categories' => self::HOMEPAGE_CACHE_PREFIX . 'categories',
             'banners' => self::HOMEPAGE_CACHE_PREFIX . 'banners',
             'products' => self::HOMEPAGE_CACHE_PREFIX . 'product_lists',
-            'categoryBanners' => self::HOMEPAGE_CACHE_PREFIX . 'category_banners'
+            'categoryBanners' => self::HOMEPAGE_CACHE_PREFIX . 'category_banners',
+            'featuredCategories' => self::HOMEPAGE_CACHE_PREFIX . 'featured_categories'
         ];
 
         $cachedData = RedisHelper::mget(array_values($cacheKeys));
@@ -60,25 +61,109 @@ class FrontendController extends Controller
             ?? $this->getHomepageProductsData($cacheKeys['products'], $ttl['product_lists']);
 
         $usedProductIds = [];
+        $dynamicCategoryProducts = [];
+        $rootCategories = Category::whereNull('parent_id')->where('status', 'active')->get();
 
-        $kidsProducts = $products->filter(function ($product) use (&$usedProductIds) {
-            return $product->cat_info?->title === "Kid's" && !in_array($product->id, $usedProductIds);
-        })->take(12);
-        $usedProductIds = array_merge($usedProductIds, $kidsProducts->pluck('id')->all());
+        $totalProductLimit = 60; // Exactly 60 products
+        $minProductsPerCategory = 4; // Minimum products per category
+        $minAllProducts = 8; // Minimum products in "All Products" section
+        $maxAllProducts = 12; // Maximum products in "All Products" section
+        $remainingProducts = $totalProductLimit;
 
-        $womenProducts = $products->filter(function ($product) use (&$usedProductIds) {
-            return $product->cat_info?->title === "Women's Fashion" && !in_array($product->id, $usedProductIds);
-        })->take(12);
-        $usedProductIds = array_merge($usedProductIds, $womenProducts->pluck('id')->all());
+        // Step 1: Collect eligible categories with at least 4 products
+        $eligibleCategories = [];
+        foreach ($rootCategories as $cat) {
+            $catProducts = $products->filter(function ($product) use ($cat, &$usedProductIds) {
+                return $product->cat_info?->id === $cat->id &&
+                    $product->is_featured &&
+                    !in_array($product->id, $usedProductIds);
+            })->take($minProductsPerCategory);
 
-        $menProducts = $products->filter(function ($product) use (&$usedProductIds) {
-            return $product->cat_info?->title === "Men's Fashion" && !in_array($product->id, $usedProductIds);
-        })->take(12);
-        $usedProductIds = array_merge($usedProductIds, $menProducts->pluck('id')->all());
+            if ($catProducts->count() >= $minProductsPerCategory) {
+                $eligibleCategories[] = $cat;
+            }
+        }
 
+        // Step 2: Calculate maximum number of categories with minimum products
+        $maxCategories = floor(($totalProductLimit - $minAllProducts) / $minProductsPerCategory);
+        $categoryCount = min(count($eligibleCategories), $maxCategories);
+
+        // Step 3: Allocate products in multiples of 4 (4, 8, 12, 16, ...)
+        $categoryAssignments = [];
+        $totalCategoryProducts = 0;
+        if ($categoryCount > 0) {
+            // Start with minimum products per category
+            $productsPerCategory = array_fill(0, $categoryCount, $minProductsPerCategory);
+            $totalCategoryProducts = $categoryCount * $minProductsPerCategory;
+            $allProductsCount = $totalProductLimit - $totalCategoryProducts;
+
+            // Adjust if "All Products" is out of range
+            while ($allProductsCount > $maxAllProducts && $categoryCount > 0) {
+                // Find category to increase products (in multiples of 4)
+                for ($i = 0; $i < $categoryCount; $i++) {
+                    $productsPerCategory[$i] += 4;
+                    $totalCategoryProducts += 4;
+                    $allProductsCount = $totalProductLimit - $totalCategoryProducts;
+                    if ($allProductsCount <= $maxAllProducts) {
+                        break;
+                    }
+                }
+                // If still exceeding, reduce category count
+                if ($allProductsCount > $maxAllProducts) {
+                    $categoryCount--;
+                    $productsPerCategory = array_slice($productsPerCategory, 0, $categoryCount);
+                    $totalCategoryProducts = array_sum($productsPerCategory);
+                    $allProductsCount = $totalProductLimit - $totalCategoryProducts;
+                }
+            }
+
+            // Ensure "All Products" meets minimum
+            if ($allProductsCount < $minAllProducts && $categoryCount > 0) {
+                $categoryCount--;
+                $productsPerCategory = array_slice($productsPerCategory, 0, $categoryCount);
+                $totalCategoryProducts = array_sum($productsPerCategory);
+                $allProductsCount = $totalProductLimit - $totalCategoryProducts;
+            }
+
+            // Fill remaining products if needed
+            while ($allProductsCount < $maxAllProducts && $totalCategoryProducts > 0) {
+                for ($i = 0; $i < $categoryCount; $i++) {
+                    $productsPerCategory[$i] += 4;
+                    $totalCategoryProducts += 4;
+                    $allProductsCount = $totalProductLimit - $totalCategoryProducts;
+                    if ($allProductsCount >= $minAllProducts) {
+                        break;
+                    }
+                }
+            }
+
+            // Assign categories
+            for ($i = 0; $i < $categoryCount; $i++) {
+                $cat = $eligibleCategories[$i];
+                $catProducts = $products->filter(function ($product) use ($cat, &$usedProductIds) {
+                    return $product->cat_info?->id === $cat->id &&
+                        $product->is_featured &&
+                        !in_array($product->id, $usedProductIds);
+                })->take($productsPerCategory[$i]);
+
+                if ($catProducts->count() >= $minProductsPerCategory) {
+                    $dynamicCategoryProducts[$cat->slug] = [
+                        'title' => $cat->title,
+                        'products' => $catProducts
+                    ];
+                    $usedProductIds = array_merge($usedProductIds, $catProducts->pluck('id')->toArray());
+                    $remainingProducts -= $catProducts->count();
+                }
+            }
+        } else {
+            // No categories qualify, allocate all to "All Products"
+            $allProductsCount = $totalProductLimit;
+        }
+
+        // Step 4: Assign remaining products to "All Products" section
         $allProducts = $products->filter(function ($product) use ($usedProductIds) {
-            return !in_array($product->id, $usedProductIds);
-        })->take(24);
+            return $product->is_featured && !in_array($product->id, $usedProductIds);
+        })->take($remainingProducts);
 
         $data = [
             'categories' => $cachedData[$cacheKeys['categories']]
@@ -86,55 +171,33 @@ class FrontendController extends Controller
             'banners' => $cachedData[$cacheKeys['banners']]
                 ?? $this->getBannersData($cacheKeys['banners'], $ttl['banners']),
             'product_lists' => $allProducts,
-            'kidsProducts' => $kidsProducts,
-            'womenProducts' => $womenProducts,
-            'menProducts' => $menProducts,
             'categoryBanners' => $cachedData[$cacheKeys['categoryBanners']]
                 ?? $this->getCategoryBannersData($cacheKeys['categoryBanners'], $cachedData[$cacheKeys['categories']] ?? null, $ttl['categories']),
+            'featuredCategories' => $cachedData[$cacheKeys['featuredCategories']]
+                ?? $this->getFeaturedCategoriesData($cacheKeys['featuredCategories'], $ttl['categories']),
+            'dynamicCategoryProducts' => $dynamicCategoryProducts
         ];
 
         return view('frontend.index', $data);
     }
 
-    public function warmUpHomepageCache(): array
+    protected function getFeaturedCategoriesData(string $key, int $ttl)
     {
-        $ttl = $this->getTtlConfig();
-        $results = [];
-        $statsBefore = RedisHelper::getCacheStats();
+        $featuredCategories = Category::whereNull('parent_id')
+            ->where('is_featured', true)
+            ->where('status', 'active')
+            ->orderBy('sort_order')
+            ->limit(3) // Change this number to adjust how many featured categories to show
+            ->with(['products' => function ($query) {
+                $query->where('status', 'active')
+                    ->orderBy('id', 'DESC')
+                    ->take(12); // Products per category (adjustable)
+            }])
+            ->get();
 
-        $dataTypes = [
-            'categories' => fn() => $this->getCategoriesData(self::HOMEPAGE_CACHE_PREFIX . 'categories', $ttl['categories']),
-            'banners' => fn() => $this->getBannersData(self::HOMEPAGE_CACHE_PREFIX . 'banners', $ttl['banners']),
-            'products' => fn() => $this->getHomepageProductsData(self::HOMEPAGE_CACHE_PREFIX . 'product_lists', $ttl['product_lists']),
-        ];
+        RedisHelper::put($key, $featuredCategories, $ttl);
 
-        foreach ($dataTypes as $type => $callback) {
-            $startTime = microtime(true);
-            try {
-                $data = $callback();
-                $duration = round((microtime(true) - $startTime) * 1000, 2);
-
-                $results[$type] = [
-                    'status' => 'success',
-                    'duration_ms' => $duration,
-                    'records' => is_countable($data) ? count($data) : 'N/A'
-                ];
-            } catch (\Exception $e) {
-                $results[$type] = [
-                    'status' => 'failed',
-                    'error' => $e->getMessage()
-                ];
-                Log::error("Cache warming failed for {$type}: " . $e->getMessage());
-            }
-        }
-
-        $statsAfter = RedisHelper::getCacheStats();
-        $results['redis_stats'] = [
-            'memory_before' => $statsBefore['used_memory_human'] ?? 'N/A',
-            'memory_after' => $statsAfter['used_memory_human'] ?? 'N/A'
-        ];
-
-        return $results;
+        return $featuredCategories;
     }
 
     public function clearHomepageCache(): bool
@@ -171,9 +234,8 @@ class FrontendController extends Controller
             return $redisData;
         }
 
-        $categories = Category::select(['id', 'title', 'slug', 'parent_id', 'photo', 'is_parent'])
+        $categories = Category::select(['id', 'title', 'slug', 'parent_id', 'photo'])
             ->active()
-            ->where('is_parent', 1)
             ->with([
                 'children' => fn($q) => $q->active()
                     ->select(['id', 'title', 'slug', 'parent_id'])
@@ -230,7 +292,7 @@ class FrontendController extends Controller
                 'cat_info' => fn($q) => $q->select(['id', 'title'])
             ])
             ->latest('id')
-            ->limit(150)
+            ->limit(350)
             ->get();
 
         RedisHelper::put($key, $products, $ttl);
@@ -460,9 +522,8 @@ class FrontendController extends Controller
         $cacheKey = self::PRODUCT_GRIDS_CACHE_PREFIX . 'sidebar_categories';
 
         return RedisHelper::remember($cacheKey, $ttl, function () {
-            $categories = Category::select(['id', 'title', 'slug', 'parent_id', 'is_parent'])
+            $categories = Category::select(['id', 'title', 'slug', 'parent_id'])
                 ->active()
-                ->where('is_parent', 1)
                 ->with([
                     'children' => function ($q) {
                         $q->active()
@@ -479,7 +540,6 @@ class FrontendController extends Controller
                     'title' => $category->title,
                     'slug' => $category->slug,
                     'parent_id' => $category->parent_id,
-                    'is_parent' => $category->is_parent,
                     'children' => $category->children->map(function ($child) {
                         return [
                             'id' => $child->id,
@@ -1148,7 +1208,6 @@ class FrontendController extends Controller
         $category = Category::where('slug', $request->slug)->firstOrFail();
 
         $subCategory = Category::where('slug', $request->sub_slug)
-            ->where('is_parent', 0)
             ->where('parent_id', $category->id)
             ->firstOrFail();
         $category = $subCategory->parent;
