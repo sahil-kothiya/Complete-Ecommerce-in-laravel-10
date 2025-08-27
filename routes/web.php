@@ -81,6 +81,7 @@ Route::get('/product-brand/{slug}', [FrontendController::class, 'productBrand'])
 Route::get('/product-grids', [FrontendController::class, 'productGrids'])->name('product-grids');
 Route::get('/product-lists', [FrontendController::class, 'productLists'])->name('product-lists');
 Route::match(['get', 'post'], '/filter', [FrontendController::class, 'productFilter'])->name('shop.filter');
+Route::post('/apply-filters', [FrontendController::class, 'applyFilters'])->name('apply.filters');
 
 Route::get('/blog', [FrontendController::class, 'blog'])->name('blog');
 Route::get('/blog-detail/{slug}', [FrontendController::class, 'blogDetail'])->name('blog.detail');

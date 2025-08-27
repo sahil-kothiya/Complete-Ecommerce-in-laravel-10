@@ -62,7 +62,7 @@
                     </div>
 
                     <!-- Products Grid -->
-                    <div class="row">
+                    <div class="row product-grid-container">
 
                         @forelse($products as $product)
                         @include('frontend.partials.product-card', ['product' => $product])
@@ -95,6 +95,24 @@
 
 @push('styles')
 <style>
+    .single-widget.rating input[type="checkbox"],
+    .single-widget.discount input[type="checkbox"],
+    .single-widget.category input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        margin-right: 10px;
+        vertical-align: middle;
+        accent-color: #F7941D;
+    }
+
+    .single-widget.rating label,
+    .single-widget.discount label,
+    .single-widget.category label {
+        font-size: 14px;
+        line-height: 1.8;
+        color: #212121;
+    }
+
     .single-post {
         background: #fff;
         border: 1px solid #eee;

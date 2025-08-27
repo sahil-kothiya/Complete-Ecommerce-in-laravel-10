@@ -107,6 +107,10 @@ class Product extends Model
         return $this->belongsToMany(Discount::class, 'product_discount');
     }
 
+    public function reviews() {
+        return $this->hasMany(ProductReview::class, 'product_id');
+    }
+
     public function getDiscountedPriceAttribute(): float
     {
         return app(DiscountService::class)->getCachedDiscountedPrice($this);

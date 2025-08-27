@@ -1,3 +1,36 @@
+{{-- resources/views/frontend/partials/shop-sidebar.blade.php --}}
+
+<!-- Categories Widget -->
+{{-- <div class="single-widget category">
+    <h3 class="title">Categories</h3>
+    <ul class="categor-list">
+        @php
+        $categoryList = $categories ?? \App\Models\Category::getAllParentWithChild();
+        @endphp
+
+        @foreach($categoryList as $cat)
+        @php $category = (object) $cat; @endphp
+
+        <li>
+            <a href="{{ route('product-cat', $category->slug) }}">{{ $category->title }}</a>
+
+@if(isset($category->children) && count($category->children))
+<ul>
+    @foreach($category->children as $subCat)
+    @php $subCategory = (object) $subCat; @endphp
+    <li>
+        <a href="{{ route('product-sub-cat', [$category->slug, $subCategory->slug]) }}">
+            {{ $subCategory->title }}
+        </a>
+    </li>
+    @endforeach
+</ul>
+@endif
+</li>
+@endforeach
+</ul>
+</div> --}}
+
 <!-- Price Filter Widget -->
 @if(!isset($category) || $category->filters->where('name', 'price')->count())
 <div class="single-widget range">
@@ -205,10 +238,8 @@ function applyFilters(page = 1) {
         })
         .then(data => {
             if (data.success) {
-                console.log('Success:', data);
                 const productGrid = document.querySelector('.product-grid-container');
                 if (productGrid) {
-                    // console.log('SuccessHTml:', data.html);
                     productGrid.innerHTML = data.html;
                 }
             } else {

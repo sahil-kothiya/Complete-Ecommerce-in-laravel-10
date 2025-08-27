@@ -10,6 +10,7 @@ use App\Models\Post;
 use App\Models\PostCategory;
 use App\Models\PostTag;
 use App\Models\Product;
+use App\Services\ProductFilterService;
 use App\Services\ProductSearchService;
 use App\Services\RecentProductService;
 use App\User;
@@ -18,6 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
@@ -341,6 +343,7 @@ class FrontendController extends Controller
         Log::info("Product grids served fresh in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
         return view('frontend.pages.product-grids', $data);
     }
+    
 
     private function generateOptimizedCacheKey(Request $request): string
     {
@@ -349,6 +352,9 @@ class FrontendController extends Controller
             'brand' => $request->get('brand', ''),
             'sortBy' => $request->get('sortBy', ''),
             'price' => $request->get('price', ''),
+            'min_rating' => $request->get('min_rating', ''),
+            'min_discount' => $request->get('min_discount', ''),
+            'query' => $request->get('query', ''),
             'show' => $request->get('show', '9'),
             'page' => $request->get('page', '1')
         ];
@@ -707,6 +713,18 @@ class FrontendController extends Controller
             $queryParams['price'] = $data['price_range'];
         }
 
+        if (!empty($data['min_rating'])) {
+            $queryParams['min_rating'] = is_array($data['min_rating'])
+                ? implode(',', $data['min_rating'])
+                : $data['min_rating'];
+        }
+
+        if (!empty($data['min_discount'])) {
+            $queryParams['min_discount'] = is_array($data['min_discount'])
+                ? implode(',', $data['min_discount'])
+                : $data['min_discount'];
+        }
+
         $tempRequest = new Request($queryParams);
         $cacheKey = $this->generateOptimizedCacheKey($tempRequest);
 
@@ -718,6 +736,201 @@ class FrontendController extends Controller
 
         return redirect()->route('product-grids', $queryParams);
     }
+
+    public function applyFilters(Request $request)
+    {
+        try {
+            $filters = $request->only([
+                'show', 'sortBy', 'query', 'category', 'brand', 
+                'price_range', 'min_rating', 'min_discount', 'category_slug'
+            ]);
+
+            $perPage = $filters['show'] ?? 9;
+            $page    = $request->get('page', 1);
+
+            $service = app(ProductFilterService::class);
+            $products = $service->getProducts($filters, $perPage, $page);
+
+            // return view('frontend.pages.product-grids', compact('products'));
+            $html = view('frontend.pages.product-grid-html', compact('products'))->render();
+
+            return response()->json([
+                'success' => true,
+                'html'    => $html,
+                'pagination' => [
+                    'current_page' => $products->currentPage(),
+                    'last_page'    => $products->lastPage(),
+                    'total'        => $products->total(),
+                    'per_page'     => $products->perPage()
+                ],
+                'filters_applied' => $filters
+            ]);
+        } catch (\Exception $e) {
+            Log::error("Filter Error: ".$e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Error applying filters'], 500);
+        }
+    }
+
+
+    // public function applyFilters(Request $request) 
+    // {
+    //     try {
+    //         // Validation
+    //         $validated = $request->validate([
+    //             'show' => 'nullable|integer|min:1',
+    //             'sortBy' => 'string|nullable',
+    //             'query' => 'string|nullable',
+    //             'category' => 'array',
+    //             'category.*' => 'string',
+    //             'brand' => 'array',
+    //             'brand.*' => 'string',
+    //             'price_range' => 'string|nullable',
+    //             'min_rating' => 'array',
+    //             'min_rating.*' => 'string',
+    //             'min_discount' => 'array',
+    //             'min_discount.*' => 'string',
+    //             'page' => 'integer|min:1',
+    //             'category_slug' => 'string|nullable'
+    //         ]);
+
+    //         // Base query
+    //         $query = Product::with(['brand', 'category'])
+    //             ->where('status', 'active');
+
+    //         // Category slug
+    //         if (!empty($validated['category_slug'])) {
+    //             $category = Category::where('slug', $validated['category_slug'])
+    //                 ->where('status', 'active')
+    //                 ->first();
+    //             if ($category) {
+    //                 $query->where('cat_id', $category->id);
+    //             }
+    //         }
+
+    //         // Brand filter
+    //         if (!empty($validated['brand'])) {
+    //             $query->whereHas('brand', function ($q) use ($validated) {
+    //                 $q->whereIn('slug', $validated['brand'])
+    //                 ->where('status', 'active');
+    //             });
+    //         }
+
+    //         // Search query
+    //         if (!empty($validated['query'])) {
+    //             $searchTerm = $validated['query'];
+    //             $query->where(function ($q) use ($searchTerm) {
+    //                 $q->where('title', 'LIKE', "%{$searchTerm}%")
+    //                 ->orWhere('summary', 'LIKE', "%{$searchTerm}%")
+    //                 ->orWhere('description', 'LIKE', "%{$searchTerm}%");
+    //             });
+    //         }
+
+    //         // Price filter
+    //         if (!empty($validated['price_range'])) {
+    //             $priceRange = explode('-', $validated['price_range']);
+    //             if (count($priceRange) == 2) {
+    //                 $minPrice = (float) $priceRange[0];
+    //                 $maxPrice = (float) $priceRange[1];
+    //                 $query->whereBetween('price', [$minPrice, $maxPrice]);
+    //             }
+    //         }
+
+    //         // Rating filter
+    //         if (!empty($validated['min_rating'])) {
+    //             $minRatingValues = array_map('intval', $validated['min_rating']);
+    //             $minRating = min($minRatingValues);
+
+    //             $query->whereExists(function ($q) use ($minRating) {
+    //                 $q->select(DB::raw(1))
+    //                 ->from('product_reviews')
+    //                 ->whereColumn('products.id', 'product_reviews.product_id')
+    //                 ->groupBy('product_id')
+    //                 ->havingRaw('AVG(rate) >= ?', [$minRating]);
+    //             });
+    //         }
+
+    //         // Discount filter
+    //         if (!empty($validated['min_discount'])) {
+    //             $minDiscountValues = array_map('intval', $validated['min_discount']);
+    //             $minDiscount = min($minDiscountValues);
+    //             $query->where('discount', '>=', $minDiscount);
+    //         }
+
+    //         // Sorting
+    //         switch ($validated['sortBy'] ?? '') {
+    //             case 'title':
+    //                 $query->orderBy('title', 'asc');
+    //                 break;
+    //             case 'price':
+    //                 $query->orderBy('price', 'asc');
+    //                 break;
+    //             case 'priceDesc':
+    //                 $query->orderBy('price', 'desc');
+    //                 break;
+    //             case 'date':
+    //                 $query->orderBy('created_at', 'desc');
+    //                 break;
+    //             case 'rating':
+    //                 $query->leftJoin(DB::raw('(
+    //                     SELECT product_id, AVG(rate) as avg_rating
+    //                     FROM product_reviews
+    //                     GROUP BY product_id
+    //                 ) as reviews_avg'), 'products.id', '=', 'reviews_avg.product_id')
+    //                 ->orderByDesc('reviews_avg.avg_rating');
+    //                 break;
+    //             case 'discount':
+    //                 $query->orderBy('discount', 'desc');
+    //                 break;
+    //             default:
+    //                 $query->orderBy('created_at', 'desc');
+    //         }
+
+    //         // Pagination
+    //         $perPage = $validated['show'] ?? 9;
+    //         $currentPage = $validated['page'] ?? 1;
+
+    //         $products = $query->paginate($perPage, ['*'], 'page', $currentPage);
+
+    //         // Render grid view into HTML string
+    //         $html = view('frontend.pages.product-grids', compact('products'))->render();
+
+    //         return response()->json([
+    //             'success' => true,
+    //             'html' => $html,
+    //             'pagination' => [
+    //                 'current_page' => $products->currentPage(),
+    //                 'last_page' => $products->lastPage(),
+    //                 'total' => $products->total(),
+    //                 'per_page' => $products->perPage()
+    //             ],
+    //             'filters_applied' => [
+    //                 'category_slug' => $validated['category_slug'] ?? null,
+    //                 'brand' => $validated['brand'] ?? [],
+    //                 'min_rating' => $validated['min_rating'] ?? [],
+    //                 'min_discount' => $validated['min_discount'] ?? [],
+    //                 'query' => $validated['query'] ?? null,
+    //                 'price_range' => $validated['price_range'] ?? null,
+    //                 'total_products' => $products->total()
+    //             ]
+    //         ]);
+    //     } catch (\Exception $e) {
+    //         Log::error('Filter Error: ' . $e->getMessage(), [
+    //             'request_data' => $request->all(),
+    //             'file' => $e->getFile(),
+    //             'line' => $e->getLine()
+    //         ]);
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'An error occurred while applying filters. Please try again.',
+    //             'debug' => config('app.debug') ? [
+    //                 'error' => $e->getMessage(),
+    //                 'file' => $e->getFile(),
+    //                 'line' => $e->getLine()
+    //             ] : null
+    //         ], 500);
+    //     }
+    // }
+
 
     private function preWarmFilterCache(Request $request): void
     {
@@ -1026,38 +1239,67 @@ class FrontendController extends Controller
 
     public function productCat(Request $request)
     {
-        $startTime = microtime(true);
-        $category = Category::where('slug', $request->slug)->firstOrFail();
-        $ttl = $this->getTtlConfig();
+        $filters = [
+            'category_slug' => $request->slug,
+            'brand'         => $request->get('brand', []),
+            'query'         => $request->get('query'),
+            'price_range'   => $request->get('price'),
+            'min_rating'    => $request->get('min_rating', []),
+            'min_discount'  => $request->get('min_discount', []),
+            'sortBy'        => $request->get('sortBy', ''),
+        ];
 
-        // Simple cache key generation
-        $show = $request->show ?? 12;
-        $page = $request->page ?? 1;
-        $sortBy = $request->sortBy ?? '';
-        $price = $request->price ?? '';
+        $perPage = $request->get('show', 12);
+        $page    = $request->get('page', 1);
 
-        // Create cache key for complete page
-        $cacheKey = self::PRODUCT_GRIDS_CACHE_PREFIX . "category_{$category->id}_show_{$show}_page_{$page}_sort_{$sortBy}_price_{$price}";
+        $service = app(\App\Services\ProductFilterService::class);
+        $products = $service->getProducts($filters, $perPage, $page);
 
-        // Try to get from cache first
-        $cachedData = RedisHelper::get($cacheKey);
-
-        if ($cachedData && is_array($cachedData)) {
-            Log::info("Product category served from cache in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
-            return view('frontend.pages.product-grids', $cachedData);
-        }
-
-        // If not cached, fetch fresh data
-        $data = $this->fetchCategoryPageData($category, $show, $page, $sortBy, $price, $ttl);
-        // dd($data);
-        // Cache the complete page data
-        if (!RedisHelper::put($cacheKey, $data, $ttl['product_lists'])) {
-            Log::warning("Failed to cache category page data for key: {$cacheKey}");
-        }
-
-        Log::info("Product category served fresh in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
-        return view('frontend.pages.product-grids', $data);
+        return view('frontend.pages.product-grids', [
+            'products' => $products,
+            'category' => Category::where('slug', $request->slug)->firstOrFail(),
+            'show'     => $perPage,
+            'sortBy'   => $filters['sortBy'],
+            'price'    => $filters['price_range'],
+            'recent_products' => $this->getRecentProductsData('recent_latest', 3600),
+        ]);
     }
+
+
+    // public function productCat(Request $request)
+    // {
+    //     $startTime = microtime(true);
+    //     $category = Category::where('slug', $request->slug)->firstOrFail();
+    //     $ttl = $this->getTtlConfig();
+
+    //     // Simple cache key generation
+    //     $show = $request->show ?? 12;
+    //     $page = $request->page ?? 1;
+    //     $sortBy = $request->sortBy ?? '';
+    //     $price = $request->price ?? '';
+
+    //     // Create cache key for complete page
+    //     $cacheKey = self::PRODUCT_GRIDS_CACHE_PREFIX . "category_{$category->id}_show_{$show}_page_{$page}_sort_{$sortBy}_price_{$price}";
+
+    //     // Try to get from cache first
+    //     $cachedData = RedisHelper::get($cacheKey);
+
+    //     if ($cachedData && is_array($cachedData)) {
+    //         Log::info("Product category served from cache in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
+    //         return view('frontend.pages.product-grids', $cachedData);
+    //     }
+
+    //     // If not cached, fetch fresh data
+    //     $data = $this->fetchCategoryPageData($category, $show, $page, $sortBy, $price, $ttl);
+    //     // dd($data);
+    //     // Cache the complete page data
+    //     if (!RedisHelper::put($cacheKey, $data, $ttl['product_lists'])) {
+    //         Log::warning("Failed to cache category page data for key: {$cacheKey}");
+    //     }
+
+    //     Log::info("Product category served fresh in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
+    //     return view('frontend.pages.product-grids', $data);
+    // }
 
     private function fetchCategoryPageData($category, $show, $page, $sortBy, $price, $ttl)
     {
