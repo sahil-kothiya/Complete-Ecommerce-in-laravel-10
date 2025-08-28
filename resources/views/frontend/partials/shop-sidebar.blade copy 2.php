@@ -6,12 +6,12 @@
         <div class="price-filter-inner">
             <div id="slider-range" data-min="0" data-max="{{ $max_price ?? 1000 }}"></div>
             <div class="product_filter">
-                <div class="label-input range-input">
-                    <span class="range-label">Range:</span>
-                    <input type="text" id="amount" class="price-range-display" readonly />
+                <button type="button" class="filter_button" onclick="applyFilters()">Filter</button>
+                <div class="label-input">
+                    <span>Range:</span>
+                    <input type="text" id="amount" readonly />
                     <input type="hidden" name="price_range" id="price_range" value="{{ request('price') }}" />
                 </div>
-                <button type="button" class="filter_button">Apply Filter</button>
             </div>
         </div>
     </div>
@@ -20,50 +20,48 @@
 
 <!-- Recent Products Widget -->
 <div class="single-widget">
-    <div class="widget-header">
+    <div class="">
         <h3 class="title">Recently Viewed</h3>
     </div>
 
     <div class="recent-products-container">
         @if(isset($recent_products) && count($recent_products) > 0)
         @foreach($recent_products as $product)
-        <div class="col-lg-4 col-md-6 col-12">
-    <div class="single-product card">
-        <div class="card-body">
-            <div class="image mb-2">
-                <a href="{{ route('product-detail', $product->slug) }}">
-                    <img src="{{ $product->getFirstImagePathAttribute() }}" alt="{{ $product->title }}" loading="lazy" class="img-fluid">
-                </a>
-            </div>
-            <div class="content">
-                <h5 class="product-title">
-                    <a href="{{ route('product-detail', $product->slug) }}">
-                        {{ Str::limit($product->title, 40) }}
+        <div class="single-product card" data-product-id="{{ $product['id'] }}">
+            <div class="card-body">
+                <div class="image mb-2">
+                    <a href="{{ route('product-detail', $product['slug']) }}">
+                        <img src="{{ $product['image_url'] }}" alt="{{ $product['title'] }}" loading="lazy" class="img-fluid">
                     </a>
-                </h5>
-                <p class="price">
-                    @if($product->discount > 0)
-                        <del class="text-muted">${{ number_format($product->price, 2) }}</del>
-                    @endif
-                    <span class="current-price">${{ number_format($product->discounted_price, 2) }}</span>
-                </p>
-                <div class="product-actions mt-2 d-flex">
-                    <a href="{{ route('add-to-cart', $product->slug) }}"
-                       class="text-dark mr-2 {{ $product->stock <= 0 ? 'disabled' : '' }}"
-                       title="{{ $product->stock <= 0 ? 'Out of Stock' : 'Add to Cart' }}">
-                        <i class="ti-shopping-cart"></i>
-                    </a>
-                    <a href="#"
-                       class="text-secondary"
-                       title="Quick View"
-                       onclick="event.preventDefault(); $('#productModal{{ $product->id }}').modal('show');">
-                        <i class="ti-eye"></i>
-                    </a>
+                </div>
+                <div class="content">
+                    <h5 class="product-title">
+                        <a href="{{ route('product-detail', $product['slug']) }}">
+                            {{ Str::limit($product['title'], 40) }}
+                        </a>
+                    </h5>
+                    <p class="price">
+                        @if($product['discount'] > 0)
+                        <del class="text-muted">${{ number_format($product['price'], 2) }}</del>
+                        @endif
+                        <span class="current-price">${{ number_format($product['discounted_price'], 2) }}</span>
+                    </p>
+                    <div class="product-actions mt-2 d-flex">
+                        <a href="{{ route('add-to-cart', $product['slug']) }}"
+                            class="text-dark mr-2 {{ $product['stock'] <= 0 ? 'disabled' : '' }}"
+                            title="{{ $product['stock'] <= 0 ? 'Out of Stock' : 'Add to Cart' }}">
+                            <i class="ti-shopping-cart"></i>
+                        </a>
+                        <a href="#"
+                            class="text-secondary"
+                            title="Quick View"
+                            onclick="event.preventDefault(); $('#productModal{{ $product['id'] }}').modal('show');">
+                            <i class="ti-eye"></i>
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-</div>
         @endforeach
         @else
         <div class="no-recent-products">
@@ -162,243 +160,7 @@
 
 @push('styles')
 <style>
-    /* Enhanced Price Filter Styles */
-    .price-filter {
-        padding: 15px 0;
-    }
-
-    .price-filter-inner {
-        padding: 15px;
-        background: #ffffff;
-        border-radius: 6px;
-        border: 1px solid #e9ecef;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    }
-
-    /* Slider Styles */
-    #slider-range {
-        margin: 10px 0 15px 0;
-        height: 6px;
-        background: #e9ecef;
-        border: none;
-        border-radius: 3px;
-        position: relative;
-    }
-
-    .ui-slider .ui-slider-handle {
-        width: 18px;
-        height: 18px;
-        background: #f7941d;
-        border: 2px solid #ffffff;
-        border-radius: 50%;
-        top: -6px;
-        cursor: grab;
-        outline: none;
-        box-shadow: 0 1px 4px rgba(247, 148, 29, 0.3);
-        transition: all 0.2s ease;
-    }
-
-    .ui-slider .ui-slider-handle:hover,
-    .ui-slider .ui-slider-handle:focus {
-        transform: scale(1.05);
-        box-shadow: 0 2px 6px rgba(247, 148, 29, 0.4);
-    }
-
-    .ui-slider .ui-slider-handle:active {
-        cursor: grabbing;
-    }
-
-    .ui-slider .ui-slider-range {
-        background: #f7941d;
-        border-radius: 3px;
-        height: 6px;
-    }
-
-    /* Product Filter Container */
-    .product_filter {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        align-items: stretch;
-    }
-
-    /* Range Input Styling */
-    .label-input.range-input {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 12px;
-        background: #ffffff;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-        margin-bottom: 10px;
-    }
-
-    .range-label {
-        font-weight: 500;
-        color: #495057;
-        font-size: 13px;
-        min-width: 45px;
-        white-space: nowrap;
-    }
-
-    #amount.price-range-display {
-        flex: 1;
-        border: none;
-        background: transparent;
-        padding: 4px 8px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #f7941d;
-        text-align: left;
-        outline: none;
-        cursor: default;
-        min-width: 100px;
-    }
-
-    /* Filter Button Styling */
-    .filter_button {
-        padding: 8px 16px;
-        background: #f7941d;
-        color: #ffffff;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        font-weight: 500;
-        font-size: 13px;
-        text-transform: uppercase;
-        letter-spacing: 0.3px;
-        box-shadow: 0 1px 3px rgba(247, 148, 29, 0.3);
-        width: 100%;
-    }
-
-    .filter_button::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -100%;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-        transition: left 0.5s;
-    }
-
-    .filter_button:hover::before {
-        left: 100%;
-    }
-
-    .filter_button:hover {
-        background: #e07c1a;
-        transform: none;
-        box-shadow: 0 2px 6px rgba(247, 148, 29, 0.4);
-    }
-
-    .filter_button:active {
-        transform: none;
-        box-shadow: 0 1px 3px rgba(247, 148, 29, 0.3);
-    }
-
-    /* Loading state for button */
-    .filter_button.loading {
-        opacity: 0.7;
-        cursor: not-allowed;
-        pointer-events: none;
-    }
-
-    .filter_button.loading::after {
-        content: '';
-        width: 16px;
-        height: 16px;
-        margin-left: 8px;
-        border: 2px solid #ffffff;
-        border-radius: 50%;
-        border-top-color: transparent;
-        animation: spin 1s linear infinite;
-        display: inline-block;
-    }
-
-    @keyframes spin {
-        to {
-            transform: rotate(360deg);
-        }
-    }
-
-    /* Responsive Design */
-    @media (max-width: 768px) {
-        .price-filter-inner {
-            padding: 15px;
-        }
-
-        .product_filter {
-            gap: 12px;
-        }
-
-        .label-input.range-input {
-            flex-direction: column;
-            text-align: center;
-            gap: 8px;
-            padding: 10px;
-        }
-
-        .range-label {
-            min-width: auto;
-        }
-
-        #amount.price-range-display {
-            width: 100%;
-            text-align: center;
-        }
-
-        .filter_button {
-            width: 100%;
-            padding: 14px;
-        }
-    }
-
-    @media (max-width: 576px) {
-        .price-filter-inner {
-            padding: 12px;
-        }
-
-        #slider-range {
-            margin: 12px 0 20px 0;
-        }
-
-        .ui-slider .ui-slider-handle {
-            width: 18px;
-            height: 18px;
-            top: -6px;
-        }
-
-        #amount.price-range-display {
-            font-size: 14px;
-        }
-
-        .filter_button {
-            font-size: 13px;
-            padding: 12px;
-        }
-    }
-
-    /* Focus states for accessibility */
-    .filter_button:focus {
-        outline: 2px solid #f7941d;
-        outline-offset: 2px;
-    }
-
-    /* Animation for smooth transitions */
-    .price-filter-inner,
-    .label-input.range-input,
-    #amount.price-range-display {
-        transition: all 0.2s ease;
-    }
-
-    .label-input.range-input:focus-within {
-        border-color: #f7941d;
-        box-shadow: 0 0 0 3px rgba(247, 148, 29, 0.1);
-    }
+    
 </style>
 @endpush
 
@@ -417,7 +179,7 @@ function applyFilters(page = 1) {
 
         const formData = new FormData(form);
         const data = {
-            show: formData.get('show') || 9,
+            show: formData.get('show') || 12,
             sortBy: formData.get('sortBy') || '',
             query: formData.get('query') || '',
             category: formData.getAll('category[]'),

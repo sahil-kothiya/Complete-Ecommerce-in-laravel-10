@@ -1,4 +1,4 @@
-<div class="product-card-container mb-4 isotope-item category-{{ $product->cat_id }} px-2">
+<div class="product-card-container mb-4 isotope-item category-{{ $product->cat_id }} px-3">
     <div class="card h-100 border-0 d-flex flex-column product-card shadow-sm rounded">
         <div class="position-relative bg-light" style="aspect-ratio: 1 / 1;">
             <div class="slider-wrapper w-100 h-100" data-slider>

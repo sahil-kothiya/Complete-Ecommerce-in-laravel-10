@@ -23,7 +23,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
-use Illuminate\Validation\ValidationException;
 use Spatie\Newsletter\Facades\Newsletter;
 
 class FrontendController extends Controller
@@ -67,12 +66,13 @@ class FrontendController extends Controller
         $dynamicCategoryProducts = [];
         $rootCategories = Category::whereNull('parent_id')->where('status', 'active')->get();
 
-        $totalProductLimit = 60;
-        $minProductsPerCategory = 4;
-        $minAllProducts = 8;
-        $maxAllProducts = 12;
+        $totalProductLimit = 60; // Exactly 60 products
+        $minProductsPerCategory = 4; // Minimum products per category
+        $minAllProducts = 8; // Minimum products in "All Products" section
+        $maxAllProducts = 12; // Maximum products in "All Products" section
         $remainingProducts = $totalProductLimit;
 
+        // Step 1: Collect eligible categories with at least 4 products
         $eligibleCategories = [];
         foreach ($rootCategories as $cat) {
             $catProducts = $products->filter(function ($product) use ($cat, &$usedProductIds) {
@@ -86,6 +86,7 @@ class FrontendController extends Controller
             }
         }
 
+        // Step 2: Calculate maximum number of categories with minimum products
         $maxCategories = floor(($totalProductLimit - $minAllProducts) / $minProductsPerCategory);
         $categoryCount = min(count($eligibleCategories), $maxCategories);
 
@@ -431,7 +432,7 @@ class FrontendController extends Controller
                 'brand' => fn($q) => $q->select(['id', 'title', 'slug'])
             ]);
 
-        $perPage = min((int)$request->get('show', 9), 30);
+    $perPage = min((int)$request->get('show', 12), 30);
         return $query->paginate($perPage);
     }
 
@@ -739,103 +740,198 @@ class FrontendController extends Controller
     public function applyFilters(Request $request)
     {
         try {
-            // Validate input
-            $data = $request->validate([
-                'show' => 'integer|min:1|max:100',
-                'sortBy' => 'nullable|string|in:latest,price_low_high,price_high_low',
-                'query' => 'nullable|string|max:255',
-                'category' => 'nullable|array',
-                'category.*' => 'string',
-                'brand' => 'nullable|array',
-                'brand.*' => 'string',
-                'price_range' => 'nullable|string|regex:/^\d+-\d+$/',
-                'min_rating' => 'nullable|array',
-                'min_rating.*' => 'integer|min:1|max:5',
-                'min_discount' => 'nullable|array',
-                'min_discount.*' => 'integer|min:0|max:100',
-                'page' => 'integer|min:1',
-                'category_slug' => 'nullable|string',
+            $filters = $request->only([
+                'show', 'sortBy', 'query', 'category', 'brand', 
+                'price_range', 'min_rating', 'min_discount', 'category_slug'
             ]);
 
-            // Map sortBy to ProductSearchService expected values
-            $sortByMap = [
-                'latest' => '',
-                'price_low_high' => 'price-asc',
-                'price_high_low' => 'price-desc',
-            ];
-            $data['sortBy'] = $sortByMap[$data['sortBy'] ?? 'latest'] ?? '';
+            $perPage = $filters['show'] ?? 12;
+            $page    = $request->get('page', 1);
 
-            // If category_slug is provided, verify and add to category filter
-            if (!empty($data['category_slug'])) {
-                $category = Category::where('slug', $data['category_slug'])->first();
-                if (!$category) {
-                    Log::warning('Invalid category slug provided', ['slug' => $data['category_slug']]);
-                    throw new \Exception('Category not found: ' . $data['category_slug']);
-                }
-                $data['category'] = array_merge($data['category'] ?? [], [$data['category_slug']]);
-            }
+            $service = app(ProductFilterService::class);
+            $products = $service->getProducts($filters, $perPage, $page);
 
-            // Handle price range
-            if (!empty($data['price_range'])) {
-                $priceRange = explode('-', $data['price_range']);
-                if (count($priceRange) !== 2 || !is_numeric($priceRange[0]) || !is_numeric($priceRange[1])) {
-                    Log::warning('Invalid price range format', ['price_range' => $data['price_range']]);
-                    throw new \Exception('Invalid price range format');
-                }
-                $data['price'] = [(float)$priceRange[0], (float)$priceRange[1]];
-            }
-
-            Log::info('Applying filters with data', ['data' => $data]);
-
-            // Call ProductSearchService
-            $result = $this->searchService->search(
-                new Request($data),
-                $data['show'] ?? 9,
-                $data['page'] ?? 1
-            );
-
-            // Convert products to model instances if necessary
-            $products = collect($result['products'])->map(function ($product) {
-                return $product instanceof Product ? $product : Product::find($product['id']);
-            })->filter()->values();
-
-            // Create paginated collection
-            $paginatedProducts = new LengthAwarePaginator(
-                $products,
-                $result['total'],
-                $data['show'] ?? 9,
-                $data['page'] ?? 1,
-                ['path' => route('apply.filters')]
-            );
-
-            // Render the product grid HTML
-            $html = view('frontend.pages.product-grid-html', [
-                'products' => $paginatedProducts,
-                'recent_products' => $this->recentProductService->getRecentProducts(3),
-            ])->render();
+            // return view('frontend.pages.product-grids', compact('products'));
+            $html = view('frontend.pages.product-grid-html', compact('products'))->render();
 
             return response()->json([
                 'success' => true,
-                'html' => $html,
-                'message' => $products->isEmpty() ? 'No products found matching the filters.' : null,
+                'html'    => $html,
+                'pagination' => [
+                    'current_page' => $products->currentPage(),
+                    'last_page'    => $products->lastPage(),
+                    'total'        => $products->total(),
+                    'per_page'     => $products->perPage()
+                ],
+                'filters_applied' => $filters
             ]);
-        } catch (ValidationException $e) {
-            Log::error('Validation failed in applyFilters', ['errors' => $e->errors(), 'request' => $request->all()]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation error: ' . implode(', ', array_flatten($e->errors())),
-            ], 422);
         } catch (\Exception $e) {
-            Log::error('Error applying filters: ' . $e->getMessage(), [
-                'request' => $request->all(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to apply filters: ' . $e->getMessage(),
-            ], 500);
+            Log::error("Filter Error: ".$e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Error applying filters'], 500);
         }
     }
+
+
+    // public function applyFilters(Request $request) 
+    // {
+    //     try {
+    //         // Validation
+    //         $validated = $request->validate([
+    //             'show' => 'nullable|integer|min:1',
+    //             'sortBy' => 'string|nullable',
+    //             'query' => 'string|nullable',
+    //             'category' => 'array',
+    //             'category.*' => 'string',
+    //             'brand' => 'array',
+    //             'brand.*' => 'string',
+    //             'price_range' => 'string|nullable',
+    //             'min_rating' => 'array',
+    //             'min_rating.*' => 'string',
+    //             'min_discount' => 'array',
+    //             'min_discount.*' => 'string',
+    //             'page' => 'integer|min:1',
+    //             'category_slug' => 'string|nullable'
+    //         ]);
+
+    //         // Base query
+    //         $query = Product::with(['brand', 'category'])
+    //             ->where('status', 'active');
+
+    //         // Category slug
+    //         if (!empty($validated['category_slug'])) {
+    //             $category = Category::where('slug', $validated['category_slug'])
+    //                 ->where('status', 'active')
+    //                 ->first();
+    //             if ($category) {
+    //                 $query->where('cat_id', $category->id);
+    //             }
+    //         }
+
+    //         // Brand filter
+    //         if (!empty($validated['brand'])) {
+    //             $query->whereHas('brand', function ($q) use ($validated) {
+    //                 $q->whereIn('slug', $validated['brand'])
+    //                 ->where('status', 'active');
+    //             });
+    //         }
+
+    //         // Search query
+    //         if (!empty($validated['query'])) {
+    //             $searchTerm = $validated['query'];
+    //             $query->where(function ($q) use ($searchTerm) {
+    //                 $q->where('title', 'LIKE', "%{$searchTerm}%")
+    //                 ->orWhere('summary', 'LIKE', "%{$searchTerm}%")
+    //                 ->orWhere('description', 'LIKE', "%{$searchTerm}%");
+    //             });
+    //         }
+
+    //         // Price filter
+    //         if (!empty($validated['price_range'])) {
+    //             $priceRange = explode('-', $validated['price_range']);
+    //             if (count($priceRange) == 2) {
+    //                 $minPrice = (float) $priceRange[0];
+    //                 $maxPrice = (float) $priceRange[1];
+    //                 $query->whereBetween('price', [$minPrice, $maxPrice]);
+    //             }
+    //         }
+
+    //         // Rating filter
+    //         if (!empty($validated['min_rating'])) {
+    //             $minRatingValues = array_map('intval', $validated['min_rating']);
+    //             $minRating = min($minRatingValues);
+
+    //             $query->whereExists(function ($q) use ($minRating) {
+    //                 $q->select(DB::raw(1))
+    //                 ->from('product_reviews')
+    //                 ->whereColumn('products.id', 'product_reviews.product_id')
+    //                 ->groupBy('product_id')
+    //                 ->havingRaw('AVG(rate) >= ?', [$minRating]);
+    //             });
+    //         }
+
+    //         // Discount filter
+    //         if (!empty($validated['min_discount'])) {
+    //             $minDiscountValues = array_map('intval', $validated['min_discount']);
+    //             $minDiscount = min($minDiscountValues);
+    //             $query->where('discount', '>=', $minDiscount);
+    //         }
+
+    //         // Sorting
+    //         switch ($validated['sortBy'] ?? '') {
+    //             case 'title':
+    //                 $query->orderBy('title', 'asc');
+    //                 break;
+    //             case 'price':
+    //                 $query->orderBy('price', 'asc');
+    //                 break;
+    //             case 'priceDesc':
+    //                 $query->orderBy('price', 'desc');
+    //                 break;
+    //             case 'date':
+    //                 $query->orderBy('created_at', 'desc');
+    //                 break;
+    //             case 'rating':
+    //                 $query->leftJoin(DB::raw('(
+    //                     SELECT product_id, AVG(rate) as avg_rating
+    //                     FROM product_reviews
+    //                     GROUP BY product_id
+    //                 ) as reviews_avg'), 'products.id', '=', 'reviews_avg.product_id')
+    //                 ->orderByDesc('reviews_avg.avg_rating');
+    //                 break;
+    //             case 'discount':
+    //                 $query->orderBy('discount', 'desc');
+    //                 break;
+    //             default:
+    //                 $query->orderBy('created_at', 'desc');
+    //         }
+
+    //         // Pagination
+    //         $perPage = $validated['show'] ?? 9;
+    //         $currentPage = $validated['page'] ?? 1;
+
+    //         $products = $query->paginate($perPage, ['*'], 'page', $currentPage);
+
+    //         // Render grid view into HTML string
+    //         $html = view('frontend.pages.product-grids', compact('products'))->render();
+
+    //         return response()->json([
+    //             'success' => true,
+    //             'html' => $html,
+    //             'pagination' => [
+    //                 'current_page' => $products->currentPage(),
+    //                 'last_page' => $products->lastPage(),
+    //                 'total' => $products->total(),
+    //                 'per_page' => $products->perPage()
+    //             ],
+    //             'filters_applied' => [
+    //                 'category_slug' => $validated['category_slug'] ?? null,
+    //                 'brand' => $validated['brand'] ?? [],
+    //                 'min_rating' => $validated['min_rating'] ?? [],
+    //                 'min_discount' => $validated['min_discount'] ?? [],
+    //                 'query' => $validated['query'] ?? null,
+    //                 'price_range' => $validated['price_range'] ?? null,
+    //                 'total_products' => $products->total()
+    //             ]
+    //         ]);
+    //     } catch (\Exception $e) {
+    //         Log::error('Filter Error: ' . $e->getMessage(), [
+    //             'request_data' => $request->all(),
+    //             'file' => $e->getFile(),
+    //             'line' => $e->getLine()
+    //         ]);
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'An error occurred while applying filters. Please try again.',
+    //             'debug' => config('app.debug') ? [
+    //                 'error' => $e->getMessage(),
+    //                 'file' => $e->getFile(),
+    //                 'line' => $e->getLine()
+    //             ] : null
+    //         ], 500);
+    //     }
+    // }
+
+
     private function preWarmFilterCache(Request $request): void
     {
         try {

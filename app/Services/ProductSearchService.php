@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Brand;
 use App\Models\Category;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -19,9 +20,6 @@ class ProductSearchService
         $this->elasticsearch = $elasticsearch;
     }
 
-    /**
-     * Validate and sanitize input
-     */
     private function validateAndSanitizeInput($input, string $type = 'string'): array|string
     {
         if (is_null($input) || (is_array($input) && empty(array_filter($input))) || (is_string($input) && trim($input) === '')) {
@@ -42,40 +40,67 @@ class ProductSearchService
         return $type === 'array' ? [] : '';
     }
 
-    /**
-     * Apply sorting to query
-     */
     private function applySorting($query, ?string $sortBy): void
     {
+        Log::debug('Applying sorting', ['sortBy' => $sortBy]);
         if ($sortBy === 'price-desc') {
             $query->orderBy('price', 'desc');
         } elseif ($sortBy === 'price-asc') {
             $query->orderBy('price', 'asc');
+        } else {
+            $query->latest();
         }
     }
 
-    /**
-     * Search products with filters and fallback to database
-     */
     public function search(Request $request, int $perPage = 9, int $page = 1): array
     {
-        Log::debug('Search service called with params', ['request' => $request->all()]);
+        Log::info('Search service called', [
+            'request' => $request->all(),
+            'perPage' => $perPage,
+            'page' => $page
+        ]);
 
         $cacheKey = $this->generateCacheKey($request, $perPage, $page);
 
         try {
             $cached = Redis::get($cacheKey);
             if ($cached) {
-                return json_decode($cached, true);
+                $cachedData = json_decode($cached, true);
+                Log::info('Returning cached search results', ['cacheKey' => $cacheKey]);
+                // Convert cached products to model instances
+                $products = collect($cachedData['products'])->map(function ($product) {
+                    return Product::find($product['id']);
+                })->filter()->values();
+                return [
+                    'products' => $products,
+                    'total' => $cachedData['total'],
+                    'source' => $cachedData['source']
+                ];
             }
         } catch (\Exception $e) {
-            Log::warning('Redis cache error: ' . $e->getMessage());
+            Log::warning('Redis cache error: ' . $e->getMessage(), ['cacheKey' => $cacheKey]);
         }
 
         // Build query
         $query = Product::query()->where('status', 'active');
 
-        // Apply filters with enhanced logging
+        // Apply category slug filter
+        if ($request->has('category_slug') && !empty($request->category_slug)) {
+            $category = Category::where('slug', $request->category_slug)->first();
+            if ($category) {
+                Log::debug('Applying category_slug filter', ['category_slug' => $request->category_slug, 'category_id' => $category->id]);
+                $query->where('cat_id', $category->id);
+            } else {
+                Log::warning('Invalid category slug', ['category_slug' => $request->category_slug]);
+                return [
+                    'products' => collect([]),
+                    'total' => 0,
+                    'source' => 'database'
+                ];
+            }
+        }
+
+        // Apply other filters
         if ($request->has('min_rating')) {
             $ratings = $this->validateAndSanitizeInput($request->min_rating, 'array');
             if (!empty($ratings)) {
@@ -84,8 +109,6 @@ class ProductSearchService
                     $q->select(DB::raw('avg(rate) as avg_rate'))
                       ->havingRaw('avg_rate >= ?', [min($ratings)]);
                 });
-            } else {
-                Log::debug('Skipping min_rating filter - no values');
             }
         }
 
@@ -94,8 +117,6 @@ class ProductSearchService
             if (!empty($discounts)) {
                 Log::debug('Applying min_discount filter', ['discounts' => $discounts]);
                 $query->whereIn('discount', $discounts);
-            } else {
-                Log::debug('Skipping min_discount filter - no values');
             }
         }
 
@@ -108,10 +129,8 @@ class ProductSearchService
                     $query->whereIn('brand_id', $brandIds);
                 } else {
                     Log::warning('No matching brands found', ['brands' => $brands]);
-                    $query->whereRaw('1 = 0');  // Empty results if invalid
+                    $query->whereRaw('1 = 0');
                 }
-            } else {
-                Log::debug('Skipping brand filter - no values');
             }
         }
 
@@ -124,20 +143,18 @@ class ProductSearchService
                     $query->whereIn('cat_id', $categoryIds);
                 } else {
                     Log::warning('No matching categories found', ['categories' => $categories]);
-                    $query->whereRaw('1 = 0');  // Empty results if invalid
+                    $query->whereRaw('1 = 0');
                 }
-            } else {
-                Log::debug('Skipping category filter - no values');
             }
         }
 
         if ($request->has('price')) {
             $priceRange = $this->validateAndSanitizeInput($request->price, 'array');
-            if (count($priceRange) === 2 && is_numeric($priceRange[0]) && is_numeric($priceRange[1])) {
+            if (is_array($priceRange) && count($priceRange) === 2 && is_numeric($priceRange[0]) && is_numeric($priceRange[1])) {
                 Log::debug('Applying price filter', ['range' => $priceRange]);
                 $query->whereBetween('price', [(float)$priceRange[0], (float)$priceRange[1]]);
             } else {
-                Log::debug('Skipping invalid price range');
+                Log::debug('Skipping invalid price range', ['price' => $request->price]);
             }
         }
 
@@ -168,24 +185,35 @@ class ProductSearchService
                     'source' => 'elasticsearch'
                 ];
             } else {
+                Log::info('No valid Elasticsearch results, falling back to database');
                 throw new \Exception('No valid Elasticsearch results');
             }
         } catch (\Exception $e) {
-            Log::warning('Elasticsearch search failed: ' . $e->getMessage());
+            Log::warning('Elasticsearch search failed: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
             // Fallback to database search
             $this->applySorting($query, $request->sortBy ?? '');
             $products = $query->with(['images', 'cat_info'])
                 ->paginate($perPage, ['*'], 'page', $page);
 
             $result = [
-                'products' => $products->items(),
+                'products' => collect($products->items()), // Ensure collection
                 'total' => $products->total(),
                 'source' => 'database'
             ];
         }
 
         try {
-            Redis::setex($cacheKey, 600, json_encode($result));
+            // Ensure $result['products'] is a collection before mapping
+            $productsForCache = collect($result['products'])->map(function ($product) {
+                return $product instanceof Product ? $product->toArray() : $product;
+            })->toArray();
+
+            Redis::setex($cacheKey, 600, json_encode([
+                'products' => $productsForCache,
+                'total' => $result['total'],
+                'source' => $result['source']
+            ]));
+            Log::info('Cached search results', ['cacheKey' => $cacheKey]);
         } catch (\Exception $e) {
             Log::warning('Failed to set Redis cache: ' . $e->getMessage());
         }
@@ -193,9 +221,6 @@ class ProductSearchService
         return $result;
     }
 
-    /**
-     * Generate cache key based on request parameters
-     */
     private function generateCacheKey(Request $request, int $perPage, int $page): string
     {
         $params = [
@@ -204,6 +229,7 @@ class ProductSearchService
             'min_discount' => $this->validateAndSanitizeInput($request->min_discount, 'array'),
             'brand' => $this->validateAndSanitizeInput($request->brand, 'array'),
             'category' => $this->validateAndSanitizeInput($request->category, 'array'),
+            'category_slug' => $this->validateAndSanitizeInput($request->category_slug, 'string'),
             'price' => $this->validateAndSanitizeInput($request->price, 'array'),
             'sortBy' => $this->validateAndSanitizeInput($request->sortBy, 'string'),
             'perPage' => $perPage,
@@ -212,9 +238,6 @@ class ProductSearchService
         return 'search:v2:' . hash('sha256', json_encode($params));
     }
 
-    /**
-     * Get autocomplete suggestions
-     */
     public function getAutocomplete(string $query, int $limit = 10): array
     {
         $query = $this->validateAndSanitizeInput($query, 'string');
