@@ -791,7 +791,7 @@ class FrontendController extends Controller
             // Call ProductSearchService
             $result = $this->searchService->search(
                 new Request($data),
-                $data['show'] ?? 12,
+                $data['show'] ?? 9,
                 $data['page'] ?? 1
             );
 
@@ -1171,6 +1171,131 @@ class FrontendController extends Controller
         ]);
     }
 
+
+    // public function productCat(Request $request)
+    // {
+    //     $startTime = microtime(true);
+    //     $category = Category::where('slug', $request->slug)->firstOrFail();
+    //     $ttl = $this->getTtlConfig();
+
+    //     // Simple cache key generation
+    //     $show = $request->show ?? 12;
+    //     $page = $request->page ?? 1;
+    //     $sortBy = $request->sortBy ?? '';
+    //     $price = $request->price ?? '';
+
+    //     // Create cache key for complete page
+    //     $cacheKey = self::PRODUCT_GRIDS_CACHE_PREFIX . "category_{$category->id}_show_{$show}_page_{$page}_sort_{$sortBy}_price_{$price}";
+
+    //     // Try to get from cache first
+    //     $cachedData = RedisHelper::get($cacheKey);
+
+    //     if ($cachedData && is_array($cachedData)) {
+    //         Log::info("Product category served from cache in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
+    //         return view('frontend.pages.product-grids', $cachedData);
+    //     }
+
+    //     // If not cached, fetch fresh data
+    //     $data = $this->fetchCategoryPageData($category, $show, $page, $sortBy, $price, $ttl);
+    //     // dd($data);
+    //     // Cache the complete page data
+    //     if (!RedisHelper::put($cacheKey, $data, $ttl['product_lists'])) {
+    //         Log::warning("Failed to cache category page data for key: {$cacheKey}");
+    //     }
+
+    //     Log::info("Product category served fresh in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
+    //     return view('frontend.pages.product-grids', $data);
+    // }
+
+    private function fetchCategoryPageData($category, $show, $page, $sortBy, $price, $ttl)
+    {
+        // Get recent products with caching
+        $recentProductsKey = self::RECENT_PRODUCTS_CACHE_PREFIX . 'latest_3';
+        $recentProducts = RedisHelper::get($recentProductsKey);
+
+        if (!$recentProducts) {
+            $recentProducts = $this->getRecentProductsData($recentProductsKey, $ttl['product_lists']);
+        }
+
+        // Build category products query
+        $productsQuery = Product::where('status', 'active')
+            ->where('cat_id', $category->id)
+            ->select([
+                'id',
+                'title',
+                'slug',
+                'price',
+                'discount',
+                'stock',
+                'condition',
+                'cat_id',
+                'size',
+                'summary'
+            ])
+            ->with([
+                'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
+                'cat_info' => fn($q) => $q->select(['id', 'title'])
+            ]);
+
+        // Apply sorting
+        if ($sortBy) {
+            switch ($sortBy) {
+                case 'title':
+                    $productsQuery->orderBy('title', 'ASC');
+                    break;
+                case 'price':
+                    $productsQuery->orderBy('price', 'ASC');
+                    break;
+                case 'price_desc':
+                    $productsQuery->orderBy('price', 'DESC');
+                    break;
+                default:
+                    $productsQuery->orderBy('id', 'DESC');
+            }
+        } else {
+            $productsQuery->orderBy('id', 'DESC');
+        }
+
+        // Apply price filter
+        if ($price && str_contains($price, '-')) {
+            $priceRange = explode('-', $price);
+            if (count($priceRange) === 2 && is_numeric($priceRange[0]) && is_numeric($priceRange[1])) {
+                $productsQuery->whereBetween('price', [(float)$priceRange[0], (float)$priceRange[1]]);
+            }
+        }
+
+        // Get paginated products
+        $products = $productsQuery->paginate($show, ['*'], 'page', $page);
+
+        // Transform products to include calculated discount prices and wishlist status
+        $products->getCollection()->transform(function ($product) {
+            // Calculate discounted price
+            if ($product->discount > 0) {
+                $product->discounted_price = $product->price - ($product->price * $product->discount / 100);
+            } else {
+                $product->discounted_price = $product->price;
+            }
+
+            // Check if product is in wishlist (assuming Helper::isProductInWishlist exists)
+            if (class_exists('Helper') && method_exists('Helper', 'isProductInWishlist')) {
+                $product->in_wishlist = Helper::isProductInWishlist($product->slug);
+            } else {
+                $product->in_wishlist = false;
+            }
+
+            return $product;
+        });
+
+        return [
+            'products' => $products,
+            'recent_products' => $recentProducts,
+            'category' => $category, // Add category data for breadcrumbs/page title
+            'show' => $show,
+            'sortBy' => $sortBy,
+            'price' => $price
+        ];
+    }
+
     private function getRecentProductsData(string $key, int $ttl)
     {
         return Cache::remember($key, $ttl, function () use ($key, $ttl) {
@@ -1248,9 +1373,8 @@ class FrontendController extends Controller
             $maxPrice = (float) $maxPrice;
         }
 
-        // Define minimum required products for fallback logic and maximum limit
+        // Define minimum required products for fallback logic
         $minRequiredProducts = 12;
-        $maxProductsLimit = 12; // Hard limit - never show more than 12 products
 
         $cacheKey = "cached_products_cat{$category->id}_childcat{$subCategory->id}_page{$page}_limit{$show}_sort{$sortBy}";
 
@@ -1331,66 +1455,41 @@ class FrontendController extends Controller
 
     /**
      * Get products with fallback logic - searches parent categories if not enough products found
-     * Restricts results to maximum 12 products
      */
     private function getProductsWithFallback($startCategory, $minPrice, $maxPrice, $sortBy, $show, $minRequired)
     {
         $currentCategory = $startCategory;
-        $collectedProducts = collect();
+        $products = null;
         $fallbackOccurred = false;
-        $maxProducts = 12; // Hard limit of 12 products
 
-        while ($currentCategory && $collectedProducts->count() < $maxProducts) {
+        while ($currentCategory) {
             // Build the query for current category level
             $query = $this->buildProductQuery($currentCategory, $minPrice, $maxPrice, $sortBy);
 
-            // Calculate how many more products we need
-            $remainingNeeded = $maxProducts - $collectedProducts->count();
+            // Get total count first to check if we have enough products
+            $totalCount = $query->count();
 
-            // Get products from current category (limited to what we still need)
-            $categoryProducts = $query->take($remainingNeeded)->get();
-
-            if ($categoryProducts->isNotEmpty()) {
-                // Remove any products we already have (avoid duplicates)
-                $newProducts = $categoryProducts->whereNotIn('id', $collectedProducts->pluck('id'));
-                $collectedProducts = $collectedProducts->merge($newProducts);
-
-                // If we have enough products now, break
-                if ($collectedProducts->count() >= $minRequired) {
-                    break;
-                }
+            if ($totalCount >= $minRequired) {
+                // We have enough products, get paginated results
+                $products = $this->getPaginatedProducts($currentCategory, $minPrice, $maxPrice, $sortBy, $show);
+                break;
+            } else {
+                // Not enough products, move to parent category
+                $fallbackOccurred = true;
+                $currentCategory = $currentCategory->parent;
             }
-
-            // Move to parent category for next iteration
-            $fallbackOccurred = true;
-            $currentCategory = $currentCategory->parent;
         }
 
-        // If we still don't have any products, try the original category one more time
-        if ($collectedProducts->isEmpty()) {
-            $query = $this->buildProductQuery($startCategory, $minPrice, $maxPrice, $sortBy);
-            $collectedProducts = collect($query->take($maxProducts)->get());
+        // If we still don't have products after going through all parent categories,
+        // get whatever products are available from the original category
+        if (!$products) {
+            $products = $this->getPaginatedProducts($startCategory, $minPrice, $maxPrice, $sortBy, $show);
             $currentCategory = $startCategory;
         }
 
-        // Ensure we don't exceed 12 products
-        $finalProducts = $collectedProducts->take($maxProducts);
-
-        // Create a manual paginator with exactly 12 products max
-        $products = new \Illuminate\Pagination\LengthAwarePaginator(
-            $finalProducts,
-            min($finalProducts->count(), $maxProducts), // total
-            $maxProducts, // per page
-            1, // current page
-            [
-                'path' => request()->url(),
-                'query' => request()->query()
-            ]
-        );
-
         return [
             'products' => $products,
-            'category' => $currentCategory ?: $startCategory,
+            'category' => $currentCategory,
             'fallback_occurred' => $fallbackOccurred
         ];
     }
@@ -1418,22 +1517,46 @@ class FrontendController extends Controller
     }
 
     /**
-     * Apply category filters based on category hierarchy - restricts to current category only
+     * Apply category filters based on category hierarchy
      */
     private function applyCategoryFilters($query, $category)
     {
-        // Only search in the specific category, not descendants
-        // This prevents getting too many results and helps with the 12-product limit
+        // Get all descendant categories (children, grandchildren, etc.)
+        $descendantIds = $this->getAllDescendantIds($category);
+        $descendantIds[] = $category->id; // Include the category itself
 
-        if ($category->parent_id === null) {
-            // This is a main category
-            $query->where('cat_id', $category->id);
-        } else {
-            // This is a sub/child category
-            $query->where('child_cat_id', $category->id);
-        }
+        // Search in all descendant categories
+        $query->where(function ($q) use ($descendantIds, $category) {
+            // Check if products belong to any of the descendant categories
+            $q->whereIn('child_cat_id', $descendantIds)
+                ->orWhereIn('cat_id', $descendantIds);
+
+            // If this is a parent category, also include products directly assigned to it
+            if ($category->parent_id === null) {
+                $q->orWhere('cat_id', $category->id);
+            }
+        });
 
         return $query;
+    }
+
+    /**
+     * Get all descendant category IDs recursively
+     */
+    private function getAllDescendantIds($category)
+    {
+        $descendants = [];
+
+        // Get direct children
+        $children = Category::where('parent_id', $category->id)->get();
+
+        foreach ($children as $child) {
+            $descendants[] = $child->id;
+            // Recursively get grandchildren, great-grandchildren, etc.
+            $descendants = array_merge($descendants, $this->getAllDescendantIds($child));
+        }
+
+        return $descendants;
     }
 
     /**
@@ -1450,6 +1573,15 @@ class FrontendController extends Controller
         }
 
         return $query;
+    }
+
+    /**
+     * Get paginated products for a specific category
+     */
+    private function getPaginatedProducts($category, $minPrice, $maxPrice, $sortBy, $show)
+    {
+        $query = $this->buildProductQuery($category, $minPrice, $maxPrice, $sortBy);
+        return $query->paginate($show);
     }
 
     public function blog()

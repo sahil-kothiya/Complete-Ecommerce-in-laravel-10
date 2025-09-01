@@ -4,118 +4,51 @@
     <h3 class="title">Shop by Price</h3>
     <div class="price-filter">
         <div class="price-filter-inner">
-            <div id="slider-range" data-min="0" data-max="{{ $max_price ?? 1000 }}"></div>
+            <div id="slider-range" data-min="0" data-max="{{ $max_price ?? 1000 }}" tabindex="10"></div>
             <div class="product_filter">
                 <div class="label-input range-input">
                     <span class="range-label">Range:</span>
-                    <input type="text" id="amount" class="price-range-display" readonly />
+                    <input type="text" id="amount" class="price-range-display" readonly tabindex="11" />
                     <input type="hidden" name="price_range" id="price_range" value="{{ request('price') }}" />
                 </div>
-                <button type="button" class="filter_button">Apply Filter</button>
+                <!-- <button type="button" class="filter_button" tabindex="12">Apply Filter</button> -->
             </div>
         </div>
     </div>
 </div>
 @endif
 
-<!-- Recent Products Widget -->
-<div class="single-widget">
-    <div class="widget-header">
-        <h3 class="title">Recently Viewed</h3>
-    </div>
-
-    <div class="recent-products-container">
-        @if(isset($recent_products) && count($recent_products) > 0)
-        @foreach($recent_products as $product)
-        <div class="col-lg-4 col-md-6 col-12">
-    <div class="single-product card">
-        <div class="card-body">
-            <div class="image mb-2">
-                <a href="{{ route('product-detail', $product->slug) }}">
-                    <img src="{{ $product->getFirstImagePathAttribute() }}" alt="{{ $product->title }}" loading="lazy" class="img-fluid">
-                </a>
-            </div>
-            <div class="content">
-                <h5 class="product-title">
-                    <a href="{{ route('product-detail', $product->slug) }}">
-                        {{ Str::limit($product->title, 40) }}
-                    </a>
-                </h5>
-                <p class="price">
-                    @if($product->discount > 0)
-                        <del class="text-muted">${{ number_format($product->price, 2) }}</del>
-                    @endif
-                    <span class="current-price">${{ number_format($product->discounted_price, 2) }}</span>
-                </p>
-                <div class="product-actions mt-2 d-flex">
-                    <a href="{{ route('add-to-cart', $product->slug) }}"
-                       class="text-dark mr-2 {{ $product->stock <= 0 ? 'disabled' : '' }}"
-                       title="{{ $product->stock <= 0 ? 'Out of Stock' : 'Add to Cart' }}">
-                        <i class="ti-shopping-cart"></i>
-                    </a>
-                    <a href="#"
-                       class="text-secondary"
-                       title="Quick View"
-                       onclick="event.preventDefault(); $('#productModal{{ $product->id }}').modal('show');">
-                        <i class="ti-eye"></i>
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-        @endforeach
-        @else
-        <div class="no-recent-products">
-            <div class="empty-state">
-                <i class="fa fa-clock-o"></i>
-                <p>No recently viewed products</p>
-                <small>Products you view will appear here</small>
-            </div>
-        </div>
-        @endif
-    </div>
-
-    @if(isset($recent_products) && count($recent_products) >= 5)
-    <div class="view-all-recent">
-        <a href="{{ route('recent-products') }}" class="view-all-btn">
-            View All Recent Products <i class="fa fa-arrow-right"></i>
-        </a>
-    </div>
-    @endif
-</div>
-
 <!-- Brands Widget -->
 @if(!isset($category) || $category->filters->where('name', 'brand')->count())
 <div class="single-widget category">
     <h3 class="title">Brands</h3>
     @php
-        $brands = isset($category) 
-            ? $category->brands->where('status', 'active')->sortBy('title') 
-            : App\Models\Brand::where('status', 'active')->orderBy('title')->get();
+    $brands = isset($category)
+        ? $category->brands->where('status', 'active')->sortBy('title')
+        : App\Models\Brand::where('status', 'active')->orderBy('title')->get();
     @endphp
     @if($brands->count() > 0)
-        <ul class="categor-list">
-            @foreach($brands as $brand)
-                <li>
-                    <label>
-                        @php
-                            $selectedBrands = is_string(request('brand')) ? explode(',', request('brand')) : (request('brand', []) ?: []);
-                        @endphp
-                        <input type="checkbox" name="brand[]" value="{{ $brand->slug }}" {{ in_array($brand->slug, $selectedBrands) ? 'checked' : '' }}>
-                        {{ $brand->title }}
-                    </label>
-                </li>
-            @endforeach
-        </ul>
+    <ul class="categor-list">
+        @foreach($brands as $index => $brand)
+        <li>
+            <label>
+                @php
+                $selectedBrands = is_string(request('brand')) ? explode(',', request('brand')) : (request('brand', []) ?: []);
+                @endphp
+                <input type="checkbox" name="brand[]" value="{{ $brand->slug }}" {{ in_array($brand->slug, $selectedBrands) ? 'checked' : '' }} tabindex="{{ 13 + $index }}">
+                {{ $brand->title }}
+            </label>
+        </li>
+        @endforeach
+    </ul>
     @else
-        <div class="no-brands">
-            <div class="empty-state text-center p-3">
-                <i class="fa fa-tags mb-2" style="font-size: 20px;"></i>
-                <p>No brands available</p>
-                <small>Active brands will appear here</small>
-            </div>
+    <div class="no-brands">
+        <div class="empty-state text-center p-3">
+            <i class="fa fa-tags mb-2" style="font-size: 20px;"></i>
+            <p>No brands available</p>
+            <small>Active brands will appear here</small>
         </div>
+    </div>
     @endif
 </div>
 @endif
@@ -125,13 +58,13 @@
 <div class="single-widget rating">
     <h3 class="title">Customer Ratings</h3>
     <ul class="categor-list">
-        @foreach([4, 3, 2, 1] as $rating)
+        @foreach([4, 3, 2, 1] as $index => $rating)
         <li>
             <label>
                 @php
-                    $minRatings = is_string(request('min_rating')) ? explode(',', request('min_rating')) : (request('min_rating', []) ?: []);
+                $minRatings = is_string(request('min_rating')) ? explode(',', request('min_rating')) : (request('min_rating', []) ?: []);
                 @endphp
-                <input type="checkbox" name="min_rating[]" value="{{ $rating }}" {{ in_array((string)$rating, $minRatings) ? 'checked' : '' }}>
+                <input type="checkbox" name="min_rating[]" value="{{ $rating }}" {{ in_array((string)$rating, $minRatings) ? 'checked' : '' }} tabindex="{{ 20 + $index }}">
                 {{ $rating }} ★ & above
             </label>
         </li>
@@ -145,13 +78,13 @@
 <div class="single-widget discount">
     <h3 class="title">Discounts</h3>
     <ul class="categor-list">
-        @foreach([50, 30, 20, 10, 5] as $discount)
+        @foreach([50, 30, 20, 10, 5] as $index => $discount)
         <li>
             <label>
                 @php
-                    $minDiscounts = is_string(request('min_discount')) ? explode(',', request('min_discount')) : (request('min_discount', []) ?: []);
+                $minDiscounts = is_string(request('min_discount')) ? explode(',', request('min_discount')) : (request('min_discount', []) ?: []);
                 @endphp
-                <input type="checkbox" name="min_discount[]" value="{{ $discount }}" {{ in_array((string)$discount, $minDiscounts) ? 'checked' : '' }}>
+                <input type="checkbox" name="min_discount[]" value="{{ $discount }}" {{ in_array((string)$discount, $minDiscounts) ? 'checked' : '' }} tabindex="{{ 24 + $index }}">
                 {{ $discount }}% & above
             </label>
         </li>
@@ -160,9 +93,290 @@
 </div>
 @endif
 
+<!-- Recently Viewed Products Widget -->
+<div class="single-widget recent-products-widget">
+    <h3 class="title">Recently Viewed</h3>
+    <div class="recent-products-container">
+        @if(isset($recent_products) && $recent_products->count() > 0)
+        <div class="recent-products-list">
+            @foreach($recent_products->take(4) as $index => $product)
+            <div class="recent-product-item">
+                <div class="product-thumbnail">
+                    <a href="{{ route('product-detail', $product['slug'] ?? '') }}" tabindex="{{ 31 + $index * 4 }}">
+                        <img src="{{ $product['image_url'] ?? asset('frontend/images/placeholder.png') }}"
+                            alt="{{ $product['title'] ?? 'Product' }}"
+                            loading="lazy">
+                    </a>
+                    @if(isset($product['discount']) && $product['discount'] > 0)
+                    <span class="discount-badge">-{{ $product['discount'] }}%</span>
+                    @endif
+                </div>
+                <div class="product-details">
+                    <h6 class="product-name">
+                        <a href="{{ route('product-detail', $product['slug'] ?? '') }}" tabindex="{{ 32 + $index * 4 }}">
+                            {{ Str::limit($product['title'] ?? 'Untitled', 40) }}
+                        </a>
+                    </h6>
+                    <div class="product-price">
+                        @if(isset($product['discount']) && $product['discount'] > 0)
+                        <span class="new-price">${{ number_format((float)($product['discounted_price'] ?? $product['price'] ?? 0), 2) }}</span>
+                        <del class="old-price">${{ number_format((float)($product['price'] ?? 0), 2) }}</del>
+                        @else
+                        <span class="new-price">${{ number_format((float)($product['price'] ?? 0), 2) }}</span>
+                        @endif
+                    </div>
+                    @if(isset($product['rating']) && $product['rating'] > 0)
+                    <div class="product-rating">
+                        @for($i = 1; $i <= 5; $i++)
+                            <i class="fa fa-star{{ $i <= $product['rating'] ? '' : '-o' }}"></i>
+                        @endfor
+                        <span class="rating-text">({{ $product['rating_count'] ?? 0 }})</span>
+                    </div>
+                    @endif
+                    <div class="product-actions">
+                        @if(($product['stock'] ?? 0) > 0)
+                        <a href="{{ route('add-to-cart', $product['slug'] ?? '') }}"
+                            class="btn-cart"
+                            title="Add to Cart"
+                            tabindex="{{ 33 + $index * 4 }}">
+                            <i class="ti-shopping-cart"></i>
+                        </a>
+                        @else
+                        <span class="btn-cart disabled" title="Out of Stock">
+                            <i class="ti-shopping-cart"></i>
+                        </span>
+                        @endif
+                        <a href="#"
+                            class="btn-view"
+                            title="Quick View"
+                            onclick="event.preventDefault(); $('#productModal{{ $product['id'] ?? '' }}').modal('show');"
+                            tabindex="{{ 34 + $index * 4 }}">
+                            <i class="ti-eye"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            @endforeach
+        </div>
+        @else
+        <div class="empty-recent-products">
+            <div class="empty-icon">
+                <i class="ti-time"></i>
+            </div>
+            <p class="empty-text">No recently viewed products</p>
+            <small class="empty-subtext">Products you view will appear here</small>
+        </div>
+        @endif
+    </div>
+    @if(isset($recent_products) && $recent_products->count() > 4)
+    <div class="view-all-container">
+        <a href="{{ route('recent-products') }}" class="view-all-link" tabindex="36">
+            View All Recent Products <i class="ti-arrow-right"></i>
+        </a>
+    </div>
+    @endif
+</div>
+
 @push('styles')
 <style>
-    /* Enhanced Price Filter Styles */
+    /* Recently Viewed Products Scrollable */
+    .recent-products-container {
+        position: relative;
+        padding: 10px 0;
+        overflow: hidden;
+    }
+
+    .recent-products-list {
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        max-height: 400px;
+        gap: 15px;
+        padding: 10px;
+        scrollbar-width: thin;
+        scrollbar-color: #f7941d #e9ecef;
+    }
+
+    .recent-products-list::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .recent-products-list::-webkit-scrollbar-track {
+        background: #e9ecef;
+        border-radius: 3px;
+    }
+
+    .recent-products-list::-webkit-scrollbar-thumb {
+        background: #f7941d;
+        border-radius: 3px;
+    }
+
+    .recent-products-list::-webkit-scrollbar-thumb:hover {
+        background: #e07c1a;
+    }
+
+    .recent-product-item {
+        background: #ffffff;
+        border: 1px solid #e9ecef;
+        border-radius: 6px;
+        padding: 10px;
+        transition: all 0.3s ease;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .recent-product-item:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .product-thumbnail {
+        position: relative;
+        overflow: hidden;
+        border-radius: 4px;
+        flex: 0 0 100px;
+    }
+
+    .product-thumbnail img {
+        width: 100%;
+        height: 100px;
+        object-fit: cover;
+        transition: transform 0.3s ease;
+    }
+
+    .product-thumbnail:hover img {
+        transform: scale(1.05);
+    }
+
+    .discount-badge {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: #f7941d;
+        color: #ffffff;
+        padding: 2px 8px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 3px;
+    }
+
+    .product-details {
+        padding: 10px;
+        flex: 1;
+    }
+
+    .product-name a {
+        font-size: 14px;
+        font-weight: 600;
+        color: #333;
+        text-decoration: none;
+    }
+
+    .product-name a:hover {
+        color: #f7941d;
+    }
+
+    .product-price .new-price {
+        font-size: 14px;
+        font-weight: 600;
+        color: #f7941d;
+    }
+
+    .product-price .old-price {
+        font-size: 12px;
+        color: #999;
+        margin-left: 5px;
+    }
+
+    .product-rating {
+        margin: 5px 0;
+        font-size: 12px;
+        color: #f7941d;
+    }
+
+    .rating-text {
+        font-size: 11px;
+        color: #666;
+    }
+
+    .product-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 8px;
+    }
+
+    .btn-cart,
+    .btn-view {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 35px;
+        height: 35px;
+        background: #f7941d;
+        color: #ffffff;
+        border-radius: 4px;
+        text-decoration: none;
+        transition: all 0.3s ease;
+    }
+
+    .btn-cart:hover,
+    .btn-view:hover {
+        background: #e07c1a;
+    }
+
+    .btn-cart.disabled {
+        background: #ccc;
+        cursor: not-allowed;
+    }
+
+    .btn-cart i,
+    .btn-view i {
+        font-size: 16px;
+    }
+
+    /* Navigation Arrows */
+    .scroll-arrow {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #f7941d;
+        color: #ffffff;
+        border: none;
+        border-radius: 50%;
+        width: 35px;
+        height: 35px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        opacity: 0.8;
+        transition: all 0.3s ease;
+        z-index: 10;
+    }
+
+    .scroll-arrow:hover {
+        opacity: 1;
+        background: #e07c1a;
+    }
+
+    .prev-arrow {
+        top: 10px;
+    }
+
+    .next-arrow {
+        bottom: 10px;
+    }
+
+    .scroll-arrow i {
+        font-size: 14px;
+    }
+
+    .scroll-arrow:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+
+    /* Price Filter */
     .price-filter {
         padding: 15px 0;
     }
@@ -175,7 +389,6 @@
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
-    /* Slider Styles */
     #slider-range {
         margin: 10px 0 15px 0;
         height: 6px;
@@ -214,7 +427,6 @@
         height: 6px;
     }
 
-    /* Product Filter Container */
     .product_filter {
         display: flex;
         flex-direction: column;
@@ -222,7 +434,6 @@
         align-items: stretch;
     }
 
-    /* Range Input Styling */
     .label-input.range-input {
         display: flex;
         align-items: center;
@@ -257,7 +468,6 @@
         min-width: 100px;
     }
 
-    /* Filter Button Styling */
     .filter_button {
         padding: 8px 16px;
         background: #f7941d;
@@ -274,33 +484,11 @@
         width: 100%;
     }
 
-    .filter_button::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -100%;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-        transition: left 0.5s;
-    }
-
-    .filter_button:hover::before {
-        left: 100%;
-    }
-
     .filter_button:hover {
         background: #e07c1a;
-        transform: none;
         box-shadow: 0 2px 6px rgba(247, 148, 29, 0.4);
     }
 
-    .filter_button:active {
-        transform: none;
-        box-shadow: 0 1px 3px rgba(247, 148, 29, 0.3);
-    }
-
-    /* Loading state for button */
     .filter_button.loading {
         opacity: 0.7;
         cursor: not-allowed;
@@ -326,9 +514,43 @@
     }
 
     /* Responsive Design */
-    @media (max-width: 768px) {
+    @media (max-width: 576px) {
+        .recent-products-list {
+            max-height: 300px;
+            gap: 10px;
+            padding: 5px;
+        }
+
+        .recent-product-item {
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .product-thumbnail {
+            flex: 0 0 auto;
+            width: 100%;
+            max-width: 150px;
+        }
+
+        .product-thumbnail img {
+            height: 120px;
+        }
+
+        .product-details {
+            text-align: center;
+        }
+
+        .scroll-arrow {
+            width: 30px;
+            height: 30px;
+        }
+
+        .scroll-arrow i {
+            font-size: 12px;
+        }
+
         .price-filter-inner {
-            padding: 15px;
+            padding: 12px;
         }
 
         .product_filter {
@@ -353,46 +575,15 @@
 
         .filter_button {
             width: 100%;
-            padding: 14px;
-        }
-    }
-
-    @media (max-width: 576px) {
-        .price-filter-inner {
-            padding: 12px;
-        }
-
-        #slider-range {
-            margin: 12px 0 20px 0;
-        }
-
-        .ui-slider .ui-slider-handle {
-            width: 18px;
-            height: 18px;
-            top: -6px;
-        }
-
-        #amount.price-range-display {
-            font-size: 14px;
-        }
-
-        .filter_button {
-            font-size: 13px;
             padding: 12px;
         }
     }
 
-    /* Focus states for accessibility */
+    /* Accessibility */
+    .scroll-arrow:focus,
     .filter_button:focus {
         outline: 2px solid #f7941d;
         outline-offset: 2px;
-    }
-
-    /* Animation for smooth transitions */
-    .price-filter-inner,
-    .label-input.range-input,
-    #amount.price-range-display {
-        transition: all 0.2s ease;
     }
 
     .label-input.range-input:focus-within {
@@ -404,115 +595,64 @@
 
 @push('scripts')
 <script>
-let timeoutId;
+$(document).ready(function() {
+    // Initialize price range slider
+    if ($("#slider-range").length > 0) {
+        const maxValue = parseInt($("#slider-range").data('max')) || 1000;
+        const minValue = parseInt($("#slider-range").data('min')) || 0;
+        const currency = $("#slider-range").data('currency') || '$';
+        let priceRange = minValue + '-' + maxValue;
 
-function applyFilters(page = 1) {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => {
-        const form = document.querySelector('form[action="{{ route('shop.filter') }}"]');
-        if (!form) {
-            console.error('Form not found');
-            return;
+        if ($("#price_range").val()) {
+            priceRange = $("#price_range").val().trim();
         }
 
-        const formData = new FormData(form);
-        const data = {
-            show: formData.get('show') || 9,
-            sortBy: formData.get('sortBy') || '',
-            query: formData.get('query') || '',
-            category: formData.getAll('category[]'),
-            brand: formData.getAll('brand[]'),
-            price_range: formData.get('price_range') || '',
-            min_rating: formData.getAll('min_rating[]'),
-            min_discount: formData.getAll('min_discount[]'),
-            page: page,
-            category_slug: '{{ request()->route("slug") ?? "" }}'
-        };
+        const price = priceRange.split('-');
 
-        console.log('Sending AJAX request with data:', data);
-
-        fetch('{{ route('apply.filters') }}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': '{{ csrf_token() }}',
-            },
-            body: JSON.stringify(data),
-        })
-        .then(response => {
-            if (!response.ok) {
-                return response.text().then(text => {
-                    throw new Error(`Server returned ${response.status}: ${text}`);
-                });
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                console.log('Success:', data);
-                const productsContent = document.querySelector('#products-content');
-                if (productsContent) {
-                    productsContent.innerHTML = data.html;
-                }
-            } else {
-                console.error('Filter error:', data.message);
-            }
-        })
-        .catch(error => console.error('Error applying filters:', error));
-    }, 300);
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    const form = document.querySelector('form[action="{{ route('shop.filter') }}"]');
-    if (form) {
-        form.addEventListener('change', function(e) {
-            if (e.target.matches('input[type="checkbox"]')) {
-                applyFilters();
+        $("#slider-range").slider({
+            range: true,
+            min: minValue,
+            max: maxValue,
+            values: price.map(p => parseInt(p)),
+            slide: function(event, ui) {
+                $("#amount").val(currency + ui.values[0] + " - " + currency + ui.values[1]);
+                $("#price_range").val(ui.values[0] + "-" + ui.values[1]);
             }
         });
+
+        $("#amount").val(currency + $("#slider-range").slider("values", 0) +
+            " - " + currency + $("#slider-range").slider("values", 1));
     }
 
-    // Handle pagination clicks via AJAX
-    document.addEventListener('click', function(e) {
-        const link = e.target.closest('.pagination a');
-        if (link) {
-            e.preventDefault();
-            const url = new URL(link.href);
-            const page = url.searchParams.get('page') || 1;
-            applyFilters(page);
-        }
-    });
+    // Handle scrollable recent products
+    const $recentProductsList = $('.recent-products-list');
+    const $prevArrow = $('.prev-arrow');
+    const $nextArrow = $('.next-arrow');
+
+    function updateArrows() {
+        const scrollTop = $recentProductsList.scrollTop();
+        const maxScroll = $recentProductsList[0].scrollHeight - $recentProductsList[0].clientHeight;
+
+        $prevArrow.prop('disabled', scrollTop <= 0);
+        $nextArrow.prop('disabled', scrollTop >= maxScroll - 1);
+    }
+
+    if ($recentProductsList.length > 0) {
+        updateArrows();
+        $recentProductsList.on('scroll', updateArrows);
+
+        $prevArrow.on('click', function() {
+            $recentProductsList.animate({
+                scrollTop: $recentProductsList.scrollTop() - 150
+            }, 300);
+        });
+
+        $nextArrow.on('click', function() {
+            $recentProductsList.animate({
+                scrollTop: $recentProductsList.scrollTop() + 150
+            }, 300);
+        });
+    }
 });
-</script>
-
-<script>
-    $(document).ready(function() {
-        if ($("#slider-range").length > 0) {
-            const maxValue = parseInt($("#slider-range").data('max')) || 1000;
-            const minValue = parseInt($("#slider-range").data('min')) || 0;
-            const currency = $("#slider-range").data('currency') || '$';
-            let priceRange = minValue + '-' + maxValue;
-
-            if ($("#price_range").val()) {
-                priceRange = $("#price_range").val().trim();
-            }
-
-            const price = priceRange.split('-');
-
-            $("#slider-range").slider({
-                range: true,
-                min: minValue,
-                max: maxValue,
-                values: price.map(p => parseInt(p)),
-                slide: function(event, ui) {
-                    $("#amount").val(currency + ui.values[0] + " - " + currency + ui.values[1]);
-                    $("#price_range").val(ui.values[0] + "-" + ui.values[1]);
-                }
-            });
-
-            $("#amount").val(currency + $("#slider-range").slider("values", 0) +
-                " - " + currency + $("#slider-range").slider("values", 1));
-        }
-    });
 </script>
 @endpush

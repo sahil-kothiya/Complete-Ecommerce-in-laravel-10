@@ -3,15 +3,15 @@
 @section('title', 'E-SHOP || PRODUCT PAGE')
 
 @section('main-content')
-<!-- Breadcrumbs -->
+<!-- Breadcrumbs Section -->
 <div class="breadcrumbs">
     <div class="container">
         <div class="row">
             <div class="col-12">
                 <div class="bread-inner">
                     <ul class="bread-list">
-                        <li><a href="{{ route('home') }}">Home<i class="ti-arrow-right"></i></a></li>
-                        <li class="active"><a href="javascript:void(0)">Shop Grid</a></li>
+                        <li><a href="{{ route('home') }}" tabindex="1">Home<i class="ti-arrow-right"></i></a></li>
+                        <li class="active"><a href="javascript:void(0)" tabindex="2">Shop Grid</a></li>
                     </ul>
                 </div>
             </div>
@@ -19,7 +19,7 @@
     </div>
 </div>
 
-<!-- Product Area -->
+<!-- Product Filter Form -->
 <form id="productFilterForm" action="{{ route('shop.filter') }}" method="POST">
     @csrf
     <section class="product-area shop-sidebar shop section">
@@ -37,13 +37,13 @@
                     <!-- Shop Controls -->
                     <div class="shop-top">
                         <div class="shop-shorter">
-                            <select name="sortBy" id="sortBy">
+                            <select name="sortBy" id="sortBy" tabindex="3">
                                 <option value="latest" {{ request('sortBy') == 'latest' ? 'selected' : '' }}>Latest</option>
                                 <option value="price_low_high" {{ request('sortBy') == 'price_low_high' ? 'selected' : '' }}>Price: Low → High</option>
                                 <option value="price_high_low" {{ request('sortBy') == 'price_high_low' ? 'selected' : '' }}>Price: High → Low</option>
                             </select>
-                            <select name="show" id="show">
-                                <option value="9" {{ request('show') == '9' ? 'selected' : '' }}>Show 9</option>
+                            <select name="show" id="show" tabindex="4">
+                                <option value="12" {{ request('show') == '12' ? 'selected' : '' }}>Show 12</option>
                                 <option value="18" {{ request('show') == '18' ? 'selected' : '' }}>Show 18</option>
                             </select>
                         </div>
@@ -64,9 +64,12 @@
 
 @push('styles')
 <style>
+    /* Pagination Styling */
     .pagination {
-        display: inline-flex; /* or inline-block, unset, revert */
+        display: inline-flex;
     }
+
+    /* Checkbox Styling */
     .single-widget.rating input[type="checkbox"],
     .single-widget.discount input[type="checkbox"],
     .single-widget.category input[type="checkbox"] {
@@ -77,6 +80,7 @@
         accent-color: #f7941d;
     }
 
+    /* Label Styling */
     .single-widget.rating label,
     .single-widget.discount label,
     .single-widget.category label {
@@ -85,6 +89,7 @@
         color: #212121;
     }
 
+    /* Shop Top Bar */
     .shop-top {
         padding: 15px 0;
         background: #f9f9f9;
@@ -92,6 +97,7 @@
         margin-bottom: 20px;
     }
 
+    /* Select Dropdown Styling */
     .shop-shorter select {
         padding: 8px 15px;
         border: 1px solid #ddd;
@@ -101,6 +107,7 @@
         font-size: 14px;
     }
 
+    /* Product Card Styling */
     .single-post {
         background: #fff;
         border: 1px solid #eee;
@@ -114,26 +121,31 @@
         box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
     }
 
+    /* Product Grid Container */
     .product-grid-container {
         margin-bottom: 20px;
     }
 
+    /* Card Body */
     .card-body {
         padding: 0;
     }
 
+    /* Product Image */
     .image img {
         width: 100%;
         height: auto;
         border-radius: 5px 5px 0 0;
     }
 
+    /* Product Title */
     .product-title {
         font-size: 16px;
         color: #333;
         margin: 10px 0;
     }
 
+    /* Price Styling */
     .price {
         font-size: 16px;
         color: #f7941d;
@@ -145,6 +157,7 @@
         margin-right: 5px;
     }
 
+    /* Add to Cart Button */
     .add-to-cart {
         background: #000;
         color: #fff;
@@ -160,6 +173,7 @@
         background: #333;
     }
 
+    /* Product Actions */
     .product-actions a {
         color: #6c757d;
         margin: 0 5px;
@@ -169,6 +183,7 @@
         color: #f7941d;
     }
 
+    /* Responsive Design */
     @media (max-width: 768px) {
         .shop-top {
             padding: 10px;
@@ -227,7 +242,7 @@ $(document).ready(function() {
             " - " + currency + $("#slider-range").slider("values", 1));
     }
 
-    // Apply filters on sortBy, show, or checkbox changes
+    // Apply filters with debouncing
     let timeoutId;
     function applyFilters(page = 1) {
         clearTimeout(timeoutId);
@@ -240,7 +255,7 @@ $(document).ready(function() {
 
             const formData = new FormData(form);
             const data = {
-                show: formData.get('show') || 9,
+                show: formData.get('show') || 12,
                 sortBy: formData.get('sortBy') || 'latest',
                 query: formData.get('query') || '',
                 category: formData.getAll('category[]'),
@@ -252,8 +267,6 @@ $(document).ready(function() {
                 category_slug: '{{ request()->route("slug") ?? "" }}'
             };
 
-            console.log('Sending AJAX request with data:', data);
-
             fetch('{{ route('apply.filters') }}', {
                 method: 'POST',
                 headers: {
@@ -263,7 +276,6 @@ $(document).ready(function() {
                 body: JSON.stringify(data),
             })
             .then(response => {
-                console.log('Raw response:', response);
                 if (!response.ok) {
                     return response.text().then(text => {
                         throw new Error(`Server returned ${response.status}: ${text}`);
@@ -272,13 +284,12 @@ $(document).ready(function() {
                 return response.json();
             })
             .then(data => {
-                console.log('Response data:', data);
                 if (data.success) {
                     const productGrids = document.getElementById('product-grids');
                     if (productGrids) {
                         productGrids.innerHTML = data.html;
-                        // Re-bind pagination links
                         document.querySelectorAll('#product-grids .pagination a').forEach(link => {
+                            link.setAttribute('tabindex', '5');
                             link.addEventListener('click', function(e) {
                                 e.preventDefault();
                                 const url = new URL(this.href);
@@ -295,7 +306,6 @@ $(document).ready(function() {
                         }
                     }
                 } else {
-                    console.error('Filter error:', data.message);
                     Swal.fire({
                         icon: 'error',
                         title: 'Filter Error',
@@ -304,7 +314,6 @@ $(document).ready(function() {
                 }
             })
             .catch(error => {
-                console.error('Error applying filters:', error);
                 Swal.fire({
                     icon: 'error',
                     title: 'Error',
@@ -326,6 +335,7 @@ $(document).ready(function() {
         // Handle filter button click
         const filterButton = form.querySelector('.filter_button');
         if (filterButton) {
+            filterButton.setAttribute('tabindex', '6');
             filterButton.addEventListener('click', function(e) {
                 e.preventDefault();
                 applyFilters();

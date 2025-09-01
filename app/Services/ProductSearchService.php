@@ -6,7 +6,6 @@ use App\Models\Product;
 use App\Models\Brand;
 use App\Models\Category;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -106,8 +105,7 @@ class ProductSearchService
             if (!empty($ratings)) {
                 Log::debug('Applying min_rating filter', ['ratings' => $ratings]);
                 $query->whereHas('getReview', function ($q) use ($ratings) {
-                    $q->select(DB::raw('avg(rate) as avg_rate'))
-                      ->havingRaw('avg_rate >= ?', [min($ratings)]);
+                    $q->select(DB::raw('1'))->havingRaw('avg(rate) >= ?', [min($ratings)]);
                 });
             }
         }

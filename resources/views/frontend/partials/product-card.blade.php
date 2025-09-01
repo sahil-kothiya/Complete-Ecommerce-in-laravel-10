@@ -1,26 +1,23 @@
+<!-- Product Card -->
 <div class="product-card-container mb-4 isotope-item category-{{ $product->cat_id }} px-3">
     <div class="card h-100 border-0 d-flex flex-column product-card shadow-sm rounded">
         <div class="position-relative bg-light" style="aspect-ratio: 1 / 1;">
             <div class="slider-wrapper w-100 h-100" data-slider>
                 <div class="slider-track d-flex h-100">
-                    @foreach($product->images as $img)
+                    @foreach($product->images as $index => $img)
                     @php
                     $pathInfo = pathinfo($img->image_path);
                     $directory = $pathInfo['dirname'];
                     $filename = $pathInfo['filename'];
                     $extension = $pathInfo['extension'];
-
-                    // Generate srcset for responsive images
                     $srcset = [];
                     $sizes = [160, 235, 320, 480];
                     foreach ($sizes as $size) {
-                    $responsivePath = "{$directory}/{$filename}_{$size}x{$size}.webp";
-                    if (file_exists(public_path($responsivePath))) {
-                    $srcset[] = asset($responsivePath) . " {$size}w";
+                        $responsivePath = "{$directory}/{$filename}_{$size}x{$size}.webp";
+                        if (file_exists(public_path($responsivePath))) {
+                            $srcset[] = asset($responsivePath) . " {$size}w";
+                        }
                     }
-                    }
-
-                    // Add original as fallback
                     $srcset[] = asset($img->image_path) . " 370w";
                     $srcsetString = implode(', ', $srcset);
                     @endphp
@@ -35,6 +32,7 @@
                         height="235"
                         decoding="async"
                         fetchpriority="low"
+                        tabindex="{{ 40 + $index }}"
                         onerror="this.src='{{ asset('images/no-image.png') }}';">
                     @endforeach
                 </div>
@@ -45,13 +43,13 @@
             @elseif($product->condition === 'new')
             <span class="badge badge-success badge-status">New</span>
             @elseif($product->stock <= 0)
-                <span class="badge badge-danger badge-status">Sold Out</span>
-                @endif
+            <span class="badge badge-danger badge-status">Sold Out</span>
+            @endif
         </div>
 
         <div class="card-body d-flex flex-column px-3 py-2">
             <h6 class="text-dark text-truncate mb-1">
-                <a href="{{ route('product-detail', $product->slug) }}" class="text-dark">
+                <a href="{{ route('product-detail', $product->slug) }}" class="text-dark" tabindex="41">
                     {{ Str::limit($product->title, 50) }}
                 </a>
             </h6>
@@ -73,17 +71,22 @@
 
             <div class="mt-auto">
                 <a href="{{ route('add-to-cart', $product->slug) }}"
-                    class="btn btn-sm btn-block btn-dark text-uppercase mb-3 text-center {{ $product->stock <= 0 ? 'disabled' : '' }}">
+                    class="btn btn-sm btn-block btn-dark text-uppercase mb-3 text-center {{ $product->stock <= 0 ? 'disabled' : '' }}"
+                    tabindex="42">
                     <i class="ti-shopping-cart mr-1"></i>
                     {{ $product->stock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
                 </a>
 
                 <div class="d-flex justify-content-between align-items-center small text-muted px-1">
-                    <a href="{{ route('add-to-wishlist', $product->slug) }}" class="text-decoration-none">
+                    <a href="{{ route('add-to-wishlist', $product->slug) }}"
+                        class="text-decoration-none"
+                        tabindex="43">
                         <i class="ti-heart mr-1" style="color: {{ $inWishlist ? 'red' : '#6c757d' }}"></i> Wishlist
                     </a>
-                    <a href="#" class="text-decoration-none text-muted hover-text-dark"
-                        onclick="event.preventDefault(); $('#productModal{{ $product->id }}').modal('show');">
+                    <a href="#"
+                        class="text-decoration-none text-muted hover-text-dark"
+                        onclick="event.preventDefault(); $('#productModal{{ $product->id }}').modal('show');"
+                        tabindex="44">
                         <i class="ti-eye mr-1"></i> Quick View
                     </a>
                 </div>
@@ -94,19 +97,21 @@
 
 @push('styles')
 <style>
+    /* Product Listing Layout */
     .product-listing-wrapper {
         display: flex;
         flex-wrap: wrap;
         gap: 1rem;
-        /* Adjust space as needed */
     }
 
+    /* Slider Container */
     .slider-wrapper {
         overflow: hidden;
         height: 100%;
         position: relative;
     }
 
+    /* Slider Track */
     .slider-track {
         display: flex;
         width: 100%;
@@ -114,18 +119,19 @@
         transition: transform 0.5s ease-in-out;
     }
 
+    /* Slider Image */
     .slider-image {
         width: 100%;
         height: 100%;
         object-fit: cover;
         flex-shrink: 0;
-        /* Optimize image rendering and loading */
         image-rendering: auto;
         transform: translateZ(0);
         will-change: transform;
         backface-visibility: hidden;
     }
 
+    /* Status Badge */
     .badge-status {
         position: absolute;
         top: 8px;
@@ -135,7 +141,7 @@
         z-index: 10;
     }
 
-    /* For older browser fallback: aspect-ratio polyfill */
+    /* Aspect Ratio Polyfill */
     [style*="aspect-ratio"] {
         position: relative;
     }
@@ -144,7 +150,6 @@
         content: "";
         display: block;
         padding-bottom: calc(100% / (1 / 1));
-        /* 1:1 ratio */
     }
 
     [style*="aspect-ratio"]>*:first-child {
@@ -155,6 +160,7 @@
         right: 0;
     }
 
+    /* Responsive Column */
     @media (min-width: 1200px) {
         .col-lg-5th {
             flex: 0 0 20%;
@@ -166,43 +172,48 @@
 
 @push('scripts')
 <script>
-    document.addEventListener("DOMContentLoaded", function() {
-        document.querySelectorAll("[data-slider]").forEach(wrapper => {
-            const track = wrapper.querySelector('.slider-track');
-            const images = wrapper.querySelectorAll('.slider-image');
-            const total = images.length;
+document.addEventListener("DOMContentLoaded", function() {
+    // Initialize sliders for product images
+    document.querySelectorAll("[data-slider]").forEach(wrapper => {
+        const track = wrapper.querySelector('.slider-track');
+        const images = wrapper.querySelectorAll('.slider-image');
+        const total = images.length;
 
-            if (total <= 1) return;
+        if (total <= 1) return;
 
-            let index = 0;
-            let interval;
+        let index = 0;
+        let interval;
 
-            const slide = () => {
-                track.style.transform = `translateX(-${index * 100}%)`;
-            };
+        const slide = () => {
+            track.style.transform = `translateX(-${index * 100}%)`;
+        };
 
-            wrapper.addEventListener("mouseenter", () => {
-                index = 0;
-                interval = setInterval(() => {
-                    index = (index + 1) % total;
-                    slide();
-                }, 1000);
-            });
-
-            wrapper.addEventListener("mouseleave", () => {
-                clearInterval(interval);
-                index = 0;
-                slide(); // back to first image
-            });
+        wrapper.addEventListener("mouseenter", () => {
+            index = 0;
+            interval = setInterval(() => {
+                index = (index + 1) % total;
+                slide();
+            }, 1000);
         });
 
-        $('#productModal{{ $product->id }}').on('hidden.bs.modal', function() {
+        wrapper.addEventListener("mouseleave", () => {
+            clearInterval(interval);
+            index = 0;
+            slide();
+        });
+    });
+
+    // Modal accessibility handling
+    const modal = document.querySelector('#productModal{{ $product->id }}');
+    if (modal) {
+        modal.addEventListener('hidden.bs.modal', function() {
             this.setAttribute('inert', '');
         });
 
-        $('#productModal{{ $product->id }}').on('show.bs.modal', function() {
+        modal.addEventListener('show.bs.modal', function() {
             this.removeAttribute('inert');
         });
-    });
+    }
+});
 </script>
 @endpush
