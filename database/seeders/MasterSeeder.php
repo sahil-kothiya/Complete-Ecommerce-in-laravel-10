@@ -53,6 +53,13 @@ class MasterSeeder extends Seeder
             'status' => 'active'
         ]);
 
+        $discountFilter = Filter::create([
+            'name' => 'recently-viewed',
+            'title' => 'Recently Viewed',
+            'description' => 'Recently Viewed',
+            'status' => 'active'
+        ]);
+
         /** --------------------------
          *  Categories (Amazon-Style) - Root Level
          * -------------------------*/

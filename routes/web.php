@@ -38,6 +38,7 @@ use App\Http\Controllers\{
     UsersController,
     WishlistController
 };
+use Illuminate\Http\Request;
 
 // Utility
 Route::get('/check-redis-cache', fn() => response()->json([
@@ -75,8 +76,15 @@ Route::post('/contact/message', [MessageController::class, 'store'])->name('cont
 Route::get('/product-detail/{slug}', [FrontendController::class, 'productDetail'])->name('product-detail');
 Route::match(['get', 'post'], '/search', [FrontendController::class, 'productSearch'])->name('product.search');
 Route::get('/autocomplete', [FrontendController::class, 'autocomplete'])->name('autocomplete');
-Route::get('/product-cat/{slug}', [FrontendController::class, 'productCat'])->name('product-cat');
-Route::get('/product-sub-cat/{slug}/{sub_slug}', [FrontendController::class, 'productSubCat'])->name('product-sub-cat');
+// Route::get('/product-cat/{slug}', [FrontendController::class, 'productCat'])->name('product-cat');
+Route::get('/product-cat/{any}', function (Request $request, $any) {
+    // No need to modify $any - pass it directly to the controller
+    // The controller will handle the full path properly
+    
+    return app(FrontendController::class)
+        ->productSubCat($request, $any);
+})->where('any', '.*')->name('product-cat');
+
 Route::get('/product-brand/{slug}', [FrontendController::class, 'productBrand'])->name('product-brand');
 Route::get('/product-grids', [FrontendController::class, 'productGrids'])->name('product-grids');
 Route::get('/product-lists', [FrontendController::class, 'productLists'])->name('product-lists');

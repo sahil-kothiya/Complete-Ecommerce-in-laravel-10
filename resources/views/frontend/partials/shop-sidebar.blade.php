@@ -1,5 +1,5 @@
 <!-- Price Filter Widget -->
-@if(!isset($category) || $category->filters->where('name', 'price')->count())
+@if(!isset($mainCategory) || $mainCategory->filters->where('name', 'price')->count())
 <div class="single-widget range">
     <h3 class="title">Shop by Price</h3>
     <div class="price-filter">
@@ -19,12 +19,12 @@
 @endif
 
 <!-- Brands Widget -->
-@if(!isset($category) || $category->filters->where('name', 'brand')->count())
-<div class="single-widget category">
+@if(!isset($mainCategory) || $mainCategory->filters->where('name', 'brand')->count())
+<div class="single-widget mainCategory">
     <h3 class="title">Brands</h3>
     @php
-    $brands = isset($category)
-        ? $category->brands->where('status', 'active')->sortBy('title')
+    $brands = isset($mainCategory)
+        ? $mainCategory->brands->where('status', 'active')->sortBy('title')
         : App\Models\Brand::where('status', 'active')->orderBy('title')->get();
     @endphp
     @if($brands->count() > 0)
@@ -54,7 +54,7 @@
 @endif
 
 <!-- Customer Ratings Widget -->
-@if(!isset($category) || $category->filters->where('name', 'rating')->count())
+@if(!isset($mainCategory) || $mainCategory->filters->where('name', 'rating')->count())
 <div class="single-widget rating">
     <h3 class="title">Customer Ratings</h3>
     <ul class="categor-list">
@@ -74,7 +74,7 @@
 @endif
 
 <!-- Discounts Widget -->
-@if(!isset($category) || $category->filters->where('name', 'discount')->count())
+@if(!isset($mainCategory) || $mainCategory->filters->where('name', 'discount')->count())
 <div class="single-widget discount">
     <h3 class="title">Discounts</h3>
     <ul class="categor-list">
@@ -94,6 +94,7 @@
 @endif
 
 <!-- Recently Viewed Products Widget -->
+@if(!isset($mainCategory) || $mainCategory->filters->where('name', 'recently-viewed')->count())
 <div class="single-widget recent-products-widget">
     <h3 class="title">Recently Viewed</h3>
     <div class="recent-products-container">
@@ -176,6 +177,7 @@
     </div>
     @endif
 </div>
+@endif
 
 @push('styles')
 <style>
