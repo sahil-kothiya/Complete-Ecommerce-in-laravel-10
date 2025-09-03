@@ -15,12 +15,12 @@
                 </div>
                 <div class="col-lg-6 col-md-12 col-12">
                     <ul class="list-main">
-                        <li><i class="ti-location-pin"></i> <a href="{{ route('order.track') }}">Track Order</a></li>
+                        <li><i class="ti-location-pin"></i> <a href="{{ route('order.track') }}" tabindex="1">Track Order</a></li>
                         @auth
-                        <li><i class="ti-user"></i> <a href="{{ Auth::user()->role === 'admin' ? route('admin') : route('user') }}" target="_blank">Dashboard</a></li>
-                        <li><i class="ti-power-off"></i> <a href="{{ route('user.logout') }}">Logout</a></li>
+                        <li><i class="ti-user"></i> <a href="{{ Auth::user()->role === 'admin' ? route('admin') : route('user') }}" target="_blank" tabindex="2">Dashboard</a></li>
+                        <li><i class="ti-power-off"></i> <a href="{{ route('user.logout') }}" tabindex="3">Logout</a></li>
                         @else
-                        <li><i class="ti-power-off"></i> <a href="{{ route('login.form') }}">Login</a> / <a href="{{ route('register.form') }}">Register</a></li>
+                        <li><i class="ti-power-off"></i> <a href="{{ route('login.form') }}" tabindex="2">Login</a> / <a href="{{ route('register.form') }}" tabindex="3">Register</a></li>
                         @endauth
                     </ul>
                 </div>
@@ -34,7 +34,7 @@
             <div class="row align-items-center">
                 <div class="col-lg-2 col-md-2 col-12">
                     <div class="logo">
-                        <a href="{{ route('home') }}">
+                        <a href="{{ route('home') }}" tabindex="4">
                             <img src="{{ $settings->logo ?? asset('images/default-logo.png') }}"
                                 alt="Logo"
                                 loading="eager"
@@ -61,7 +61,8 @@
                                     aria-controls="autocomplete-list"
                                     aria-expanded="false"
                                     role="combobox"
-                                    autocomplete="off">
+                                    autocomplete="off"
+                                    tabindex="5">
                             </div>
                             <div id="autocomplete-dropdown" class="autocomplete-dropdown position-absolute w-100 bg-white shadow-sm border rounded mt-1 d-none">
                                 <ul id="autocomplete-list" class="list-group list-group-flush m-0"></ul>
@@ -74,7 +75,7 @@
                     <div class="right-bar">
                         @auth
                         <div class="sinlge-bar shopping">
-                            <a href="{{ route('wishlist') }}" class="single-icon" aria-label="Wishlist">
+                            <a href="{{ route('wishlist') }}" class="single-icon" aria-label="Wishlist" tabindex="6">
                                 <i class="fa fa-heart-o"></i>
                                 <span class="total-count">{{ Helper::wishlistCount() ?? 0 }}</span>
                             </a>
@@ -83,7 +84,7 @@
                             </div>
                         </div>
                         <div class="sinlge-bar shopping">
-                            <a href="{{ route('cart') }}" class="single-icon" aria-label="Cart">
+                            <a href="{{ route('cart') }}" class="single-icon" aria-label="Cart" tabindex="7">
                                 <i class="ti-bag"></i>
                                 <span class="total-count">{{ Helper::cartCount() ?? 0 }}</span>
                             </a>
@@ -104,13 +105,13 @@
             <nav class="navbar navbar-expand-lg">
                 <div class="navbar-collapse">
                     <ul class="nav main-menu menu navbar-nav mk-ct">
-                        <li class="{{ request()->is('home') ? 'active' : '' }}"><a href="{{ route('home') }}">Home</a></li>
-                        <li class="{{ request()->is('about-us') ? 'active' : '' }}"><a href="{{ route('about-us') }}">About Us</a></li>
-                        <li class="{{ request()->is('product-grids', 'product-lists') ? 'active' : '' }}"><a href="{{ route('product-grids') }}">Products</a></li>
+                        <li class="{{ request()->is('home') ? 'active' : '' }}"><a href="{{ route('home') }}" tabindex="8">Home</a></li>
+                        <li class="{{ request()->is('about-us') ? 'active' : '' }}"><a href="{{ route('about-us') }}" tabindex="9">About Us</a></li>
+                        <li class="{{ request()->is('product-grids', 'product-lists') ? 'active' : '' }}"><a href="{{ route('product-grids') }}" tabindex="10">Products</a></li>
                         <div class="category-menu-placeholder">
                             @include('frontend.partials.category-menu')
                         </div>
-                        <li class="{{ request()->is('contact') ? 'active' : '' }} cnt-us"><a href="{{ route('contact') }}">Contact Us</a></li>
+                        <li class="{{ request()->is('contact') ? 'active' : '' }} cnt-us"><a href="{{ route('contact') }}" tabindex="11">Contact Us</a></li>
                     </ul>
                 </div>
             </nav>
@@ -183,10 +184,27 @@
     #autocomplete-list li {
         padding: 10px 15px;
         cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }
 
     #autocomplete-list li:hover {
         background-color: #f3f3f3;
+    }
+
+    .remove-comment-btn {
+        background: none;
+        border: none;
+        color: #ff0000;
+        cursor: pointer;
+        font-size: 14px;
+        padding: 5px;
+        display: none;
+    }
+
+    .autocomplete-item:hover .remove-comment-btn {
+        display: inline-block;
     }
 
     .search-bar-form button {
@@ -381,7 +399,6 @@
     $(document).ready(function() {
         // Preload critical elements to prevent CLS
         const preloadElements = () => {
-            // Ensure dropdown is properly hidden on load
             const $dropdown = $('#autocomplete-dropdown');
             if ($dropdown.length) {
                 $dropdown.addClass('d-none').css({
@@ -412,6 +429,7 @@
         const $dropdown = $('#autocomplete-dropdown');
         const $list = $('#autocomplete-list');
         let searchTimeout;
+        const baseTabIndex = 12; // Starting tabindex for autocomplete items (after main menu)
 
         // Stop if critical elements are missing
         if (!$searchInput.length || !$dropdown.length || !$list.length) return;
@@ -451,7 +469,6 @@
                 return;
             }
 
-            // Use DocumentFragment for better performance
             $list.html('<li class="list-group-item loading" style="min-height: 40px;">Searching...</li>');
             showDropdown();
 
@@ -467,12 +484,9 @@
                 timeout: 10000,
                 cache: true,
                 success: function(response) {
-                    // Use DocumentFragment for efficient DOM manipulation
-                    const fragment = document.createDocumentFragment();
                     $list.empty();
-
                     if (response.success && Array.isArray(response.suggestions) && response.suggestions.length > 0) {
-                        response.suggestions.forEach(item => {
+                        response.suggestions.forEach((item, index) => {
                             if (!item.title || !item.slug) return;
 
                             const price = parseFloat(item.price) || 0;
@@ -488,12 +502,18 @@
                                 }
                             }
 
+                            const itemTabIndex = baseTabIndex + (index * 2); // Increment by 2 to account for remove button
+                            const removeTabIndex = itemTabIndex + 1;
+
                             const listItem = $(`
-                                <li class="list-group-item autocomplete-item" data-slug="${item.slug}" role="option" style="min-height: 50px;">
+                                <li class="list-group-item autocomplete-item" data-slug="${item.slug}" role="option" tabindex="${itemTabIndex}" style="min-height: 50px;">
                                     <div class="item-content">
                                         <span class="title">${escapeHtml(item.title)}</span>
                                         ${priceHTML}
                                     </div>
+                                    <button class="remove-comment-btn" aria-label="Remove suggestion" tabindex="${removeTabIndex}">
+                                        <i class="fa fa-times"></i>
+                                    </button>
                                 </li>
                             `);
 
@@ -551,6 +571,28 @@
             }
         });
 
+        // Handle remove comment button clicks
+        $list.on('click', '.remove-comment-btn', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            $(this).closest('.autocomplete-item').remove();
+            if ($list.find('.autocomplete-item').length === 0) {
+                $list.html('<li class="list-group-item no-results" style="min-height: 40px;">No products found</li>');
+            }
+            // Reassign tabindex values to remaining items
+            reassignTabIndexes();
+        });
+
+        // Reassign tabindex values after removal
+        function reassignTabIndexes() {
+            const $items = $list.find('.autocomplete-item');
+            $items.each((index, item) => {
+                const itemTabIndex = baseTabIndex + (index * 2);
+                $(item).attr('tabindex', itemTabIndex);
+                $(item).find('.remove-comment-btn').attr('tabindex', itemTabIndex + 1);
+            });
+        }
+
         // Improved keyboard navigation
         $searchInput.on('keydown', function(e) {
             const $items = $list.find('.autocomplete-item');
@@ -560,13 +602,13 @@
                 case 'ArrowDown':
                     e.preventDefault();
                     if ($active.length === 0) {
-                        $items.first().addClass('active');
+                        $items.first().addClass('active').focus();
                     } else {
                         const $next = $active.removeClass('active').next('.autocomplete-item');
                         if ($next.length > 0) {
-                            $next.addClass('active');
+                            $next.addClass('active').focus();
                         } else {
-                            $items.first().addClass('active');
+                            $items.first().addClass('active').focus();
                         }
                     }
                     break;
@@ -574,13 +616,13 @@
                 case 'ArrowUp':
                     e.preventDefault();
                     if ($active.length === 0) {
-                        $items.last().addClass('active');
+                        $items.last().addClass('active').focus();
                     } else {
                         const $prev = $active.removeClass('active').prev('.autocomplete-item');
                         if ($prev.length > 0) {
-                            $prev.addClass('active');
+                            $prev.addClass('active').focus();
                         } else {
-                            $items.last().addClass('active');
+                            $items.last().addClass('active').focus();
                         }
                     }
                     break;
@@ -596,6 +638,21 @@
                     hideDropdown();
                     $searchInput.blur();
                     break;
+
+                case 'Tab':
+                    if ($active.length > 0 && !$(e.target).hasClass('remove-comment-btn')) {
+                        e.preventDefault();
+                        $active.find('.remove-comment-btn').focus();
+                    }
+                    break;
+            }
+        });
+
+        // Handle keyboard navigation for remove buttons
+        $list.on('keydown', '.remove-comment-btn', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                $(this).click();
             }
         });
 

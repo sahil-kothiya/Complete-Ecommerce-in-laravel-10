@@ -1,0 +1,145 @@
+<!-- Footer -->
+<footer class="footer">
+	<div class="footer-top section">
+		<div class="container">
+			<div class="row">
+				<div class="col-lg-5 col-md-6 col-12">
+					<div class="single-footer about">
+						<a href="{{ route('home') }}" class="logo">
+						</a>
+						<p class="text">{{ $settings->short_des ?? 'Your one-stop shop for quality products.' }}</p>
+						<p class="call">Got Question? Call us 24/7 <a href="tel:{{ $settings->phone ?? '' }}">{{ $settings->phone ?? '' }}</a></p>
+					</div>
+				</div>
+				<div class="col-lg-2 col-md-6 col-12">
+					<div class="single-footer links">
+						<h4>Information</h4>
+						<ul>
+							<li><a href="{{ route('about-us') }}">About Us</a></li>
+							<!-- <li><a href="#">FAQ</a></li> -->
+							<!-- <li><a href="#">Terms & Conditions</a></li> -->
+							<li><a href="{{ route('contact') }}">Contact Us</a></li>
+							<!-- <li><a href="#">Help</a></li> -->
+						</ul>
+					</div>
+				</div>
+				<div class="col-lg-2 col-md-6 col-12">
+					<div class="single-footer links">
+						<!--	<h4>Customer Service</h4>
+						<ul>
+							<li><a href="#">Payment Methods</a></li>
+							<li><a href="#">Money-back</a></li>
+							<li><a href="#">Returns</a></li>
+							<li><a href="#">Shipping</a></li>
+							<li><a href="#">Privacy Policy</a></li>
+						</ul>-->
+					</div>
+				</div>
+				<div class="col-lg-3 col-md-6 col-12">
+					<div class="single-footer social">
+						<h4>Get In Touch</h4>
+						<ul class="contact">
+							<li>{{ $settings->address ?? '' }}</li>
+							<li>{{ $settings->email ?? '' }}</li>
+							<li>{{ $settings->phone ?? '' }}</li>
+						</ul>
+						<div class="sharethis-inline-follow-buttons"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="copyright">
+		<div class="container">
+			<div class="row">
+				<div class="col-lg-6 col-12">
+					<p>Copyright © {{ date('Y') }} All Rights Reserved.</p>
+				</div>
+				<div class="col-lg-6 col-12">
+					<!-- <img src="{{ asset('frontend/images/payments.webp') }}" alt="Payment Methods" loading="lazy"> -->
+				</div>
+			</div>
+		</div>
+	</div>
+</footer>
+
+<!-- Jquery -->
+<script src="https://code.jquery.com/jquery-3.2.1.min.js" crossorigin="anonymous"></script>
+<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js" crossorigin="anonymous"></script>
+
+<!-- <script src="{{ asset('frontend/js/jquery.min.js') }}"></script> -->
+<!-- <script src="{{asset('frontend/js/jquery-migrate-3.0.0.js')}}"></script> -->
+<!-- <script src="{{asset('frontend/js/jquery-ui.min.js')}}"></script> -->
+<!-- <script src="{{asset('frontend/js/sharethis.js')}}" defer></script> -->
+<!-- Popper JS -->
+<!-- <script src="{{asset('frontend/js/popper.min.js')}}"></script> -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.3/umd/popper.min.js" crossorigin="anonymous"></script>
+
+<!-- Bootstrap JS -->
+<!-- <script src="{{asset('frontend/js/bootstrap.min.js')}}"></script> -->
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.0.0-beta.2/js/bootstrap.min.js" crossorigin="anonymous"></script>
+
+<!-- Color JS -->
+<!-- <script src="{{asset('frontend/js/colors.js')}}"></script> -->
+<!-- Slicknav JS -->
+<!-- <script src="{{asset('frontend/js/slicknav.min.js')}}"></script> -->
+<!-- Owl Carousel JS -->
+<!-- <script src="{{asset('frontend/js/owl-carousel.js')}}"></script> -->
+<!-- Magnific Popup JS -->
+<!-- <script src="{{asset('frontend/js/magnific-popup.js')}}"></script> -->
+<!-- Waypoints JS -->
+<!-- <script src="{{asset('frontend/js/waypoints.min.js')}}"></script> -->
+<!-- Countdown JS -->
+<!-- <script src="{{asset('frontend/js/finalcountdown.min.js')}}"></script> -->
+<!-- Nice Select JS -->
+<!-- <script src="{{asset('frontend/js/nicesellect.js')}}"></script> -->
+<!-- Flex Slider JS -->
+<!-- <script src="{{asset('frontend/js/flex-slider.js')}}"></script> -->
+<!-- ScrollUp JS -->
+<!-- <script src="{{asset('frontend/js/scrollup.js')}}"></script> -->
+<!-- Onepage Nav JS -->
+<!-- <script src="{{asset('frontend/js/onepage-nav.min.js')}}"></script> -->
+{{-- Isotope --}}
+<!-- <script src="{{asset('frontend/js/isotope/isotope.pkgd.min.js')}}"></script> -->
+<!-- Easing JS -->
+<!-- <script src="{{asset('frontend/js/easing.js')}}"></script> -->
+
+<!-- Active JS -->
+<!-- <script src="{{asset('frontend/js/active.js')}}"></script> -->
+
+@stack('scripts')
+<script>
+	$(document).ready(function() {
+		$('.btn-number').click(function(e) {
+			e.preventDefault();
+			const button = $(this);
+			const type = button.data('type');
+			const field = button.data('field');
+			const input = $("input[name='" + field + "']");
+			let currentVal = parseInt(input.val());
+
+			if (!isNaN(currentVal)) {
+				const min = parseInt(input.attr('data-min')) || 1;
+				const max = parseInt(input.attr('data-max')) || 100;
+
+				if (type === 'minus') {
+					if (currentVal > min) {
+						input.val(currentVal - 1).change();
+					}
+				} else if (type === 'plus') {
+					if (currentVal < max) {
+						input.val(currentVal + 1).change();
+					}
+				}
+
+				// Update button states after value change
+				currentVal = parseInt(input.val());
+				const minusBtn = $(".btn-number[data-type='minus'][data-field='" + field + "']");
+				const plusBtn = $(".btn-number[data-type='plus'][data-field='" + field + "']");
+
+				minusBtn.prop('disabled', currentVal <= min);
+				plusBtn.prop('disabled', currentVal >= max);
+			}
+		});
+	});
+</script>

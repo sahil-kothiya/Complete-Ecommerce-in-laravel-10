@@ -11,7 +11,7 @@
 				<div class="col-md-6">
 					<div class="form-group">
 						<label for="title" class="col-form-label">Title <span class="text-danger">*</span></label>
-						<input id="title" type="text" name="title" placeholder="Enter title"
+						<input id="title" type="text" name="title" tabindex="1" placeholder="Enter title"
 							value="{{ old('title') }}" class="form-control">
 						@error('title')
 						<span class="text-danger">{{ $message }}</span>
@@ -20,7 +20,7 @@
 
 					<div class="form-group">
 						<label for="type" class="col-form-label">Discount Type <span class="text-danger">*</span></label>
-						<select name="type" class="form-control">
+						<select name="type" class="form-control" tabindex="2">
 							<option value="percentage" {{ old('type') == 'percentage' ? 'selected' : '' }}>Percentage</option>
 							<option value="amount" {{ old('type') == 'amount' ? 'selected' : '' }}>Fixed Amount</option>
 						</select>
@@ -31,27 +31,27 @@
 
 					<div class="form-group">
 						<label for="value" class="col-form-label">Discount Value <span class="text-danger">*</span></label>
-						<input id="value" type="number" step="0.01" name="value" placeholder="e.g. 10 or 100.00"
+						<input id="value" type="number" step="0.01" name="value" tabindex="3" placeholder="e.g. 10 or 100.00"
 							value="{{ old('value') }}" class="form-control" max="100" min="0">
 						@error('value')
 						<span class="text-danger">{{ $message }}</span>
 						@enderror
 					</div>
 					<div class="form-group form-check">
-						<input type="checkbox" name="is_active" id="is_active" value="1" class="form-check-input"
+						<input type="checkbox" name="is_active" id="is_active" value="1" tabindex="4" class="form-check-input"
 							{{ old('is_active', true) ? 'checked' : '' }}>
 						<label class="form-check-label" for="is_active">Active</label>
 					</div>
 					<div class="form-group mb-3">
-						<button type="reset" class="btn btn-warning">Reset</button>
-						<button class="btn btn-success" type="submit">Submit</button>
+						<button type="reset" class="btn btn-warning" tabindex="5">Reset</button>
+						<button class="btn btn-success" type="submit" tabindex="6">Submit</button>
 					</div>
 				</div>
 
 				<div class="col-md-6">
 					<div class="form-group">
 						<label for="starts_at" class="col-form-label">Starts At <span class="text-danger">*</span></label>
-						<input id="starts_at" type="datetime-local" name="starts_at"
+						<input id="starts_at" type="datetime-local" name="starts_at" tabindex="7"
 							value="{{ old('starts_at') }}" class="form-control">
 						@error('starts_at')
 						<span class="text-danger">{{ $message }}</span>
@@ -59,7 +59,7 @@
 					</div>
 					<div class="form-group">
 						<label for="ends_at" class="col-form-label">Ends At <span class="text-danger">*</span></label>
-						<input id="ends_at" type="datetime-local" name="ends_at"
+						<input id="ends_at" type="datetime-local" name="ends_at" tabindex="8"
 							value="{{ old('ends_at') }}" class="form-control">
 						@error('ends_at')
 						<span class="text-danger">{{ $message }}</span>
@@ -68,7 +68,7 @@
 
 					<div class="form-group">
 						<label for="categories">Apply to Categories</label>
-						<select name="categories[]" class="form-control selectpicker" multiple data-live-search="true">
+						<select name="categories[]" class="form-control selectpicker" tabindex="9" multiple data-live-search="true">
 							@foreach($categories as $category)
 							<option value="{{ $category->id }}" {{ (collect(old('categories'))->contains($category->id)) ? 'selected' : '' }}>
 								{{ $category->title }}

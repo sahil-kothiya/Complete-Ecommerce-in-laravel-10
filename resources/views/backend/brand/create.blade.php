@@ -13,15 +13,15 @@
 				<div class="col-md-6">
 					<div class="form-group">
 						<label for="inputTitle" class="col-form-label">Title <span class="text-danger">*</span></label>
-						<input id="inputTitle" type="text" name="title" placeholder="Enter title" value="{{old('title')}}" class="form-control">
+						<input id="inputTitle" type="text" name="title" placeholder="Enter title" value="{{old('title')}}" class="form-control" tabindex="1">
 						@error('title')
 						<span class="text-danger">{{$message}}</span>
 						@enderror
 					</div>
 
 					<div class="form-group mb-3">
-						<button type="reset" class="btn btn-warning">Reset</button>
-						<button class="btn btn-success" type="submit">Submit</button>
+						<button type="reset" class="btn btn-warning" tabindex="3">Reset</button>
+						<button class="btn btn-success" type="submit" tabindex="4">Submit</button>
 					</div>
 				</div>
 
@@ -29,7 +29,7 @@
 				<div class="col-md-6">
 					<div class="form-group">
 						<label for="status" class="col-form-label">Status <span class="text-danger">*</span></label>
-						<select name="status" class="form-control">
+						<select name="status" id="status" class="form-control" tabindex="2">
 							<option value="active">Active</option>
 							<option value="inactive">Inactive</option>
 						</select>

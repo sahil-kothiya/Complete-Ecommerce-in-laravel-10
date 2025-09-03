@@ -12,7 +12,7 @@
 					{{-- Title --}}
 					<div class="form-group">
 						<label for="title" class="col-form-label">Title <span class="text-danger">*</span></label>
-						<input id="title" type="text" name="title" class="form-control" placeholder="Enter title"
+						<input id="title" type="text" name="title" class="form-control" tabindex="1" placeholder="Enter title"
 							value="{{ old('title', $discount->title) }}">
 						@error('title')<span class="text-danger">{{ $message }}</span>@enderror
 					</div>
@@ -20,7 +20,7 @@
 					{{-- Discount Type --}}
 					<div class="form-group">
 						<label for="type" class="col-form-label">Discount Type <span class="text-danger">*</span></label>
-						<select name="type" id="type" class="form-control">
+						<select name="type" id="type" class="form-control" tabindex="2">
 							<option value="percentage" {{ old('type', $discount->type) == 'percentage' ? 'selected' : '' }}>Percentage</option>
 							<option value="amount" {{ old('type', $discount->type) == 'amount' ? 'selected' : '' }}>Fixed Amount</option>
 						</select>
@@ -30,7 +30,7 @@
 					{{-- Discount Value --}}
 					<div class="form-group">
 						<label for="value" class="col-form-label">Discount Value <span class="text-danger">*</span></label>
-						<input id="value" type="number" step="0.01" name="value" class="form-control"
+						<input id="value" type="number" step="0.01" name="value" class="form-control" tabindex="3"
 							placeholder="e.g. 10 or 100.00"
 							value="{{ old('value', $discount->value) }}" min="0" max="100">
 						@error('value')<span class="text-danger">{{ $message }}</span>@enderror
@@ -38,15 +38,15 @@
 
 					{{-- Is Active --}}
 					<div class="form-group form-check">
-						<input type="checkbox" name="is_active" id="is_active" class="form-check-input" value="1"
+						<input type="checkbox" name="is_active" id="is_active" class="form-check-input" value="1" tabindex="4"
 							{{ old('is_active', $discount->is_active) ? 'checked' : '' }}>
 						<label for="is_active" class="form-check-label">Active</label>
 					</div>
 
 					{{-- Buttons --}}
 					<div class="form-group mb-3">
-						<button type="reset" class="btn btn-warning">Reset</button>
-						<button type="submit" class="btn btn-success">Update</button>
+						<button type="reset" class="btn btn-warning" tabindex="5">Reset</button>
+						<button type="submit" class="btn btn-success" tabindex="6">Update</button>
 					</div>
 				</div>
 
@@ -54,7 +54,7 @@
 					{{-- Start Time --}}
 					<div class="form-group">
 						<label for="starts_at" class="col-form-label">Starts At <span class="text-danger">*</span></label>
-						<input type="datetime-local" name="starts_at" id="starts_at" class="form-control"
+						<input type="datetime-local" name="starts_at" id="starts_at" class="form-control" tabindex="7"
 							value="{{ old('starts_at', $discount->starts_at ? $discount->starts_at->format('Y-m-d\TH:i') : '') }}">
 						@error('starts_at')<span class="text-danger">{{ $message }}</span>@enderror
 					</div>
@@ -62,7 +62,7 @@
 					{{-- End Time --}}
 					<div class="form-group">
 						<label for="ends_at" class="col-form-label">Ends At <span class="text-danger">*</span></label>
-						<input type="datetime-local" name="ends_at" id="ends_at" class="form-control"
+						<input type="datetime-local" name="ends_at" id="ends_at" class="form-control" tabindex="8"
 							value="{{ old('ends_at', $discount->ends_at ? $discount->ends_at->format('Y-m-d\TH:i') : '') }}">
 						@error('ends_at')<span class="text-danger">{{ $message }}</span>@enderror
 					</div>
@@ -70,7 +70,7 @@
 					{{-- Categories --}}
 					<div class="form-group">
 						<label for="categories" class="col-form-label">Apply to Categories <span class="text-danger">*</span></label>
-						<select name="categories[]" id="categories" class="form-control selectpicker" multiple data-live-search="true">
+						<select name="categories[]" id="categories" class="form-control selectpicker" tabindex="9" multiple data-live-search="true">
 							@foreach($categories as $category)
 							<option value="{{ $category->id }}"
 								{{ in_array($category->id, old('categories', $selectedCategoryIds)) ? 'selected' : '' }}>

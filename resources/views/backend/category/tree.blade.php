@@ -9,7 +9,9 @@
     </div>
     <div class="card-header py-3 d-flex justify-content-between align-items-center">
         <h6 class="m-0 font-weight-bold text-primary">Category Tree Manager - Infinite Levels</h6>
-        <a href="{{ route('category.index') }}" class="btn btn-primary btn-sm" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Back to Category List"><i class="fas fa-arrow-left me-1"></i> Back to List</a>
+        <a href="{{ route('category.index') }}" class="btn btn-primary btn-sm" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Back to Category List" tabindex="0">
+            <i class="fas fa-arrow-left me-1"></i> Back to List
+        </a>
     </div>
     <div class="card-body">
         <div class="controls-panel mb-4">
@@ -33,16 +35,13 @@
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h4><i class="fas fa-tree me-2"></i>Category Structure</h4>
                 <div>
-                    <!-- <button class="btn btn-primary btn-sm me-2" id="addRootBtn" data-bs-toggle="tooltip" data-bs-placement="top" title="Add root category">
-                        <i class="fas fa-plus me-1"></i> Add Root
-                    </button> -->
-                    <button class="btn btn-success btn-sm me-2" id="saveChangesBtn" data-bs-toggle="tooltip" data-bs-placement="top" title="Save category hierarchy changes">
+                    <button class="btn btn-success btn-sm me-2" id="saveChangesBtn" data-bs-toggle="tooltip" data-bs-placement="top" title="Save category hierarchy changes" tabindex="0">
                         <i class="fas fa-save me-1"></i> Save Changes
                     </button>
-                    <button class="btn btn-secondary btn-sm me-2" id="expandAllBtn" data-bs-toggle="tooltip" data-bs-placement="top" title="Expand all categories">
+                    <button class="btn btn-secondary btn-sm me-2" id="expandAllBtn" data-bs-toggle="tooltip" data-bs-placement="top" title="Expand all categories" tabindex="0">
                         <i class="fas fa-expand-arrows-alt me-1"></i> Expand All
                     </button>
-                    <button class="btn btn-outline-secondary btn-sm" id="collapseAllBtn" data-bs-toggle="tooltip" data-bs-placement="top" title="Collapse all categories">
+                    <button class="btn btn-outline-secondary btn-sm" id="collapseAllBtn" data-bs-toggle="tooltip" data-bs-placement="top" title="Collapse all categories" tabindex="0">
                         <i class="fas fa-compress-arrows-alt me-1"></i> Collapse All
                     </button>
                 </div>
@@ -52,7 +51,7 @@
                     <span class="visually-hidden">Loading...</span>
                 </div>
             </div>
-            <div class="drop-zone-root" id="rootDropZone">
+            <div class="drop-zone-root" id="rootDropZone" tabindex="0">
                 <div class="drop-zone-hint">
                     <i class="fas fa-cloud-upload-alt"></i>
                     <span>Drop here to make root category</span>
@@ -68,10 +67,6 @@
 
 @push('styles')
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/sweetalert2/11.7.3/sweetalert2.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert2/11.7.3/sweetalert2.all.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
-
 <style>
     .tree-container {
         background: #ffffff;
@@ -119,6 +114,11 @@
         border-color: #22c55e !important;
         background: #f0fdf4 !important;
         box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2) !important;
+    }
+
+    .category-item:focus {
+        outline: 2px solid #3b82f6;
+        outline-offset: 2px;
     }
 
     .category-content {
@@ -197,6 +197,11 @@
     .btn-action:hover {
         transform: scale(1.1);
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .btn-action:focus {
+        outline: 2px solid #3b82f6;
+        outline-offset: 2px;
     }
 
     .children-container {
@@ -343,6 +348,11 @@
     .drop-zone-root.drag-over {
         border-color: #22c55e !important;
         background: #f0fdf4 !important;
+    }
+
+    .drop-zone-root:focus {
+        outline: 2px solid #3b82f6;
+        outline-offset: 2px;
     }
 
     .drop-zone-hint {
@@ -504,7 +514,7 @@
         const maxLevelClass = category.level > 6 ? `level-${category.level % 7}` : '';
 
         let html = `
-            <li class="category-item level-${category.level} ${maxLevelClass}" data-id="${category.id}" data-level="${category.level}">
+            <li class="category-item level-${category.level} ${maxLevelClass}" data-id="${category.id}" data-level="${category.level}" tabindex="0">
                 <div class="depth-indicator">L${category.level}</div>
                 <div class="category-content">
                     <div class="category-info">
@@ -525,19 +535,19 @@
                     </div>
                     <div class="category-actions">
                         <span class="status-badge badge ${statusClass}">${category.status}</span>
-                        <button class="btn-action btn-success add-sub" data-id="${category.id}" data-bs-toggle="tooltip" data-bs-placement="top" title="Add subcategory">
+                        <button class="btn-action btn-success add-sub" data-id="${category.id}" data-bs-toggle="tooltip" data-bs-placement="top" title="Add subcategory" tabindex="0">
                             <i class="fas fa-plus"></i>
                         </button>
-                        <button class="btn-action btn-primary toggle-children" data-id="${category.id}" data-bs-toggle="tooltip" data-bs-placement="top" title="Toggle children">
+                        <button class="btn-action btn-primary toggle-children" data-id="${category.id}" data-bs-toggle="tooltip" data-bs-placement="top" title="Toggle children" tabindex="0">
                             <i class="fas fa-${toggleIcon}"></i>
                         </button>
-                        <button class="btn-action btn-info edit-cat" data-id="${category.id}" data-bs-toggle="tooltip" data-bs-placement="top" title="Edit category">
+                        <button class="btn-action btn-info edit-cat" data-id="${category.id}" data-bs-toggle="tooltip" data-bs-placement="top" title="Edit category" tabindex="0">
                             <i class="fas fa-edit"></i>
                         </button>
-                        <button class="btn-action btn-warning move-cat" data-id="${category.id}" data-bs-toggle="tooltip" data-bs-placement="top" title="Quick move category">
+                        <button class="btn-action btn-warning move-cat" data-id="${category.id}" data-bs-toggle="tooltip" data-bs-placement="top" title="Quick move category" tabindex="0">
                             <i class="fas fa-arrows-alt"></i>
                         </button>
-                        <button class="btn-action btn-danger delete-cat" data-id="${category.id}" data-bs-toggle="tooltip" data-bs-placement="top" title="Delete category">
+                        <button class="btn-action btn-danger delete-cat" data-id="${category.id}" data-bs-toggle="tooltip" data-bs-placement="top" title="Delete category" tabindex="0">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
@@ -988,7 +998,7 @@
             title: `Move "${currentCategory.title}"`,
             html: `
                 <p class="text-muted mb-3">Select new parent category:</p>
-                <select id="parentSelect" class="form-control">
+                <select id="parentSelect" class="form-control" tabindex="0">
                     ${optionsHtml}
                 </select>
                 <div class="mt-3">
@@ -1087,14 +1097,14 @@
         Swal.fire({
             title: parentId ? 'Add Subcategory' : 'Add Root Category',
             html: `
-                <input id="swal-input1" class="swal2-input" placeholder="Category Title" required>
-                <input id="swal-input2" class="swal2-input" placeholder="Category Slug" required>
-                <select id="swal-input3" class="swal2-select">
+                <input id="swal-input1" class="swal2-input" placeholder="Category Title" required tabindex="0">
+                <input id="swal-input2" class="swal2-input" placeholder="Category Slug" required tabindex="0">
+                <select id="swal-input3" class="swal2-select" tabindex="0">
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                 </select>
                 <div class="form-check mt-2">
-                    <input type="checkbox" id="swal-input4" class="form-check-input">
+                    <input type="checkbox" id="swal-input4" class="form-check-input" tabindex="0">
                     <label for="swal-input4" class="form-check-label">Featured Category</label>
                 </div>
             `,
@@ -1212,10 +1222,6 @@
         console.log('Document ready, initializing enhanced category tree manager');
         initializePage();
 
-        $('#addRootBtn').on('click', function() {
-            addSubcategory(null);
-        });
-        
         $('#saveChangesBtn').on('click', saveChanges);
         $('#expandAllBtn').on('click', expandAll);
         $('#collapseAllBtn').on('click', collapseAll);
@@ -1226,6 +1232,11 @@
                 e.preventDefault();
                 e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
             }
+        });
+
+        // Enhance accessibility for SweetAlert2 modals
+        $(document).on('shown.bs.modal', '.swal2-container', function() {
+            $('.swal2-confirm, .swal2-cancel').attr('tabindex', '0');
         });
 
         console.log('Enhanced category tree manager initialized successfully!');

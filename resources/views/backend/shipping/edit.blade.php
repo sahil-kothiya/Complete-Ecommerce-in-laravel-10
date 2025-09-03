@@ -12,14 +12,15 @@
 				<div class="col-md-6">
 					<div class="form-group">
 						<label for="inputTitle" class="col-form-label">Type <span class="text-danger">*</span></label>
-						<input id="inputTitle" type="text" name="type" placeholder="Enter type" value="{{$shipping->type}}" class="form-control">
-						@error('title')
+						<input id="inputTitle" type="text" name="type" placeholder="Enter type" value="{{$shipping->type}}" class="form-control" tabindex="1">
+						@error('type')
 						<span class="text-danger">{{$message}}</span>
 						@enderror
 					</div>
+
 					<div class="form-group">
 						<label for="status" class="col-form-label">Status <span class="text-danger">*</span></label>
-						<select name="status" class="form-control">
+						<select name="status" id="status" class="form-control" tabindex="2">
 							<option value="active" {{(($shipping->status=='active') ? 'selected' : '')}}>Active</option>
 							<option value="inactive" {{(($shipping->status=='inactive') ? 'selected' : '')}}>Inactive</option>
 						</select>
@@ -27,15 +28,16 @@
 						<span class="text-danger">{{$message}}</span>
 						@enderror
 					</div>
+
 					<div class="form-group mb-3">
-						<button class="btn btn-success" type="submit">Update</button>
+						<button class="btn btn-success" type="submit" tabindex="4">Update</button>
 					</div>
 				</div>
 
 				<div class="col-md-6">
 					<div class="form-group">
 						<label for="price" class="col-form-label">Price <span class="text-danger">*</span></label>
-						<input id="price" type="number" name="price" placeholder="Enter price" value="{{$shipping->price}}" class="form-control">
+						<input id="price" type="number" name="price" placeholder="Enter price" value="{{$shipping->price}}" class="form-control" tabindex="3">
 						@error('price')
 						<span class="text-danger">{{$message}}</span>
 						@enderror

@@ -9,23 +9,23 @@
             @csrf
             <div class="row">
                 <div class="col-md-6">
+                    {{-- Title --}}
                     <div class="form-group">
                         <label for="inputTitle" class="col-form-label">Title <span class="text-danger">*</span></label>
-                        <input id="inputTitle" type="text" name="title" placeholder="Enter title" value="{{ old('title') }}" class="form-control" tabindex="1">
-                        @error('title')
-                        <span class="text-danger">{{ $message }}</span>
-                        @enderror
+                        <input id="inputTitle" type="text" name="title" placeholder="Enter title"
+                            value="{{ old('title') }}" class="form-control" tabindex="1">
+                        @error('title')<span class="text-danger">{{ $message }}</span>@enderror
                     </div>
 
+                    {{-- Summary --}}
                     <div class="form-group">
                         <label for="summary" class="col-form-label">Summary</label>
                         <textarea class="form-control" id="summary" name="summary" tabindex="2">{{ old('summary') }}</textarea>
-                        @error('summary')
-                        <span class="text-danger">{{ $message }}</span>
-                        @enderror
+                        @error('summary')<span class="text-danger">{{ $message }}</span>@enderror
                     </div>
 
                     <div class="row">
+                        {{-- Status --}}
                         <div class="col-md-4">
                             <div class="form-group">
                                 <label for="status" class="col-form-label">Status <span class="text-danger">*</span></label>
@@ -33,97 +33,98 @@
                                     <option value="active" {{ old('status') == 'active' ? 'selected' : '' }}>Active</option>
                                     <option value="inactive" {{ old('status') == 'inactive' ? 'selected' : '' }}>Inactive</option>
                                 </select>
-                                @error('status')
-                                <span class="text-danger">{{ $message }}</span>
-                                @enderror
+                                @error('status')<span class="text-danger">{{ $message }}</span>@enderror
                             </div>
                         </div>
 
+                        {{-- Sort Order --}}
                         <div class="col-md-4">
                             <div class="form-group">
                                 <label for="sort_order" class="col-form-label">Sort Order</label>
-                                <input id="sort_order" type="number" name="sort_order" placeholder="Enter sort order" value="{{ old('sort_order') }}" class="form-control" tabindex="4">
-                                @error('sort_order')
-                                <span class="text-danger">{{ $message }}</span>
-                                @enderror
+                                <input id="sort_order" type="number" name="sort_order" placeholder="Enter sort order"
+                                    value="{{ old('sort_order') }}" class="form-control" tabindex="4">
+                                @error('sort_order')<span class="text-danger">{{ $message }}</span>@enderror
                             </div>
                         </div>
 
+                        {{-- Featured --}}
                         <div class="col-md-4">
                             <div class="form-group">
                                 <label for="is_featured" class="col-form-label">Featured</label><br>
-                                <input type="checkbox" name="is_featured" id="is_featured" value="1" {{ old('is_featured') ? 'checked' : '' }} tabindex="5"> Yes
+                                <input type="checkbox" name="is_featured" id="is_featured" value="1"
+                                    {{ old('is_featured') ? 'checked' : '' }} tabindex="5"> Yes
                             </div>
                         </div>
                     </div>
 
                     <div class="row">
+                        {{-- Parent Category --}}
                         <div class="col-md-6">
                             <div class="form-group" id="parent_cat_div">
                                 <label for="parent_id">Parent Category</label>
                                 <select name="parent_id" class="form-control" tabindex="6">
                                     <option value="">--Select any category--</option>
                                     @foreach($all_cats as $cat)
-                                    <option value="{{ $cat->id }}" {{ old('parent_id') == $cat->id ? 'selected' : '' }}>{{ $cat->title }}</option>
+                                    <option value="{{ $cat->id }}" {{ old('parent_id') == $cat->id ? 'selected' : '' }}>
+                                        {{ $cat->title }}
+                                    </option>
                                     @endforeach
                                 </select>
-                                @error('parent_id')
-                                <span class="text-danger">{{ $message }}</span>
-                                @enderror
+                                @error('parent_id')<span class="text-danger">{{ $message }}</span>@enderror
                             </div>
                         </div>
 
+                        {{-- Associated Brands --}}
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label for="brands">Associated Brands</label>
-                                <select name="brands[]" id="brands" class="form-control selectpicker" multiple data-live-search="true" tabindex="11">
+                                <select name="brands[]" id="brands" class="form-control selectpicker" multiple
+                                    data-live-search="true" tabindex="11">
                                     @foreach($brands as $brand)
-                                    <option value="{{ $brand->id }}" {{ in_array($brand->id, old('brands', [])) ? 'selected' : '' }}>{{ $brand->title }}</option>
+                                    <option value="{{ $brand->id }}" {{ in_array($brand->id, old('brands', [])) ? 'selected' : '' }}>
+                                        {{ $brand->title }}
+                                    </option>
                                     @endforeach
                                 </select>
-                                @error('brands')
-                                <span class="text-danger">{{ $message }}</span>
-                                @enderror
+                                @error('brands')<span class="text-danger">{{ $message }}</span>@enderror
                             </div>
                         </div>
                     </div>
 
+                    {{-- Enabled Filters --}}
                     <div class="form-group">
                         <label>Enabled Filters</label>
                         <div class="d-flex flex-wrap">
                             @foreach($filters as $filter)
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="checkbox" name="filter_ids[]" value="{{ $filter->id }}" id="filter_{{ $filter->id }}" {{ in_array($filter->id, old('filter_ids', [])) ? 'checked' : '' }} tabindex="10">
-                                <label class="form-check-label" for="filter_{{ $filter->id }}">
-                                    {{ $filter->title }}
-                                </label>
+                                <input class="form-check-input" type="checkbox" name="filter_ids[]" value="{{ $filter->id }}"
+                                    id="filter_{{ $filter->id }}" {{ in_array($filter->id, old('filter_ids', [])) ? 'checked' : '' }}
+                                    tabindex="10">
+                                <label class="form-check-label" for="filter_{{ $filter->id }}">{{ $filter->title }}</label>
                             </div>
                             @endforeach
                         </div>
-                        @error('filter_ids')
-                        <span class="text-danger">{{ $message }}</span>
-                        @enderror
+                        @error('filter_ids')<span class="text-danger">{{ $message }}</span>@enderror
                     </div>
-
                 </div>
 
                 <div class="col-md-6">
+                    {{-- SEO Title --}}
                     <div class="form-group">
                         <label for="seo_title" class="col-form-label">SEO Title</label>
-                        <input id="seo_title" type="text" name="seo_title" placeholder="Enter SEO title" value="{{ old('seo_title') }}" class="form-control" tabindex="7">
-                        @error('seo_title')
-                        <span class="text-danger">{{ $message }}</span>
-                        @enderror
+                        <input id="seo_title" type="text" name="seo_title" placeholder="Enter SEO title"
+                            value="{{ old('seo_title') }}" class="form-control" tabindex="7">
+                        @error('seo_title')<span class="text-danger">{{ $message }}</span>@enderror
                     </div>
 
+                    {{-- SEO Description --}}
                     <div class="form-group">
                         <label for="seo_description" class="col-form-label">SEO Description</label>
                         <textarea class="form-control" id="seo_description" name="seo_description" tabindex="8">{{ old('seo_description') }}</textarea>
-                        @error('seo_description')
-                        <span class="text-danger">{{ $message }}</span>
-                        @enderror
+                        @error('seo_description')<span class="text-danger">{{ $message }}</span>@enderror
                     </div>
 
+                    {{-- Photo --}}
                     <div class="form-group">
                         <label for="inputPhoto" class="col-form-label">Photo</label>
                         <div class="input-group">
@@ -132,7 +133,8 @@
                                     <i class="fa fa-picture-o"></i> Choose
                                 </a>
                             </span>
-                            <input id="thumbnail" class="form-control" type="text" name="photo" value="{{ old('photo') }}" readonly>
+                            <input id="thumbnail" class="form-control" type="text" name="photo"
+                                value="{{ old('photo') }}" readonly>
                         </div>
                         <small class="form-text text-muted">Select a single image.</small>
 
@@ -142,13 +144,12 @@
                                 <div id="holder" class="img-fluid"></div>
                             </div>
                         </div>
-                        @error('photo')
-                        <span class="text-danger">{{ $message }}</span>
-                        @enderror
+                        @error('photo')<span class="text-danger">{{ $message }}</span>@enderror
                     </div>
                 </div>
             </div>
 
+            {{-- Submit --}}
             <div class="form-group mb-3">
                 <button class="btn btn-success" type="submit" tabindex="12">Submit</button>
             </div>

@@ -11,7 +11,7 @@
 				<div class="col-md-6">
 					<div class="form-group">
 						<label for="inputTitle" class="col-form-label">Type <span class="text-danger">*</span></label>
-						<input id="inputTitle" type="text" name="type" placeholder="Enter title" value="{{old('type')}}" class="form-control">
+						<input id="inputTitle" type="text" name="type" placeholder="Enter title" value="{{old('type')}}" class="form-control" tabindex="1">
 						@error('type')
 						<span class="text-danger">{{$message}}</span>
 						@enderror
@@ -19,7 +19,7 @@
 
 					<div class="form-group">
 						<label for="status" class="col-form-label">Status <span class="text-danger">*</span></label>
-						<select name="status" class="form-control">
+						<select name="status" id="status" class="form-control" tabindex="2">
 							<option value="active">Active</option>
 							<option value="inactive">Inactive</option>
 						</select>
@@ -27,17 +27,12 @@
 						<span class="text-danger">{{$message}}</span>
 						@enderror
 					</div>
-
-					<div class="form-group mb-3">
-						<button type="reset" class="btn btn-warning">Reset</button>
-						<button class="btn btn-success" type="submit">Submit</button>
-					</div>
 				</div>
 
 				<div class="col-md-6">
 					<div class="form-group">
 						<label for="price" class="col-form-label">Price <span class="text-danger">*</span></label>
-						<input id="price" type="number" name="price" placeholder="Enter price" value="{{old('price')}}" class="form-control">
+						<input id="price" type="number" name="price" placeholder="Enter price" value="{{old('price')}}" class="form-control" tabindex="3">
 						@error('price')
 						<span class="text-danger">{{$message}}</span>
 						@enderror
@@ -45,9 +40,12 @@
 				</div>
 			</div>
 
+			<div class="form-group mb-3">
+				<button type="reset" class="btn btn-warning" tabindex="4">Reset</button>
+				<button class="btn btn-success" type="submit" tabindex="5">Submit</button>
+			</div>
+		</form>
 	</div>
-	</form>
-</div>
 </div>
 
 @endsection

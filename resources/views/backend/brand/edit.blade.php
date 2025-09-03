@@ -13,17 +13,17 @@
 				<div class="col-md-6">
 					<div class="form-group">
 						<label for="inputTitle" class="col-form-label">Title <span class="text-danger">*</span></label>
-						<input id="inputTitle" type="text" name="title" placeholder="Enter title" value="{{$brand->title}}" class="form-control">
+						<input id="inputTitle" type="text" name="title" placeholder="Enter title" value="{{$brand->title}}" class="form-control" tabindex="1">
 						@error('title')
 						<span class="text-danger">{{$message}}</span>
 						@enderror
 					</div>
 					<div class="form-group">
 						<label for="code" class="col-form-label">Code</label>
-						<input type="text" id="code" name="code" class="form-control text-uppercase" value="{{ $brand->code }}" readonly>
+						<input type="text" id="code" name="code" class="form-control text-uppercase" value="{{ $brand->code }}" readonly tabindex="2">
 					</div>
 					<div class="form-group mb-3">
-						<button class="btn btn-success" type="submit">Update</button>
+						<button class="btn btn-success" type="submit" tabindex="5">Update</button>
 					</div>
 				</div>
 
@@ -31,7 +31,7 @@
 				<div class="col-md-6">
 					<div class="form-group">
 						<label for="status" class="col-form-label">Status <span class="text-danger">*</span></label>
-						<select name="status" class="form-control">
+						<select name="status" id="status" class="form-control" tabindex="3">
 							<option value="active" {{(($brand->status=='active') ? 'selected' : '')}}>Active</option>
 							<option value="inactive" {{(($brand->status=='inactive') ? 'selected' : '')}}>Inactive</option>
 						</select>
@@ -42,7 +42,7 @@
 
 					<div class="form-group">
 						<label for="code_locked" class="col-form-label">Lock Code</label><br>
-						<input type="checkbox" name="code_locked" id="code_locked" value="1" {{ $brand->code_locked ? 'checked' : '' }}>
+						<input type="checkbox" name="code_locked" id="code_locked" value="1" {{ $brand->code_locked ? 'checked' : '' }} tabindex="4">
 						<label for="code_locked">Prevent automatic code changes</label>
 					</div>
 				</div>

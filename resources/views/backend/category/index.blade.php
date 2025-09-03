@@ -3,171 +3,153 @@
 @section('main-content')
 <!-- DataTales Example -->
 <div class="card shadow mb-4">
-	<div class="row">
-		<div class="col-md-12">
-			@include('backend.layouts.notification')
-		</div>
-	</div>
-	<div class="card-header py-3 d-flex justify-content-between align-items-center">
-		<h6 class="m-0 font-weight-bold text-primary">Category Lists</h6>
-		<div class="btn-group" role="group" aria-label="Category Actions">
-			<a href="{{ route('category.tree') }}"
-				class="btn btn-warning btn-sm"
-				data-toggle="tooltip"
-				data-placement="bottom"
-				title="Sort Category">
-				<i class="fas fa-sort"></i> Sort Categories
-			</a>
+    <div class="row">
+        <div class="col-md-12">
+            @include('backend.layouts.notification')
+        </div>
+    </div>
+    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+        <h6 class="m-0 font-weight-bold text-primary">Category Lists</h6>
+        <div class="btn-group" role="group" aria-label="Category Actions">
+            <a href="{{ route('category.tree') }}"
+               class="btn btn-warning btn-sm"
+               data-toggle="tooltip"
+               data-placement="bottom"
+               title="Sort Category"
+               tabindex="0">
+                <i class="fas fa-sort"></i> Sort Categories
+            </a>
+            <a href="{{ route('category.create') }}"
+               class="btn btn-success btn-sm ml-2"
+               data-toggle="tooltip"
+               data-placement="bottom"
+               title="Add Category"
+               tabindex="0">
+                <i class="fas fa-plus"></i> Add Category
+            </a>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            @if(count($categories) > 0)
+            <table class="table table-bordered" id="banner-dataTable" width="100%" cellspacing="0">
+                <thead>
+                    <tr>
+                        <th>S.N.</th>
+                        <th>Title</th>
+                        <th>Slug</th>
+                        <th>Is Parent</th>
+                        <th>Parent Category</th>
+                        <th>Photo</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($categories as $category)
+                    <tr>
+                        <td>{{ $loop->iteration }}</td>
+                        <td>{{ $category->title }}</td>
+                        <td>{{ $category->slug }}</td>
+                        <td>{{ is_null($category->parent_id) ? 'Yes' : 'No' }}</td>
+                        <td>{{ $category->parent_chain ?? '' }}</td>
+                        <td>
+                            @if($category->photo)
+                            <img src="{{ $category->photo }}" class="img-fluid" style="max-width:80px" alt="{{ $category->title }}" loading="lazy">
+                            @else
+                            <img src="{{ asset('backend/img/thumbnail-default.webp') }}" class="img-fluid" style="max-width:80px" alt="Default Thumbnail" loading="lazy">
+                            @endif
+                        </td>
+                        <td>
+                            @if($category->status == 'active')
+                            <span class="badge badge-success">{{ $category->status }}</span>
+                            @else
+                            <span class="badge badge-warning">{{ $category->status }}</span>
+                            @endif
+                        </td>
+                        <td>
+                            <a href="{{ route('category.edit', $category->id) }}" class="btn btn-primary btn-sm float-left mr-1" style="height:30px; width:30px; border-radius:50%" data-toggle="tooltip" title="Edit" data-placement="bottom" tabindex="0">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            <form method="POST" action="{{ route('category.destroy', $category->id) }}">
+                                @csrf
+                                @method('DELETE')
+                                <button class="btn btn-danger btn-sm dltBtn" data-id="{{ $category->id }}" style="height:30px; width:30px; border-radius:50%" data-toggle="tooltip" data-placement="bottom" title="Delete" tabindex="0">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    @endforeach
+                </tbody>
+            </table>
 
-			<a href="{{ route('category.create') }}"
-				class="btn btn-success btn-sm ml-2"
-				data-toggle="tooltip"
-				data-placement="bottom"
-				title="Add Category">
-				<i class="fas fa-plus"></i> Add Category
-			</a>
-		</div>
-	</div>
-	<div class="card-body">
-		<div class="table-responsive">
-			@if(count($categories)>0)
-			<table class="table table-bordered" id="banner-dataTable" width="100%" cellspacing="0">
-				<thead>
-					<tr>
-						<th>S.N.</th>
-						<th>Title</th>
-						<th>Slug</th>
-						<th>Is Parent</th>
-						<th>Parent Category</th>
-						<th>Photo</th>
-						<th>Status</th>
-						<th>Action</th>
-					</tr>
-				</thead>
-				<tfoot>
-					<tr>
-						<th>S.N.</th>
-						<th>Title</th>
-						<th>Slug</th>
-						<th>Is Parent</th>
-						<th>Parent Category</th>
-						<th>Photo</th>
-						<th>Status</th>
-						<th>Action</th>
-					</tr>
-				</tfoot>
-				<tbody>
-
-					@foreach($categories as $category)
-					@php
-					@endphp
-					<tr>
-						<td>{{$loop->iteration}}</td>
-						<td>{{$category->title}}</td>
-						<td>{{$category->slug}}</td>
-						<td>{{(is_null($category->parent_id) ? 'Yes': 'No')}}</td>
-						<td>{{$category->parent_chain ?? ''}}</td>
-						<td>
-							@if($category->photo)
-							<img src="{{$category->photo}}" class="img-fluid" style="max-width:80px" alt="{{$category->photo}}" loading="lazy">
-							@else
-							<img src="{{asset('backend/img/thumbnail-default.webp')}}" class="img-fluid" style="max-width:80px" alt="avatar.webp" loading="lazy">
-							@endif
-						</td>
-						<td>
-							@if($category->status=='active')
-							<span class="badge badge-success">{{$category->status}}</span>
-							@else
-							<span class="badge badge-warning">{{$category->status}}</span>
-							@endif
-						</td>
-						<td>
-							<a href="{{route('category.edit',$category->id)}}" class="btn btn-primary btn-sm float-left mr-1" style="height:30px; width:30px;border-radius:50%" data-toggle="tooltip" title="edit" data-placement="bottom"><i class="fas fa-edit"></i></a>
-							<form method="POST" action="{{route('category.destroy',[$category->id])}}">
-								@csrf
-								@method('delete')
-								<button class="btn btn-danger btn-sm dltBtn" data-id={{$category->id}} style="height:30px; width:30px;border-radius:50%" data-toggle="tooltip" data-placement="bottom" title="Delete"><i class="fas fa-trash-alt"></i></button>
-							</form>
-						</td>
-					</tr>
-					@endforeach
-				</tbody>
-			</table>
-
-			{{-- Laravel Pagination --}}
-			<div class="row mt-3">
-				<div class="col-md-12 d-flex justify-content-end">
-					{{ $categories->links('pagination::bootstrap-4') }}
-				</div>
-			</div>
-			@else
-			<h6 class="text-center">No Categories found!!! Please create Category</h6>
-			@endif
-		</div>
-	</div>
+            {{-- Laravel Pagination --}}
+            <div class="row mt-3">
+                <div class="col-md-12 d-flex justify-content-end">
+                    {{ $categories->links('pagination::bootstrap-4') }}
+                </div>
+            </div>
+            @else
+            <h6 class="text-center">No Categories found!!! Please create Category</h6>
+            @endif
+        </div>
+    </div>
 </div>
 @endsection
 
 @push('styles')
-<link href="{{asset('backend/vendor/datatables/dataTables.bootstrap4.min.css')}}" rel="stylesheet">
+<link href="{{ asset('backend/vendor/datatables/dataTables.bootstrap4.min.css') }}" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/1.1.3/sweetalert.min.css" />
 <style>
-	div.dataTables_wrapper div.dataTables_paginate {
-		display: none;
-	}
+    div.dataTables_wrapper div.dataTables_paginate {
+        display: none;
+    }
 </style>
 @endpush
 
 @push('scripts')
-
-<!-- Page level plugins -->
-<script src="{{asset('backend/vendor/datatables/jquery.dataTables.min.js')}}"></script>
-<script src="{{asset('backend/vendor/datatables/dataTables.bootstrap4.min.js')}}"></script>
+<script src="{{ asset('backend/vendor/datatables/jquery.dataTables.min.js') }}"></script>
+<script src="{{ asset('backend/vendor/datatables/dataTables.bootstrap4.min.js') }}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert.min.js"></script>
-
-<!-- Page level custom scripts -->
-<script src="{{asset('backend/js/demo/datatables-demo.js')}}"></script>
+<script src="{{ asset('backend/js/demo/datatables-demo.js') }}"></script>
 <script>
-	$('#banner-dataTable').DataTable({
-		"columnDefs": [{
-			"orderable": false,
-			"targets": [3, 4, 5]
-		}]
-	});
+    $(document).ready(function() {
+        $('#banner-dataTable').DataTable({
+            "columnDefs": [{
+                "orderable": false,
+                "targets": [3, 4, 5, 7]
+            }]
+        });
 
-	// Sweet alert
+        // Enhance accessibility for pagination links
+        $('.pagination a').attr('tabindex', '0');
 
-	function deleteData(id) {
+        $.ajaxSetup({
+            headers: {
+                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+            }
+        });
 
-	}
-</script>
-<script>
-	$(document).ready(function() {
-		$.ajaxSetup({
-			headers: {
-				'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
-			}
-		});
-		$('.dltBtn').click(function(e) {
-			var form = $(this).closest('form');
-			var dataID = $(this).data('id');
-			// alert(dataID);
-			e.preventDefault();
-			swal({
-					title: "Are you sure?",
-					text: "Once deleted, you will not be able to recover this data!",
-					icon: "warning",
-					buttons: true,
-					dangerMode: true,
-				})
-				.then((willDelete) => {
-					if (willDelete) {
-						form.submit();
-					} else {
-						swal("Your data is safe!");
-					}
-				});
-		})
-	})
+        $('.dltBtn').click(function(e) {
+            var form = $(this).closest('form');
+            var dataID = $(this).data('id');
+            e.preventDefault();
+            swal({
+                title: "Are you sure?",
+                text: "Once deleted, you will not be able to recover this data!",
+                icon: "warning",
+                buttons: true,
+                dangerMode: true,
+            })
+            .then((willDelete) => {
+                if (willDelete) {
+                    form.submit();
+                } else {
+                    swal("Your data is safe!");
+                }
+            });
+        });
+    });
 </script>
 @endpush

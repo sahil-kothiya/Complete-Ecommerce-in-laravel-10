@@ -29,7 +29,7 @@
                 <tbody>
                     @foreach ($filters as $filter)
                     <tr>
-                        <td>{{ $filter->id }}</td>
+                        <td>{{ $loop->iteration }}</td>
                         <td>{{ $filter->name }}</td>
                         <td>{{ $filter->title }}</td>
                         <td>{{ ucfirst($filter->status) }}</td>

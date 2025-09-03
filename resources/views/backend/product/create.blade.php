@@ -1,6 +1,5 @@
-@extends('backend.layouts.master')
-
 @section('main-content')
+
 <!-- Main content area for adding a new product -->
 <div class="card">
     <h5 class="card-header">Add Product</h5>
@@ -13,14 +12,14 @@
                     <!-- Product Title Input -->
                     <div class="form-group">
                         <label for="inputTitle">Title <span class="text-danger">*</span></label>
-                        <input type="text" id="inputTitle" name="title" value="{{ old('title') }}" class="form-control" placeholder="Enter title" required>
+                        <input type="text" id="inputTitle" name="title" value="{{ old('title') }}" class="form-control" placeholder="Enter title" required tabindex="1">
                         @error('title')<span class="text-danger">{{ $message }}</span>@enderror
                     </div>
 
                     <!-- Product Summary Input -->
                     <div class="form-group">
                         <label for="summary">Summary <span class="text-danger">*</span></label>
-                        <textarea id="summary" name="summary" class="form-control" required>{{ old('summary') }}</textarea>
+                        <textarea id="summary" name="summary" class="form-control" required tabindex="2">{{ old('summary') }}</textarea>
                         @error('summary')<span class="text-danger">{{ $message }}</span>@enderror
                     </div>
 
@@ -28,7 +27,7 @@
                         <!-- Featured Product Checkbox -->
                         <div class="col-md-3">
                             <div class="form-group form-check">
-                                <input type="checkbox" name="is_featured" id="is_featured" value="1" class="form-check-input" {{ old('is_featured') ? 'checked' : '' }}>
+                                <input type="checkbox" name="is_featured" id="is_featured" value="1" class="form-check-input" {{ old('is_featured') ? 'checked' : '' }} tabindex="3">
                                 <label for="is_featured" class="form-check-label">Is Featured</label>
                             </div>
                         </div>
@@ -37,10 +36,10 @@
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label for="cat_id">Category <span class="text-danger">*</span></label>
-                                <select name="cat_id" id="cat_id" class="form-control" required>
+                                <select name="cat_id" id="cat_id" class="form-control" required tabindex="4">
                                     <option value="">-Select Category-</option>
                                     @foreach($categories as $cat)
-                                        <option value="{{ $cat->id }}" {{ old('cat_id') == $cat->id ? 'selected' : '' }}>{{ $cat->title }}</option>
+                                    <option value="{{ $cat->id }}" {{ old('cat_id') == $cat->id ? 'selected' : '' }}>{{ $cat->title }}</option>
                                     @endforeach
                                 </select>
                                 @error('cat_id')<span class="text-danger">{{ $message }}</span>@enderror
@@ -51,7 +50,7 @@
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label for="price">Price (NRS) <span class="text-danger">*</span></label>
-                                <input type="number" id="price" name="price" class="form-control" value="{{ old('price') }}" placeholder="Enter price" required>
+                                <input type="number" id="price" name="price" class="form-control" value="{{ old('price') }}" placeholder="Enter price" required tabindex="5">
                                 @error('price')<span class="text-danger">{{ $message }}</span>@enderror
                             </div>
                         </div>
@@ -60,7 +59,7 @@
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label for="discount">Discount (%)</label>
-                                <input type="number" id="discount" name="discount" class="form-control" value="{{ old('discount') }}" min="0" max="100" placeholder="Enter discount">
+                                <input type="number" id="discount" name="discount" class="form-control" value="{{ old('discount') }}" min="0" max="100" placeholder="Enter discount" tabindex="6">
                                 @error('discount')<span class="text-danger">{{ $message }}</span>@enderror
                             </div>
                         </div>
@@ -72,9 +71,9 @@
                             <div class="form-group">
                                 <label for="size">Size</label>
                                 @php $selectedSizes = old('size', []); @endphp
-                                <select name="size[]" class="form-control selectpicker" multiple data-live-search="true">
+                                <select name="size[]" class="form-control selectpicker" multiple data-live-search="true" tabindex="7">
                                     @foreach(['S' => 'Small', 'M' => 'Medium', 'L' => 'Large', 'XL' => 'Extra Large'] as $key => $label)
-                                        <option value="{{ $key }}" {{ in_array($key, $selectedSizes) ? 'selected' : '' }}>{{ $label }}</option>
+                                    <option value="{{ $key }}" {{ in_array($key, $selectedSizes) ? 'selected' : '' }}>{{ $label }}</option>
                                     @endforeach
                                 </select>
                                 @error('size')<span class="text-danger">{{ $message }}</span>@enderror
@@ -86,14 +85,14 @@
                             <div class="form-group">
                                 <label for="brand_id">Brand</label>
                                 <div class="input-group">
-                                    <select name="brand_id" id="brand_id" class="form-control">
+                                    <select name="brand_id" id="brand_id" class="form-control" tabindex="8">
                                         <option value="">-Select Brand-</option>
                                         @foreach($brands as $brand)
-                                            <option value="{{ $brand->id }}" {{ old('brand_id') == $brand->id ? 'selected' : '' }}>{{ $brand->title }}</option>
+                                        <option value="{{ $brand->id }}" {{ old('brand_id') == $brand->id ? 'selected' : '' }}>{{ $brand->title }}</option>
                                         @endforeach
                                     </select>
                                     <div class="input-group-append">
-                                        <button type="button" id="addBrandBtn" class="btn btn-outline-primary">
+                                        <button type="button" id="addBrandBtn" class="btn btn-outline-primary" tabindex="9">
                                             <i class="fa fa-plus"></i>
                                         </button>
                                     </div>
@@ -106,10 +105,10 @@
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label for="condition">Condition</label>
-                                <select name="condition" class="form-control">
+                                <select name="condition" class="form-control" tabindex="10">
                                     <option value="">-Select Condition-</option>
                                     @foreach(['default' => 'Default', 'new' => 'New', 'hot' => 'Hot'] as $value => $label)
-                                        <option value="{{ $value }}" {{ old('condition') === $value ? 'selected' : '' }}>{{ $label }}</option>
+                                    <option value="{{ $value }}" {{ old('condition') === $value ? 'selected' : '' }}>{{ $label }}</option>
                                     @endforeach
                                 </select>
                                 @error('condition')<span class="text-danger">{{ $message }}</span>@enderror
@@ -120,7 +119,7 @@
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label for="stock">Quantity <span class="text-danger">*</span></label>
-                                <input type="number" id="stock" name="stock" class="form-control" value="{{ old('stock') }}" min="0" placeholder="Enter quantity" required>
+                                <input type="number" id="stock" name="stock" class="form-control" value="{{ old('stock') }}" min="0" placeholder="Enter quantity" required tabindex="11">
                                 @error('stock')<span class="text-danger">{{ $message }}</span>@enderror
                             </div>
                         </div>
@@ -129,7 +128,7 @@
                     <!-- Product Status Selection -->
                     <div class="form-group">
                         <label for="status">Status <span class="text-danger">*</span></label>
-                        <select name="status" class="form-control" required>
+                        <select name="status" class="form-control" required tabindex="12">
                             <option value="active" {{ old('status') == 'active' ? 'selected' : '' }}>Active</option>
                             <option value="inactive" {{ old('status') == 'inactive' ? 'selected' : '' }}>Inactive</option>
                         </select>
@@ -142,7 +141,7 @@
                     <!-- Product Description Input -->
                     <div class="form-group">
                         <label for="description">Description</label>
-                        <textarea id="description" name="description" class="form-control">{{ old('description') }}</textarea>
+                        <textarea id="description" name="description" class="form-control" tabindex="13">{{ old('description') }}</textarea>
                         @error('description')<span class="text-danger">{{ $message }}</span>@enderror
                     </div>
 
@@ -151,11 +150,11 @@
                         <label for="inputPhoto">Photos <span class="text-danger">*</span></label>
                         <div class="input-group">
                             <span class="input-group-btn">
-                                <a id="lfm" data-input="thumbnail" data-preview="holder" class="btn btn-primary">
+                                <a id="lfm" data-input="thumbnail" data-preview="holder" class="btn btn-primary" tabindex="14">
                                     <i class="fa fa-picture-o"></i> Choose
                                 </a>
                             </span>
-                            <input type="text" id="thumbnail" name="photo" class="form-control" placeholder="Comma-separated image URLs" value="{{ old('photo') }}" readonly required>
+                            <input type="text" id="thumbnail" name="photo" class="form-control" placeholder="Comma-separated image URLs" value="{{ old('photo') }}" readonly required tabindex="15">
                         </div>
                         <small class="form-text text-muted">Select multiple images. They will be comma-separated.</small>
                         <div id="image-preview-area" style="margin-top: 15px;">
@@ -166,7 +165,7 @@
 
                     <!-- Alt Text Toggle Checkbox -->
                     <div class="form-group form-check" id="alt-text-toggle" style="display: none;">
-                        <input type="checkbox" name="enable_alt_text" id="enable_alt_text" value="1" class="form-check-input">
+                        <input type="checkbox" name="enable_alt_text" id="enable_alt_text" value="1" class="form-check-input" tabindex="16">
                         <label for="enable_alt_text" class="form-check-label">
                             <i class="fa fa-image"></i> Enable Alt Text for Images
                             <small class="text-muted d-block">Check to add descriptive text for images (improves SEO & accessibility)</small>
@@ -189,7 +188,7 @@
 
             <!-- Form Submission Button -->
             <div class="form-group mt-3">
-                <button type="submit" class="btn btn-success">Add Product</button>
+                <button type="submit" class="btn btn-success" tabindex="17">Add Product</button>
             </div>
         </form>
     </div>
@@ -203,19 +202,19 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="addBrandModalLabel">Add New Brand</h5>
-                    <button type="button" class="close" data-dismiss="modal">
+                    <button type="button" class="close" data-dismiss="modal" tabindex="18">
                         <span>&times;</span>
                     </button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
                         <label for="new_brand_title">Brand Name</label>
-                        <input type="text" name="title" id="new_brand_title" class="form-control" required>
+                        <input type="text" name="title" id="new_brand_title" class="form-control" required tabindex="19">
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="submit" class="btn btn-success">Save</button>
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success" tabindex="20">Save</button>
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal" tabindex="21">Cancel</button>
                 </div>
             </div>
         </form>
@@ -322,7 +321,9 @@
         .image-container {
             margin: 3px;
         }
-        .image-preview, .image-not-found {
+
+        .image-preview,
+        .image-not-found {
             height: 100px;
             width: 100px;
             font-size: 10px;
@@ -438,6 +439,7 @@
             max-height: 0;
             transform: translateY(-10px);
         }
+
         to {
             opacity: 1;
             max-height: 1000px;
@@ -451,6 +453,7 @@
             max-height: 1000px;
             transform: translateY(0);
         }
+
         to {
             opacity: 0;
             max-height: 0;
@@ -479,8 +482,13 @@
     }
 
     @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
+        from {
+            opacity: 0;
+        }
+
+        to {
+            opacity: 1;
+        }
     }
 </style>
 @endpush
@@ -520,7 +528,7 @@
     function showNotification(message, type = 'info') {
         $('.notification-toast').remove();
         const notificationClass = type === 'success' ? 'alert-success' :
-                                 type === 'error' ? 'alert-danger' : 'alert-info';
+            type === 'error' ? 'alert-danger' : 'alert-info';
         const $notification = $(`
             <div class="alert ${notificationClass} notification-toast alert-dismissible" 
                  style="position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 350px;">
@@ -531,7 +539,9 @@
             </div>
         `);
         $('body').append($notification);
-        setTimeout(() => $notification.fadeOut(400, function() { $(this).remove(); }), 4000);
+        setTimeout(() => $notification.fadeOut(400, function() {
+            $(this).remove();
+        }), 4000);
     }
 
     // Toggle alt text section visibility
@@ -584,7 +594,9 @@
                 container.append('<div class="primary-badge"><small class="badge badge-success">Primary</small></div>');
             }
 
-            img.on('error', function() { handleImageError(this); });
+            img.on('error', function() {
+                handleImageError(this);
+            });
             container.append(img);
             $holder.append(container);
 
@@ -605,36 +617,37 @@
         const isPrimary = index === 0;
         const counterClass = isPrimary ? 'image-counter primary-counter' : 'image-counter';
         const primaryBadge = isPrimary ? '<span class="badge badge-success badge-sm ml-1">Primary</span>' : '';
+        const tabIndex = 22 + index; // Start after static form elements
 
         const altTextHtml = `
-            <div class="col-md-6 alt-text-item" data-index="${index}">
-                <div class="d-flex align-items-start">
-                    <div class="${counterClass}">${index + 1}</div>
-                    <div class="alt-text-image-container">
-                        <img src="${imageUrl}" class="alt-text-preview mr-3" alt="Preview" 
-                             onerror="handleAltTextImageError(this, '${suggestedAlt}')">
-                    </div>
-                    <div class="flex-fill">
-                        <label class="font-weight-bold mb-2">
-                            Alt Text for Image ${index + 1}:${primaryBadge}
-                        </label>
-                        <textarea name="alt_text[${index}]" class="form-control alt-text-input" 
-                                  placeholder="Describe this image (e.g., ${suggestedAlt})"
-                                  data-index="${index}">${suggestedAlt}</textarea>
-                        <small class="form-text text-muted">
-                            Good alt text: descriptive, concise (125 chars or less), includes product name
-                        </small>
-                        <div class="mt-2">
-                            <button type="button" class="btn btn-sm btn-outline-primary auto-generate-alt" 
-                                    data-index="${index}" data-type="new">
-                                <i class="fa fa-magic"></i> Auto-generate
-                            </button>
-                            <span class="ml-2 text-muted char-count">0/125 characters</span>
-                        </div>
+        <div class="col-md-6 alt-text-item" data-index="${index}">
+            <div class="d-flex align-items-start">
+                <div class="${counterClass}">${index + 1}</div>
+                <div class="alt-text-image-container">
+                    <img src="${imageUrl}" class="alt-text-preview mr-3" alt="Preview" 
+                         onerror="handleAltTextImageError(this, '${suggestedAlt}')">
+                </div>
+                <div class="flex-fill">
+                    <label class="font-weight-bold mb-2">
+                        Alt Text for Image ${index + 1}:${primaryBadge}
+                    </label>
+                    <textarea name="alt_text[${index}]" class="form-control alt-text-input" 
+                              placeholder="Describe this image (e.g., ${suggestedAlt})"
+                              data-index="${index}" tabindex="${tabIndex}">${suggestedAlt}</textarea>
+                    <small class="form-text text-muted">
+                        Good alt text: descriptive, concise (125 chars or less), includes product name
+                    </small>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary auto-generate-alt" 
+                                data-index="${index}" data-type="new" tabindex="${tabIndex + 1}">
+                            <i class="fa fa-magic"></i> Auto-generate
+                        </button>
+                        <span class="ml-2 text-muted char-count">0/125 characters</span>
                     </div>
                 </div>
             </div>
-        `;
+        </div>
+    `;
 
         container.append(altTextHtml);
         updateCharCount(index);
@@ -717,7 +730,9 @@
 
             if ($('#enable_alt_text').is(':checked')) {
                 const altTexts = $('textarea[name^="alt_text["]');
-                const emptyAltTexts = altTexts.filter(function() { return $(this).val().trim() === ''; });
+                const emptyAltTexts = altTexts.filter(function() {
+                    return $(this).val().trim() === '';
+                });
                 if (emptyAltTexts.length > 0) {
                     e.preventDefault();
                     showNotification('Please provide alt text for all images or uncheck "Enable Alt Text" option.', 'error');
@@ -779,7 +794,10 @@
             $.ajax({
                 url: "{{ route('brand.store.ajax') }}",
                 type: "POST",
-                data: { _token: "{{ csrf_token() }}", title: brandName },
+                data: {
+                    _token: "{{ csrf_token() }}",
+                    title: brandName
+                },
                 success: function(res) {
                     if (res.status === 'success') {
                         $('#brand_id').append(`<option value="${res.data.id}" selected>${res.data.title}</option>`);

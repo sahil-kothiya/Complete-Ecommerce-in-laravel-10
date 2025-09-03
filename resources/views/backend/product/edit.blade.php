@@ -14,14 +14,14 @@
                     <!-- Product Title Input -->
                     <div class="form-group">
                         <label for="inputTitle">Title <span class="text-danger">*</span></label>
-                        <input type="text" id="inputTitle" name="title" value="{{ old('title', $product->title) }}" class="form-control" placeholder="Enter title" required>
+                        <input type="text" id="inputTitle" name="title" value="{{ old('title', $product->title) }}" class="form-control" placeholder="Enter title" required tabindex="1">
                         @error('title')<span class="text-danger">{{ $message }}</span>@enderror
                     </div>
 
                     <!-- Product Summary Input -->
                     <div class="form-group">
                         <label for="summary">Summary <span class="text-danger">*</span></label>
-                        <textarea id="summary" name="summary" class="form-control" required>{{ old('summary', $product->summary) }}</textarea>
+                        <textarea id="summary" name="summary" class="form-control" required tabindex="2">{{ old('summary', $product->summary) }}</textarea>
                         @error('summary')<span class="text-danger">{{ $message }}</span>@enderror
                     </div>
 
@@ -29,7 +29,7 @@
                         <!-- Featured Product Checkbox -->
                         <div class="col-md-3">
                             <div class="form-group form-check">
-                                <input type="checkbox" name="is_featured" id="is_featured" value="1" class="form-check-input" {{ old('is_featured', $product->is_featured) ? 'checked' : '' }}>
+                                <input type="checkbox" name="is_featured" id="is_featured" value="1" class="form-check-input" {{ old('is_featured', $product->is_featured) ? 'checked' : '' }} tabindex="3">
                                 <label for="is_featured" class="form-check-label">Is Featured</label>
                             </div>
                         </div>
@@ -38,10 +38,10 @@
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label for="cat_id">Category <span class="text-danger">*</span></label>
-                                <select name="cat_id" id="cat_id" class="form-control" required>
+                                <select name="cat_id" id="cat_id" class="form-control" required tabindex="4">
                                     <option value="">-Select Category-</option>
                                     @foreach($categories as $cat)
-                                        <option value="{{ $cat->id }}" {{ old('cat_id', $product->cat_id) == $cat->id ? 'selected' : '' }}>{{ $cat->title }}</option>
+                                    <option value="{{ $cat->id }}" {{ old('cat_id', $product->cat_id) == $cat->id ? 'selected' : '' }}>{{ $cat->title }}</option>
                                     @endforeach
                                 </select>
                                 @error('cat_id')<span class="text-danger">{{ $message }}</span>@enderror
@@ -52,7 +52,7 @@
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label for="price">Price (NRS) <span class="text-danger">*</span></label>
-                                <input type="number" id="price" name="price" class="form-control" value="{{ old('price', $product->price) }}" placeholder="Enter price" required>
+                                <input type="number" id="price" name="price" class="form-control" value="{{ old('price', $product->price) }}" placeholder="Enter price" required tabindex="5">
                                 @error('price')<span class="text-danger">{{ $message }}</span>@enderror
                             </div>
                         </div>
@@ -61,7 +61,7 @@
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label for="discount">Discount (%)</label>
-                                <input type="number" id="discount" name="discount" class="form-control" value="{{ old('discount', $product->discount) }}" min="0" max="100" placeholder="Enter discount">
+                                <input type="number" id="discount" name="discount" class="form-control" value="{{ old('discount', $product->discount) }}" min="0" max="100" placeholder="Enter discount" tabindex="6">
                                 @error('discount')<span class="text-danger">{{ $message }}</span>@enderror
                             </div>
                         </div>
@@ -73,9 +73,9 @@
                             <div class="form-group">
                                 <label for="size">Size</label>
                                 @php $selectedSizes = old('size', explode(',', $product->size ?? '')); @endphp
-                                <select name="size[]" class="form-control selectpicker" multiple data-live-search="true">
+                                <select name="size[]" id="size" class="form-control selectpicker" multiple data-live-search="true" tabindex="7">
                                     @foreach(['S' => 'Small', 'M' => 'Medium', 'L' => 'Large', 'XL' => 'Extra Large'] as $key => $label)
-                                        <option value="{{ $key }}" {{ in_array($key, $selectedSizes) ? 'selected' : '' }}>{{ $label }}</option>
+                                    <option value="{{ $key }}" {{ in_array($key, $selectedSizes) ? 'selected' : '' }}>{{ $label }}</option>
                                     @endforeach
                                 </select>
                                 @error('size')<span class="text-danger">{{ $message }}</span>@enderror
@@ -87,14 +87,14 @@
                             <div class="form-group">
                                 <label for="brand_id">Brand</label>
                                 <div class="input-group">
-                                    <select name="brand_id" id="brand_id" class="form-control">
+                                    <select name="brand_id" id="brand_id" class="form-control" tabindex="8">
                                         <option value="">-Select Brand-</option>
                                         @foreach($brands as $brand)
-                                            <option value="{{ $brand->id }}" {{ old('brand_id', $product->brand_id) == $brand->id ? 'selected' : '' }}>{{ $brand->title }}</option>
+                                        <option value="{{ $brand->id }}" {{ old('brand_id', $product->brand_id) == $brand->id ? 'selected' : '' }}>{{ $brand->title }}</option>
                                         @endforeach
                                     </select>
                                     <div class="input-group-append">
-                                        <button type="button" id="addBrandBtn" class="btn btn-outline-primary">
+                                        <button type="button" id="addBrandBtn" class="btn btn-outline-primary" tabindex="9">
                                             <i class="fa fa-plus"></i>
                                         </button>
                                     </div>
@@ -107,10 +107,10 @@
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label for="condition">Condition</label>
-                                <select name="condition" class="form-control">
+                                <select name="condition" id="condition" class="form-control" tabindex="10">
                                     <option value="">-Select Condition-</option>
                                     @foreach(['default' => 'Default', 'new' => 'New', 'hot' => 'Hot'] as $value => $label)
-                                        <option value="{{ $value }}" {{ old('condition', $product->condition) === $value ? 'selected' : '' }}>{{ $label }}</option>
+                                    <option value="{{ $value }}" {{ old('condition', $product->condition) === $value ? 'selected' : '' }}>{{ $label }}</option>
                                     @endforeach
                                 </select>
                                 @error('condition')<span class="text-danger">{{ $message }}</span>@enderror
@@ -121,7 +121,7 @@
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label for="stock">Quantity <span class="text-danger">*</span></label>
-                                <input type="number" id="stock" name="stock" class="form-control" value="{{ old('stock', $product->stock) }}" min="0" placeholder="Enter quantity" required>
+                                <input type="number" id="stock" name="stock" class="form-control" value="{{ old('stock', $product->stock) }}" min="0" placeholder="Enter quantity" required tabindex="11">
                                 @error('stock')<span class="text-danger">{{ $message }}</span>@enderror
                             </div>
                         </div>
@@ -132,7 +132,7 @@
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label for="status">Status <span class="text-danger">*</span></label>
-                                <select name="status" class="form-control" required>
+                                <select name="status" id="status" class="form-control" required tabindex="12">
                                     <option value="active" {{ old('status', $product->status) == 'active' ? 'selected' : '' }}>Active</option>
                                     <option value="inactive" {{ old('status', $product->status) == 'inactive' ? 'selected' : '' }}>Inactive</option>
                                 </select>
@@ -144,7 +144,7 @@
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label for="sku">SKU</label>
-                                <input type="text" id="sku" name="sku" class="form-control" value="{{ old('sku', $product->sku) }}" placeholder="Enter SKU" readonly>
+                                <input type="text" id="sku" name="sku" class="form-control" value="{{ old('sku', $product->sku) }}" placeholder="Enter SKU" readonly tabindex="13">
                                 @error('sku')<span class="text-danger">{{ $message }}</span>@enderror
                             </div>
                         </div>
@@ -156,7 +156,7 @@
                     <!-- Product Description Input -->
                     <div class="form-group">
                         <label for="description">Description</label>
-                        <textarea id="description" name="description" class="form-control">{{ old('description', $product->description) }}</textarea>
+                        <textarea id="description" name="description" class="form-control" tabindex="14">{{ old('description', $product->description) }}</textarea>
                         @error('description')<span class="text-danger">{{ $message }}</span>@enderror
                     </div>
 
@@ -165,11 +165,11 @@
                         <label for="inputPhoto">Photos <span class="text-danger">*</span></label>
                         <div class="input-group">
                             <span class="input-group-btn">
-                                <a id="lfm" data-input="thumbnail" data-preview="holder" class="btn btn-primary">
+                                <a id="lfm" data-input="thumbnail" data-preview="holder" class="btn btn-primary" tabindex="15">
                                     <i class="fa fa-picture-o"></i> Choose
                                 </a>
                             </span>
-                            <input type="text" id="thumbnail" name="photo" class="form-control" placeholder="Comma-separated image URLs" value="{{ old('photo', $product->images->pluck('image_path')->implode(',')) }}" readonly required>
+                            <input type="text" id="thumbnail" name="photo" class="form-control" placeholder="Comma-separated image URLs" value="{{ old('photo', $product->images->pluck('image_path')->implode(',')) }}" readonly required tabindex="16">
                         </div>
                         <small class="form-text text-muted">Select multiple images. They will be comma-separated.</small>
 
@@ -177,32 +177,33 @@
                         <div id="image-preview-area" style="margin-top: 15px;">
                             <!-- Existing images display -->
                             @if($product->images->count())
-                                <div id="existing-images">
-                                    <label class="text-muted small">Current Images:</label>
-                                    <div id="existing-holder" class="img-fluid" style="margin-bottom: 10px;">
-                                        @foreach($product->images as $image)
-                                            <div class="image-container" data-image-id="{{ $image->id }}">
-                                                <img src="{{ asset($image->image_path) }}"
-                                                     class="img-thumbnail image-preview"
-                                                     alt="{{ $image->alt_text ?? 'Product Image' }}"
-                                                     data-is-primary="{{ $image->is_primary ? 'true' : 'false' }}"
-                                                     data-fallback-text="{{ $image->alt_text ?? $product->title . ' - Product Image' }}"
-                                                     onerror="handleImageError(this)">
-                                                <button type="button" class="btn btn-danger btn-sm delete-image-btn"
-                                                        data-image-id="{{ $image->id }}"
-                                                        data-product-id="{{ $product->id }}"
-                                                        title="Delete Image">
-                                                    <i class="fa fa-trash"></i>
-                                                </button>
-                                                @if($image->is_primary)
-                                                    <div class="primary-badge">
-                                                        <small class="badge badge-success">Primary</small>
-                                                    </div>
-                                                @endif
-                                            </div>
-                                        @endforeach
+                            <div id="existing-images">
+                                <label class="text-muted small">Current Images:</label>
+                                <div id="existing-holder" class="img-fluid" style="margin-bottom: 10px;">
+                                    @foreach($product->images as $index => $image)
+                                    <div class="image-container" data-image-id="{{ $image->id }}">
+                                        <img src="{{ asset($image->image_path) }}"
+                                            class="img-thumbnail image-preview"
+                                            alt="{{ $image->alt_text ?? 'Product Image' }}"
+                                            data-is-primary="{{ $image->is_primary ? 'true' : 'false' }}"
+                                            data-fallback-text="{{ $image->alt_text ?? $product->title . ' - Product Image' }}"
+                                            onerror="handleImageError(this)">
+                                        <button type="button" class="btn btn-danger btn-sm delete-image-btn"
+                                            data-image-id="{{ $image->id }}"
+                                            data-product-id="{{ $product->id }}"
+                                            title="Delete Image"
+                                            tabindex="{{ 17 + $index }}">
+                                            <i class="fa fa-trash"></i>
+                                        </button>
+                                        @if($image->is_primary)
+                                        <div class="primary-badge">
+                                            <small class="badge badge-success">Primary</small>
+                                        </div>
+                                        @endif
                                     </div>
+                                    @endforeach
                                 </div>
+                            </div>
                             @endif
 
                             <!-- New images preview -->
@@ -217,7 +218,7 @@
                     <!-- Alt Text Toggle Checkbox -->
                     <div class="form-group form-check">
                         <input type="checkbox" name="enable_alt_text" id="enable_alt_text" value="1" class="form-check-input"
-                               {{ old('enable_alt_text', $product->images->whereNotNull('alt_text')->count() > 0) ? 'checked' : '' }}>
+                            {{ old('enable_alt_text', $product->images->whereNotNull('alt_text')->count() > 0) ? 'checked' : '' }} tabindex="{{ 17 + $product->images->count() }}">
                         <label for="enable_alt_text" class="form-check-label">
                             <i class="fa fa-image"></i> Enable Alt Text for Images
                             <small class="text-muted d-block">Check to add/edit descriptive text for images (improves SEO & accessibility)</small>
@@ -228,50 +229,54 @@
 
             <!-- Current Alt Text Section -->
             @if($product->images->count())
-                <div class="row" id="current-alt-section" style="{{ old('enable_alt_text', $product->images->whereNotNull('alt_text')->count() > 0) ? 'display: block;' : 'display: none;' }}">
-                    <div class="col-12">
-                        <hr>
-                        <h6 class="text-primary">
-                            <i class="fa fa-image"></i> Current Image Alt Text
-                        </h6>
-                        <p class="text-muted small">Update alt text for existing images to improve SEO and accessibility.</p>
-                        <div id="current-alt-container" class="row">
-                            @foreach($product->images as $index => $image)
-                                <div class="col-md-6 alt-text-item" data-existing-id="{{ $image->id }}">
-                                    <div class="d-flex align-items-start">
-                                        <div class="image-counter {{ $image->is_primary ? 'primary-counter' : '' }}">{{ $index + 1 }}</div>
-                                        <div class="alt-text-image-container">
-                                            <img src="{{ asset($image->image_path) }}"
-                                                 class="alt-text-preview mr-3"
-                                                 alt="{{ $image->alt_text ?? 'Product Image Preview' }}"
-                                                 onerror="handleAltTextImageError(this, '{{ $image->alt_text ?? $product->title . ' - Product Image' }}')">
-                                        </div>
-                                        <div class="flex-fill">
-                                            <label class="font-weight-bold mb-2">
-                                                Alt Text for Image {{ $index + 1 }}:
-                                                @if($image->is_primary)
-                                                    <span class="badge badge-success badge-sm">Primary</span>
-                                                @endif
-                                            </label>
-                                            <textarea name="existing_alt_text[{{ $image->id }}]" class="form-control alt-text-input"
-                                                      placeholder="Describe this image"
-                                                      data-index="existing-{{ $image->id }}">{{ old('existing_alt_text.' . $image->id, $image->alt_text) }}</textarea>
-                                            <small class="form-text text-muted">
-                                                Good alt text: descriptive, concise (125 chars or less), includes product name
-                                            </small>
-                                            <div class="mt-2">
-                                                <button type="button" class="btn btn-sm btn-outline-primary auto-generate-alt" data-index="existing-{{ $image->id }}" data-type="existing">
-                                                    <i class="fa fa-magic"></i> Auto-generate
-                                                </button>
-                                                <span class="ml-2 text-muted char-count">0/125 characters</span>
-                                            </div>
-                                        </div>
+            <div class="row" id="current-alt-section" style="{{ old('enable_alt_text', $product->images->whereNotNull('alt_text')->count() > 0) ? 'display: block;' : 'display: none;' }}">
+                <div class="col-12">
+                    <hr>
+                    <h6 class="text-primary">
+                        <i class="fa fa-image"></i> Current Image Alt Text
+                    </h6>
+                    <p class="text-muted small">Update alt text for existing images to improve SEO and accessibility.</p>
+                    <div id="current-alt-container" class="row">
+                        @foreach($product->images as $index => $image)
+                        <div class="col-md-6 alt-text-item" data-existing-id="{{ $image->id }}">
+                            <div class="d-flex align-items-start">
+                                <div class="image-counter {{ $image->is_primary ? 'primary-counter' : '' }}">{{ $index + 1 }}</div>
+                                <div class="alt-text-image-container">
+                                    <img src="{{ asset($image->image_path) }}"
+                                        class="alt-text-preview mr-3"
+                                        alt="{{ $image->alt_text ?? 'Product Image Preview' }}"
+                                        onerror="handleAltTextImageError(this, '{{ $image->alt_text ?? $product->title . ' - Product Image' }}')">
+                                </div>
+                                <div class="flex-fill">
+                                    <label class="font-weight-bold mb-2">
+                                        Alt Text for Image {{ $index + 1 }}:
+                                        @if($image->is_primary)
+                                        <span class="badge badge-success badge-sm">Primary</span>
+                                        @endif
+                                    </label>
+                                    <textarea name="existing_alt_text[{{ $image->id }}]" class="form-control alt-text-input"
+                                        placeholder="Describe this image"
+                                        data-index="existing-{{ $image->id }}"
+                                        tabindex="{{ 18 + $product->images->count() + $index }}">{{ old('existing_alt_text.' . $image->id, $image->alt_text) }}</textarea>
+                                    <small class="form-text text-muted">
+                                        Good alt text: descriptive, concise (125 chars or less), includes product name
+                                    </small>
+                                    <div class="mt-2">
+                                        <button type="button" class="btn btn-sm btn-outline-primary auto-generate-alt"
+                                            data-index="existing-{{ $image->id }}"
+                                            data-type="existing"
+                                            tabindex="{{ 18 + $product->images->count() * 2 + $index }}">
+                                            <i class="fa fa-magic"></i> Auto-generate
+                                        </button>
+                                        <span class="ml-2 text-muted char-count">0/125 characters</span>
                                     </div>
                                 </div>
-                            @endforeach
+                            </div>
                         </div>
+                        @endforeach
                     </div>
                 </div>
+            </div>
             @endif
 
             <!-- New Images Alt Text Section -->
@@ -288,7 +293,7 @@
 
             <!-- Form Submission Button -->
             <div class="form-group mt-3">
-                <button type="submit" class="btn btn-success">Update Product</button>
+                <button type="submit" class="btn btn-success" tabindex="{{ 18 + $product->images->count() * 3 }}">Update Product</button>
             </div>
         </form>
     </div>
@@ -302,19 +307,19 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="addBrandModalLabel">Add New Brand</h5>
-                    <button type="button" class="close" data-dismiss="modal">
+                    <button type="button" class="close" data-dismiss="modal" tabindex="101">
                         <span>&times;</span>
                     </button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
                         <label for="new_brand_title">Brand Name</label>
-                        <input type="text" name="title" id="new_brand_title" class="form-control" required>
+                        <input type="text" name="title" id="new_brand_title" class="form-control" required tabindex="102">
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="submit" class="btn btn-success">Save</button>
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success" tabindex="103">Save</button>
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal" tabindex="104">Cancel</button>
                 </div>
             </div>
         </form>
@@ -327,6 +332,12 @@
 <link rel="stylesheet" href="{{ asset('backend/summernote/summernote.min.css') }}">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/css/bootstrap-select.css" />
 <style>
+    /* Ensure focus outline for accessibility */
+    [tabindex]:focus {
+        outline: 2px solid #007bff;
+        outline-offset: 2px;
+    }
+
     /* Ensure responsive table behavior */
     .table-responsive {
         overflow-x: auto;
@@ -338,7 +349,8 @@
         position: relative;
     }
 
-    #existing-holder, #holder {
+    #existing-holder,
+    #holder {
         min-height: 140px;
         padding: 10px;
         display: flex;
@@ -504,11 +516,14 @@
         .image-container {
             margin: 3px;
         }
-        .image-preview, .image-not-found {
+
+        .image-preview,
+        .image-not-found {
             height: 100px;
             width: 100px;
             font-size: 10px;
         }
+
         .delete-image-btn {
             width: 24px;
             height: 24px;
@@ -627,6 +642,7 @@
             max-height: 0;
             transform: translateY(-10px);
         }
+
         to {
             opacity: 1;
             max-height: 1000px;
@@ -640,6 +656,7 @@
             max-height: 1000px;
             transform: translateY(0);
         }
+
         to {
             opacity: 0;
             max-height: 0;
@@ -702,7 +719,7 @@
     function showNotification(message, type = 'info') {
         $('.notification-toast').remove();
         const notificationClass = type === 'success' ? 'alert-success' :
-                                 type === 'error' ? 'alert-danger' : 'alert-info';
+            type === 'error' ? 'alert-danger' : 'alert-info';
         const $notification = $(`
             <div class="alert ${notificationClass} notification-toast alert-dismissible" 
                  style="position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 350px;">
@@ -713,7 +730,9 @@
             </div>
         `);
         $('body').append($notification);
-        setTimeout(() => $notification.fadeOut(400, function() { $(this).remove(); }), 4000);
+        setTimeout(() => $notification.fadeOut(400, function() {
+            $(this).remove();
+        }), 4000);
     }
 
     // Update thumbnail input after image deletion
@@ -795,7 +814,9 @@
                 'data-fallback-text': `New Image ${index + 1}`
             });
 
-            img.on('error', function() { handleImageError(this); });
+            img.on('error', function() {
+                handleImageError(this);
+            });
             container.append(img);
             $holder.append(container);
 
@@ -809,33 +830,41 @@
     function createAltTextInput(imageUrl, index, container) {
         const productTitle = $('#inputTitle').val() || 'Product';
         const suggestedAlt = `${productTitle} - Image ${index + 1}`;
+        const baseTabIndex = (index * 3) + 1; // each block gets 3 tabbable elements
+
         const altTextHtml = `
-            <div class="col-md-6 alt-text-item" data-index="${index}">
-                <div class="d-flex align-items-start">
-                    <div class="image-counter">${index + 1}</div>
-                    <div class="alt-text-image-container">
-                        <img src="${imageUrl}" class="alt-text-preview mr-3" alt="Preview" 
-                             onerror="handleAltTextImageError(this, '${suggestedAlt}')">
-                    </div>
-                    <div class="flex-fill">
-                        <label class="font-weight-bold mb-2">Alt Text for New Image ${index + 1}:</label>
-                        <textarea name="new_alt_text[]" class="form-control alt-text-input" 
-                                  placeholder="Describe this image (e.g., ${suggestedAlt})"
-                                  data-index="new-${index}">${suggestedAlt}</textarea>
-                        <small class="form-text text-muted">
-                            Good alt text: descriptive, concise (125 chars or less), includes product name
-                        </small>
-                        <div class="mt-2">
-                            <button type="button" class="btn btn-sm btn-outline-primary auto-generate-alt" 
-                                    data-index="new-${index}" data-type="new">
-                                <i class="fa fa-magic"></i> Auto-generate
-                            </button>
-                            <span class="ml-2 text-muted char-count">0/125 characters</span>
-                        </div>
+        <div class="col-md-6 alt-text-item" data-index="${index}">
+            <div class="d-flex align-items-start">
+                <div class="image-counter">${index + 1}</div>
+                <div class="alt-text-image-container">
+                    <img src="${imageUrl}" class="alt-text-preview mr-3" alt="Preview" 
+                         tabindex="${baseTabIndex}" 
+                         onerror="handleAltTextImageError(this, '${suggestedAlt}')">
+                </div>
+                <div class="flex-fill">
+                    <label class="font-weight-bold mb-2" for="alt-text-${index}">
+                        Alt Text for New Image ${index + 1}:
+                    </label>
+                    <textarea id="alt-text-${index}" name="new_alt_text[]" 
+                              class="form-control alt-text-input" 
+                              placeholder="Describe this image (e.g., ${suggestedAlt})"
+                              data-index="new-${index}" 
+                              tabindex="${baseTabIndex + 1}">${suggestedAlt}</textarea>
+                    <small class="form-text text-muted">
+                        Good alt text: descriptive, concise (125 chars or less), includes product name
+                    </small>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary auto-generate-alt" 
+                                data-index="new-${index}" data-type="new"
+                                tabindex="${baseTabIndex + 2}">
+                            <i class="fa fa-magic"></i> Auto-generate
+                        </button>
+                        <span class="ml-2 text-muted char-count">0/125 characters</span>
                     </div>
                 </div>
             </div>
-        `;
+        </div>
+    `;
         container.append(altTextHtml);
         updateCharCount(`new-${index}`);
     }
@@ -858,9 +887,9 @@
 
         // Initialize character counts for existing alt text inputs
         @if($product->images->isNotEmpty())
-            @foreach($product->images as $image)
-                updateCharCount('existing-{{ $image->id }}');
-            @endforeach
+        @foreach($product->images as $image)
+        updateCharCount('existing-{{ $image->id }}');
+        @endforeach
         @endif
 
         // Initialize alt text sections visibility
@@ -1029,7 +1058,9 @@
             $.ajax({
                 url: `/admin/category/${catId}/child`,
                 method: 'POST',
-                data: { _token: '{{ csrf_token() }}' },
+                data: {
+                    _token: '{{ csrf_token() }}'
+                },
                 success: function(response) {
                     let html = '<option value="">-Select sub category-</option>';
                     if (response.status && response.data) {
@@ -1063,7 +1094,10 @@
             $.ajax({
                 url: "{{ route('brand.store.ajax') }}",
                 type: "POST",
-                data: { _token: "{{ csrf_token() }}", title: brandName },
+                data: {
+                    _token: "{{ csrf_token() }}",
+                    title: brandName
+                },
                 success: function(res) {
                     if (res.status === 'success') {
                         $('#brand_id').append(`<option value="${res.data.id}" selected>${res.data.title}</option>`);

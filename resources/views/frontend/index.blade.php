@@ -2,38 +2,32 @@
 
 @section('main-content')
 
-{{-- Banner Slider Section --}}
 @if($banners?->count())
     @php
-        // Retrieve the first banner and set default image paths
         $firstBanner = $banners->first();
         $firstPhoto = ltrim($firstBanner->photo ?? 'images/placeholder-banner.jpg', '/');
         $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
+        $tabindex = 12; // Start tabindex at 12
     @endphp
 
-    {{-- Preload LCP images for performance optimization --}}
     <link rel="preload" as="image" href="{{ asset($firstWebp) }}" fetchpriority="high" type="image/webp">
     <link rel="preload" as="image" href="{{ asset($firstPhoto) }}" fetchpriority="high" type="image/{{ pathinfo($firstPhoto, PATHINFO_EXTENSION) }}">
 
     <section id="gslider" class="carousel slide" data-ride="carousel" data-interval="3000">
-        {{-- Carousel Indicators --}}
         <ol class="carousel-indicators">
             @foreach($banners as $key => $banner)
-                <li data-target="#gslider" data-slide-to="{{ $key }}" class="{{ $key === 0 ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}"></li>
+                <li data-target="#gslider" data-slide-to="{{ $key }}" class="{{ $key === 0 ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}" tabindex="{{ $tabindex++ }}"></li>
             @endforeach
         </ol>
 
-        {{-- Carousel Items --}}
         <div class="carousel-inner">
             @foreach($banners as $key => $banner)
                 @php
-                    // Prepare banner image paths and metadata
                     $photo = ltrim($banner->photo ?? 'images/placeholder-banner.jpg', '/');
                     $webp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $photo);
                     $isFirst = $key === 0;
                     $discount = $banner->discounts->first();
 
-                    // Determine CTA URL and text based on link type
                     $ctaUrl = '#';
                     $ctaText = 'Shop Now';
                     switch ($banner->link_type) {
@@ -80,25 +74,27 @@
                              loading="{{ $isFirst ? 'eager' : 'lazy' }}"
                              fetchpriority="{{ $isFirst ? 'high' : 'auto' }}"
                              decoding="{{ $isFirst ? 'sync' : 'async' }}"
+                             tabindex="-1"
                              onerror="this.onerror=null; this.src='{{ asset('images/placeholder-banner.jpg') }}';">
                     </picture>
 
                     <div class="carousel-caption d-none d-md-block text-left">
-                        <h1>{{ $banner->title }}</h1>
-                        <p>{!! $banner->description !!}</p>
+                        <h1>{{ $banner->title }}</h1> <!-- Removed tabindex -->
+                        <p>{!! $banner->description !!}</p> <!-- Removed tabindex -->
                         @if($discount)
                             <p class="text-warning h5">
                                 {{ $discount->title }} -
                                 {{ $discount->type === 'percentage' ? $discount->value . '%' : '₹' . number_format($discount->value, 2) }} OFF
-                            </p>
+                            </p> <!-- Removed tabindex -->
                         @endif
                         @if($ctaUrl !== '#')
                             <a class="btn btn-lg btn-primary"
                                href="{{ $ctaUrl }}"
+                               tabindex="{{ $tabindex++ }}"
                                @if($banner->link_type === 'url' && !str_starts_with($banner->link, url('/')))
                                target="_blank" rel="noopener"
                                @endif>
-                                {{ $ctaText }} <i class="fa fa-arrow-right"></i>
+                                {{ $ctaText }} <i class="fa fa-arrow-right" aria-hidden="true"></i>
                             </a>
                         @endif
                     </div>
@@ -106,44 +102,40 @@
             @endforeach
         </div>
 
-        {{-- Carousel Controls --}}
-        <a class="carousel-control-prev" href="#gslider" role="button" data-slide="prev" aria-label="Previous slide">
+        <a class="carousel-control-prev" href="#gslider" role="button" data-slide="prev" aria-label="Previous slide" tabindex="{{ $tabindex++ }}">
             <span class="carousel-control-prev-icon" aria-hidden="true"></span>
         </a>
-        <a class="carousel-control-next" href="#gslider" role="button" data-slide="next" aria-label="Next slide">
+        <a class="carousel-control-next" href="#gslider" role="button" data-slide="next" aria-label="Next slide" tabindex="{{ $tabindex++ }}">
             <span class="carousel-control-next-icon" aria-hidden="true"></span>
         </a>
     </section>
 @endif
 
-{{-- Discount Highlight Section --}}
 @php
     $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDiscounts();
 @endphp
 @if (!empty($activeDiscounts))
     @foreach ($activeDiscounts as $discount)
-        <a href="{{ route('product-cat', $discount['category_slug']) }}" style="text-decoration: none;">
+        <a href="{{ route('product-cat', $discount['category_slug']) }}" style="text-decoration: none;" tabindex="{{ $tabindex++ }}">
             <section class="discount-highlight"
                      style="width: 100%; background: linear-gradient(135deg, #F7941D 0%, #e67e22 100%); color: white; padding: 16px;">
-                <!-- Discount highlight content remains unchanged -->
             </section>
         </a>
     @endforeach
 @endif
 
-{{-- All Products Section --}}
 @if($product_lists?->count())
     <section class="product-area section" id="all-products">
         <div class="container">
             <div class="section-title text-center">
-                <h2>All Products</h2>
+                <h2>All Products</h2> <!-- Removed tabindex -->
             </div>
             <div class="row">
                 <div class="col-12">
                     <div class="d-flex flex-wrap justify-content-center gap-4" id="allProductsGrid" role="tabpanel" aria-labelledby="tab-all">
                         <div class="product-listing-wrapper">
                             @foreach($product_lists as $product)
-                                <div class="product-card-container">
+                                <div class="product-card-container" tabindex="{{ $tabindex++ }}">
                                     @include('frontend.partials.product-card', ['product' => $product])
                                 </div>
                             @endforeach
@@ -155,20 +147,19 @@
     </section>
 @endif
 
-{{-- Dynamic Category Sections --}}
 @foreach($dynamicCategoryProducts as $slug => $categoryData)
     @if($categoryData['products']?->count())
         <section class="product-area section" id="{{ $slug }}-products">
             <div class="container">
                 <div class="section-title text-center">
-                    <h2>{{ $categoryData['title'] }}</h2>
+                    <h2>{{ $categoryData['title'] }}</h2> <!-- Removed tabindex -->
                 </div>
                 <div class="row">
                     <div class="col-12">
                         <div class="d-flex flex-wrap justify-content-center gap-4" id="{{ $slug }}ProductsGrid" role="tabpanel" aria-labelledby="tab-{{ $slug }}">
                             <div class="product-listing-wrapper">
                                 @foreach($categoryData['products'] as $product)
-                                    <div class="product-card-container category-{{ $slug }}">
+                                    <div class="product-card-container category-{{ $slug }}" tabindex="{{ $tabindex++ }}">
                                         @include('frontend.partials.product-card', ['product' => $product])
                                     </div>
                                 @endforeach
@@ -181,34 +172,33 @@
     @endif
 @endforeach
 
-{{-- Shop Services Section --}}
 <section class="shop-services section">
     <div class="container">
         <div class="row">
             <div class="col-lg-3 col-md-6 col-12">
-                <div class="single-service">
-                    <i class="ti-rocket"></i>
+                <div class="single-service" tabindex="{{ $tabindex++ }}">
+                    <i class="ti-rocket" aria-hidden="true"></i>
                     <h4>Free Shipping</h4>
                     <p>Orders over $100</p>
                 </div>
             </div>
             <div class="col-lg-3 col-md-6 col-12">
-                <div class="single-service">
-                    <i class="ti-reload"></i>
+                <div class="single-service" tabindex="{{ $tabindex++ }}">
+                    <i class="ti-reload" aria-hidden="true"></i>
                     <h4>Free Return</h4>
                     <p>Within 30 days</p>
                 </div>
             </div>
             <div class="col-lg-3 col-md-6 col-12">
-                <div class="single-service">
-                    <i class="ti-lock"></i>
+                <div class="single-service" tabindex="{{ $tabindex++ }}">
+                    <i class="ti-lock" aria-hidden="true"></i>
                     <h4>Secure Payment</h4>
                     <p>100% secure</p>
                 </div>
             </div>
             <div class="col-lg-3 col-md-6 col-12">
-                <div class="single-service">
-                    <i class="ti-tag"></i>
+                <div class="single-service" tabindex="{{ $tabindex++ }}">
+                    <i class="ti-tag" aria-hidden="true"></i>
                     <h4>Best Price</h4>
                     <p>Guaranteed</p>
                 </div>
@@ -217,7 +207,6 @@
     </div>
 </section>
 
-{{-- Product Modals --}}
 @if($product_lists?->count())
     @foreach($product_lists->take(5) as $product)
         @include('frontend.partials.product-modal', ['product' => $product])
@@ -228,9 +217,6 @@
 
 @push('styles')
     <style>
-        /* ==============================
-           Autocomplete Styles
-        ============================== */
         .autocomplete-dropdown {
             max-height: 300px;
             overflow-y: auto;
@@ -252,9 +238,6 @@
             color: #dc3545;
         }
 
-        /* ==============================
-           General Section Styling
-        ============================== */
         .section {
             padding: 60px 0;
         }
@@ -278,9 +261,6 @@
             border-radius: 2px;
         }
 
-        /* ==============================
-           Slider Section
-        ============================== */
         #gslider {
             position: relative;
             overflow: hidden;
@@ -306,7 +286,6 @@
             z-index: 1;
         }
 
-        /* Slider Captions */
         #gslider .carousel-caption {
             position: absolute;
             bottom: 50%;
@@ -328,13 +307,11 @@
             margin: 20px 0;
         }
 
-        /* Slider Indicators */
         #gslider .carousel-indicators {
             bottom: 20px;
             z-index: 3;
         }
 
-        /* Slider Controls */
         .carousel-control-prev,
         .carousel-control-next {
             z-index: 4;
@@ -350,9 +327,6 @@
             background-size: 100% 100%;
         }
 
-        /* ==============================
-           Product Cards
-        ============================== */
         .product-card-container {
             flex: 0 0 auto;
             width: 250px;
@@ -396,9 +370,6 @@
             text-decoration: line-through;
         }
 
-        /* ==============================
-           Category Banners
-        ============================== */
         .category-banners .single-banner {
             position: relative;
             overflow: hidden;
@@ -435,9 +406,6 @@
             text-decoration: none;
         }
 
-        /* ==============================
-           Shop Services
-        ============================== */
         .shop-services .single-service {
             text-align: center;
             padding: 20px;
@@ -447,6 +415,12 @@
 
         .shop-services .single-service:hover {
             background: #f8f9fa;
+        }
+
+        .shop-services .single-service:focus {
+            background: #f8f9fa;
+            outline: 2px solid #F7941D;
+            outline-offset: 2px;
         }
 
         .shop-services .single-service i {
@@ -460,9 +434,16 @@
             margin-bottom: 5px;
         }
 
-        /* ==============================
-           Responsive Styles
-        ============================== */
+        [tabindex]:focus {
+            outline: 2px solid #F7941D;
+            outline-offset: 2px;
+        }
+
+        .carousel-indicators li:focus {
+            outline: 2px solid #F7941D;
+            outline-offset: 2px;
+        }
+
         @media (max-width: 768px) {
             #gslider .carousel-caption h1 {
                 font-size: 28px;
@@ -508,17 +489,26 @@
 
 @push('scripts')
     <script>
-        // Smooth scrolling for anchor links
-        // document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        //     anchor.addEventListener('click', function(e) {
-        //         const target = document.querySelector(this.getAttribute('href'));
-        //         if (target) {
-        //             e.preventDefault();
-        //             target.scrollIntoView({
-        //                 behavior: 'smooth'
-        //             });
-        //         }
-        //     });
-        // });
+        document.addEventListener('DOMContentLoaded', function() {
+            const carouselIndicators = document.querySelectorAll('.carousel-indicators li');
+            carouselIndicators.forEach(indicator => {
+                indicator.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        this.click();
+                    }
+                });
+            });
+
+            const carouselControls = document.querySelectorAll('.carousel-control-prev, .carousel-control-next');
+            carouselControls.forEach(control => {
+                control.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        this.click();
+                    }
+                });
+            });
+        });
     </script>
 @endpush

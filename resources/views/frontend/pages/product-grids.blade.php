@@ -314,7 +314,7 @@ $(document).ready(function() {
                 }
             })
             .catch(error => {
-                Swal.fire({
+                Swal({
                     icon: 'error',
                     title: 'Error',
                     text: 'Failed to apply filters: ' + error.message,
