@@ -111,7 +111,7 @@
                         <div class="category-menu-placeholder">
                             @include('frontend.partials.category-menu')
                         </div>
-                        <li class="{{ request()->is('contact') ? 'active' : '' }} cnt-us"><a href="{{ route('contact') }}" tabindex="11">Contact Us</a></li>
+                        <li class="{{ request()->is('contact') ? 'active' : '' }} cnt-us"><a href="{{ route('contact') }}" tabindex="12">Contact Us</a></li>
                     </ul>
                 </div>
             </nav>
@@ -429,7 +429,7 @@
         const $dropdown = $('#autocomplete-dropdown');
         const $list = $('#autocomplete-list');
         let searchTimeout;
-        const baseTabIndex = 12; // Starting tabindex for autocomplete items (after main menu)
+        const baseTabIndex = 14; // Starting tabindex for autocomplete items (after main menu)
 
         // Stop if critical elements are missing
         if (!$searchInput.length || !$dropdown.length || !$list.length) return;

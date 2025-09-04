@@ -7,7 +7,7 @@
         $firstBanner = $banners->first();
         $firstPhoto = ltrim($firstBanner->photo ?? 'images/placeholder-banner.jpg', '/');
         $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
-        $tabindex = 12; // Start tabindex at 12
+        $tabindex = 13;
     @endphp
 
     <link rel="preload" as="image" href="{{ asset($firstWebp) }}" fetchpriority="high" type="image/webp">

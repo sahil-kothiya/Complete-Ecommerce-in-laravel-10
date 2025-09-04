@@ -1094,8 +1094,9 @@ class FrontendController extends Controller
 
     public function productDetail($slug)
     {
-        $product_detail = Product::getProductBySlug($slug);
-        return view('frontend.pages.product_detail')->with('product_detail', $product_detail);
+    $product_detail = Product::getProductBySlug($slug);
+    $related_products = $product_detail && $product_detail->rel_prods ? $product_detail->rel_prods->where('id', '!=', $product_detail->id) : collect();
+    return view('frontend.pages.product_detail', compact('product_detail', 'related_products'));
     }
 
     public function productLists()

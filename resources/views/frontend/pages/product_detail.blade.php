@@ -25,8 +25,8 @@
 			<div class="col-12">
 				<div class="bread-inner">
 					<ul class="bread-list">
-						<li><a href="{{route('home')}}">Home<i class="ti-arrow-right"></i></a></li>
-						<li class="active"><a href="">Shop Details</a></li>
+						<li><a href="{{route('home')}}" tabindex="13">Home<i class="ti-arrow-right"></i></a></li>
+						<li class="active"><a href="" tabindex="14">Shop Details</a></li>
 					</ul>
 				</div>
 			</div>
@@ -51,6 +51,7 @@
 									alt="{{$product_detail->title}}"
 									class="main-image img-fluid w-100"
 									id="mainImage"
+									tabindex="15"
 									style="max-height: 500px; object-fit: contain; border-radius: 10px;">
 								<!-- Zoom Lens -->
 								<div class="zoom-lens d-none"></div>
@@ -61,6 +62,7 @@
 									alt="No Image"
 									class="main-image img-fluid w-100"
 									id="mainImage"
+									tabindex="15"
 									style="max-height: 500px; object-fit: contain; border-radius: 10px;">
 								@endif
 							</div>
@@ -72,6 +74,7 @@
 									<div class="thumbnail-item mx-1" style="flex: 0 0 auto;">
 										<img src="{{ asset($image->image_path) }}"
 											alt="Thumbnail {{$index + 1}}"
+											tabindex="{{ 16 + $index }}"
 											class="img-fluid thumbnail-image {{ $index == 0 ? 'active' : '' }}"
 											style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px; cursor: pointer;"
 											data-image="{{ asset($image->image_path) }}">
@@ -80,6 +83,7 @@
 									<div class="thumbnail-item mx-1" style="flex: 0 0 auto;">
 										<img src="{{ asset('images/no-image.png') }}"
 											alt="No Image"
+											tabindex="16"
 											class="img-fluid thumbnail-image active"
 											style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px; cursor: pointer;"
 											data-image="{{ asset('images/no-image.png') }}">
@@ -94,7 +98,7 @@
 						<div class="product-des">
 							<!-- Description -->
 							<div class="short">
-								<h4>{{$product_detail->title}}</h4>
+								<h4 tabindex="17">{{$product_detail->title}}</h4>
 								<div class="rating-main">
 									<ul class="rating">
 										@php
@@ -108,7 +112,7 @@
 											@endif
 											@endfor
 									</ul>
-									<a href="#" class="total-review">({{$product_detail['getReview']->count()}}) Review</a>
+									<a href="#" class="total-review" tabindex="18">({{$product_detail['getReview']->count()}}) Review</a>
 								</div>
 								@php
 								$originalPrice = $product_detail->price;
@@ -117,7 +121,7 @@
 								$isDiscounted = $discountedPrice < $originalPrice;
 									@endphp
 
-									<p class="price">
+									<p class="price" tabindex="19">
 									@if($isDiscounted)
 									<span class="text-danger font-weight-bold"
 										title="@foreach($discounts as $d){{ $d['title'] ?? ucfirst($d['source']) }}: {{ $d['type'] === 'percentage' ? $d['value'].'%' : '$'.number_format($d['value'], 0) }}{{ !$loop->last ? ', ' : '' }}@endforeach">
@@ -144,13 +148,13 @@
 									@endif
 									</p>
 
-									<p class="description">{!! $product_detail->summary !!}</p>
+									<p class="description" tabindex="20">{!! $product_detail->summary !!}</p>
 							</div>
 							<!--/ End Description -->
 							<!-- Size -->
 							@if($product_detail->size)
 							<div class="size mt-4">
-								<h4>Size</h4>
+								<h4 tabindex="21">Size</h4>
 								<div class="size-selector">
 									@php
 									$sizes = explode(',', $product_detail->size);
@@ -158,7 +162,7 @@
 									@foreach($sizes as $index => $size)
 									<label class="size-option {{ $index == 0 ? 'active' : '' }}">
 										<input type="radio" name="size" value="{{ $size }}" {{ $index == 0 ? 'checked' : '' }} class="d-none">
-										<span>{{ $size }}</span>
+										<span tabindex="{{ 22 + $index }}">{{ $size }}</span>
 									</label>
 									@endforeach
 									@error('size')
@@ -174,34 +178,34 @@
 									@csrf
 									<input type="hidden" name="size" id="selectedSize" value="{{ $product_detail->size ? explode(',', $product_detail->size)[0] : '' }}">
 									<div class="quantity">
-										<h6>Quantity:</h6>
+										<h6 tabindex="32">Quantity:</h6>
 										<div class="input-group">
 											<div class="button minus">
-												<button type="button" class="btn btn-primary btn-number" disabled="disabled" data-type="minus" data-field="quant[1]">
+												<button type="button" class="btn btn-primary btn-number" disabled="disabled" data-type="minus" data-field="quant[1]" tabindex="33">
 													<i class="ti-minus"></i>
 												</button>
 											</div>
 											<input type="hidden" name="slug" value="{{$product_detail->slug}}">
-											<input type="text" name="quant[1]" class="input-number" data-min="1" data-max="1000" value="1" id="quantity">
+											<input type="text" name="quant[1]" class="input-number" data-min="1" data-max="1000" value="1" id="quantity" tabindex="34">
 											<div class="button plus">
-												<button type="button" class="btn btn-primary btn-number" data-type="plus" data-field="quant[1]">
+												<button type="button" class="btn btn-primary btn-number" data-type="plus" data-field="quant[1]" tabindex="35">
 													<i class="ti-plus"></i>
 												</button>
 											</div>
 										</div>
 									</div>
 									<div class="add-to-cart mt-4">
-										<button type="submit" class="btn">Add to cart</button>
-										<a href="{{route('add-to-wishlist',$product_detail->slug)}}" class="btn min"><i class="ti-heart"></i></a>
+										<button type="submit" class="btn" tabindex="36">Add to cart</button>
+										<a href="{{route('add-to-wishlist',$product_detail->slug)}}" class="btn min" tabindex="37"><i class="ti-heart"></i></a>
 									</div>
 								</form>
 
-								<p class="cat">Category: <a href="{{route('product-cat',$product_detail->cat_info['slug'])}}">{{$product_detail->cat_info['title']}}</a></p>
+								<p class="cat" tabindex="38">Category: <a href="{{route('product-cat',$product_detail->cat_info['slug'])}}" tabindex="39">{{$product_detail->cat_info['title']}}</a></p>
 								@if($product_detail->sub_cat_info)
-								<p class="cat mt-1">Sub Category: <a href="{{route('product-sub-cat',[$product_detail->cat_info['slug'],$product_detail->sub_cat_info['slug']])}}">{{$product_detail->sub_cat_info['title']}}</a></p>
+								<p class="cat mt-1" tabindex="40">Sub Category: <a href="{{route('product-cat',[$product_detail->cat_info['slug'],$product_detail->sub_cat_info['slug']])}}" tabindex="41">{{$product_detail->sub_cat_info['title']}}</a></p>
 								@endif
-								<p class="availability">Sku: {{$product_detail->sku ?? 'N/A'}}</p>
-								<p class="availability">Stock: @if($product_detail->stock > 0)<span class="badge badge-success">{{$product_detail->stock}}</span>@else <span class="badge badge-danger">{{$product_detail->stock}}</span> @endif</p>
+								<p class="availability" tabindex="42">Sku: {{$product_detail->sku ?? 'N/A'}}</p>
+								<p class="availability" tabindex="43">Stock: @if($product_detail->stock > 0)<span class="badge badge-success">{{$product_detail->stock}}</span>@else <span class="badge badge-danger">{{$product_detail->stock}}</span> @endif</p>
 							</div>
 							<!--/ End Product Buy -->
 						</div>
@@ -212,8 +216,8 @@
 						<div class="product-info">
 							<div class="nav-main">
 								<ul class="nav nav-tabs" id="myTab" role="tablist">
-									<li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#description" role="tab">Description</a></li>
-									<li class="nav-item"><a class="nav-link" data-toggle="tab" href="#reviews" role="tab">Reviews</a></li>
+									<li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#description" role="tab" tabindex="44">Description</a></li>
+									<li class="nav-item"><a class="nav-link" data-toggle="tab" href="#reviews" role="tab" tabindex="45">Reviews</a></li>
 								</ul>
 							</div>
 							<div class="tab-content" id="myTabContent">
@@ -223,7 +227,7 @@
 										<div class="row">
 											<div class="col-12">
 												<div class="single-des">
-													<p>{!! $product_detail->description !!}</p>
+													<p tabindex="46">{!! $product_detail->description !!}</p>
 												</div>
 											</div>
 										</div>
@@ -238,10 +242,10 @@
 												<!-- Review -->
 												<div class="comment-review">
 													<div class="add-review">
-														<h5>Add A Review</h5>
-														<p>Your email address will not be published. Required fields are marked</p>
+														<h5 tabindex="47">Add A Review</h5>
+														<p tabindex="48">Your email address will not be published. Required fields are marked</p>
 													</div>
-													<h4>Your Rating <span class="text-danger">*</span></h4>
+													<h4 tabindex="49">Your Rating <span class="text-danger">*</span></h4>
 													<div class="review-inner">
 														@auth
 														<form class="form" method="post" action="{{route('review.store',$product_detail->slug)}}">
@@ -252,15 +256,15 @@
 																	<div class="rating_box">
 																		<div class="star-rating">
 																			<div class="star-rating__wrap">
-																				<input class="star-rating__input" id="star-rating-5" type="radio" name="rate" value="5">
+																				<input class="star-rating__input" id="star-rating-5" type="radio" name="rate" value="5" tabindex="50">
 																				<label class="star-rating__ico fa fa-star-o" for="star-rating-5" title="5 out of 5 stars"></label>
-																				<input class="star-rating__input" id="star-rating-4" type="radio" name="rate" value="4">
+																				<input class="star-rating__input" id="star-rating-4" type="radio" name="rate" value="4" tabindex="51">
 																				<label class="star-rating__ico fa fa-star-o" for="star-rating-4" title="4 out of 5 stars"></label>
-																				<input class="star-rating__input" id="star-rating-3" type="radio" name="rate" value="3">
+																				<input class="star-rating__input" id="star-rating-3" type="radio" name="rate" value="3" tabindex="52">
 																				<label class="star-rating__ico fa fa-star-o" for="star-rating-3" title="3 out of 5 stars"></label>
-																				<input class="star-rating__input" id="star-rating-2" type="radio" name="rate" value="2">
+																				<input class="star-rating__input" id="star-rating-2" type="radio" name="rate" value="2" tabindex="53">
 																				<label class="star-rating__ico fa fa-star-o" for="star-rating-2" title="2 out of 5 stars"></label>
-																				<input class="star-rating__input" id="star-rating-1" type="radio" name="rate" value="1">
+																				<input class="star-rating__input" id="star-rating-1" type="radio" name="rate" value="1" tabindex="54">
 																				<label class="star-rating__ico fa fa-star-o" for="star-rating-1" title="1 out of 5 stars"></label>
 																				@error('rate')
 																				<span class="text-danger">{{ $message }}</span>
@@ -271,20 +275,20 @@
 																</div>
 																<div class="col-lg-12 col-12">
 																	<div class="form-group">
-																		<label>Write a review</label>
-																		<textarea name="review" rows="6" placeholder=""></textarea>
+																		<label for="review-text" tabindex="55">Write a review</label>
+																		<textarea name="review" id="review-text" rows="6" placeholder="" tabindex="56"></textarea>
 																	</div>
 																</div>
 																<div class="col-lg-12 col-12">
 																	<div class="form-group button5">
-																		<button type="submit" class="btn">Submit</button>
+																		<button type="submit" class="btn" tabindex="57">Submit</button>
 																	</div>
 																</div>
 															</div>
 														</form>
 														@else
-														<p class="text-center p-5">
-															You need to <a href="{{route('login.form')}}" style="color:rgb(54, 54, 204)">Login</a> OR <a style="color:blue" href="{{route('register.form')}}">Register</a>
+														<p class="text-center p-5" tabindex="58">
+															You need to <a href="{{route('login.form')}}" style="color:rgb(54, 54, 204)" tabindex="59">Login</a> OR <a style="color:blue" href="{{route('register.form')}}" tabindex="60">Register</a>
 														</p>
 														@endauth
 													</div>
@@ -292,20 +296,20 @@
 
 												<div class="ratting-main">
 													<div class="avg-ratting">
-														<h4>{{ceil($product_detail->getReview->avg('rate'))}} <span>(Overall)</span></h4>
-														<span>Based on {{$product_detail->getReview->count()}} Comments</span>
+														<h4 tabindex="61">{{ceil($product_detail->getReview->avg('rate'))}} <span>(Overall)</span></h4>
+														<span tabindex="62">Based on {{$product_detail->getReview->count()}} Comments</span>
 													</div>
-													@foreach($product_detail['getReview'] as $data)
+													@foreach($product_detail['getReview'] as $index => $data)
 													<div class="single-rating">
 														<div class="rating-author">
 															@if($data->user_info['photo'])
-															<img src="{{$data->user_info['photo']}}" alt="{{$data->user_info['photo']}}">
+															<img src="{{$data->user_info['photo']}}" alt="{{$data->user_info['photo']}}" tabindex="{{ 63 + $index * 4 }}">
 															@else
-															<img src="{{asset('backend/img/avatar.png')}}" alt="Profile.jpg">
+															<img src="{{asset('backend/img/avatar.png')}}" alt="Profile.jpg" tabindex="{{ 63 + $index * 4 }}">
 															@endif
 														</div>
 														<div class="rating-des">
-															<h6>{{$data->user_info['name']}}</h6>
+															<h6 tabindex="{{ 64 + $index * 4 }}">{{$data->user_info['name']}}</h6>
 															<div class="ratings">
 																<ul class="rating">
 																	@for($i = 1; $i <= 5; $i++)
@@ -316,9 +320,9 @@
 																		@endif
 																		@endfor
 																</ul>
-																<div class="rate-count">(<span>{{$data->rate}}</span>)</div>
+																<div class="rate-count" tabindex="{{ 65 + $index * 4 }}">(<span>{{$data->rate}}</span>)</div>
 															</div>
-															<p>{{$data->review}}</p>
+															<p tabindex="{{ 66 + $index * 4 }}">{{$data->review}}</p>
 														</div>
 													</div>
 													@endforeach
@@ -338,183 +342,379 @@
 </section>
 <!--/ End Shop Single -->
 
+<div class="product-recommendations">
+	<div class="container">
+		<div class="row">
+			<div class="col-12">
+				<div class="recommendations-title">
+					<h2>Related Products</h2>
+					<p>Discover similar items you might love</p>
+				</div>
+			</div>
+		</div>
+		<div class="row">
+			<div class="col-12">
+				<div class="position-relative">
+					<!-- Navigation Arrows -->
+					<button type="button" class="slider-nav slider-nav-prev" id="prevBtn" aria-label="Previous products">
+						<i class="ti-angle-left" aria-hidden="true"></i>
+					</button>
+					<button type="button" class="slider-nav slider-nav-next" id="nextBtn" aria-label="Next products">
+						<i class="ti-angle-right" aria-hidden="true"></i>
+					</button>
+
+					<!-- Products Slider -->
+					<div class="recommendations-slider" id="productsSlider">
+						@foreach($related_products as $product)
+						@include('frontend.partials.product-card', ['product' => $product])
+						@endforeach
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<!-- End Most Popular Area -->
+
 @endsection
 
 @push('styles')
 <style>
-	.product-gallery-section {
-		padding: 20px 0;
+	/* Ensure parent allows absolute arrows to be visible */
+	.position-relative {
+		overflow: visible !important;
 	}
 
-	.main-image-container {
-		border: 1px solid #e5e5e5;
-		padding: 10px;
-		background: #fff;
-		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-		border-radius: 10px;
+	/* Ensure arrows are always on top & clickable */
+	.slider-nav {
+		pointer-events: auto;
+		z-index: 9999;
 	}
 
-	.main-image {
-		transition: opacity 0.3s ease;
-	}
-
-	.thumbnail-carousel {
-		margin-top: 10px;
-	}
-
-	.thumbnail-item {
-		transition: all 0.3s ease;
-	}
-
-	.thumbnail-image {
-		border: 2px solid transparent;
-		opacity: 0.7;
-	}
-
-	.thumbnail-image.active,
-	.thumbnail-image:hover {
-		border-color: #007bff;
-		opacity: 1;
-	}
-
-	.thumbnails {
-		scrollbar-width: thin;
-		scrollbar-color: #888 #f5f5f5;
-	}
-
-	.thumbnails::-webkit-scrollbar {
-		height: 8px;
-	}
-
-	.thumbnails::-webkit-scrollbar-track {
-		background: #f5f5f5;
-		border-radius: 4px;
-	}
-
-	.thumbnails::-webkit-scrollbar-thumb {
-		background: #888;
-		border-radius: 4px;
-	}
-
-	.thumbnails::-webkit-scrollbar-thumb:hover {
-		background: #555;
-	}
-
-	/* Zoom Effect */
-	.zoom-lens {
-		position: absolute;
-		border: 1px solid #d4d4d4;
-		background: rgba(0, 0, 0, 0.1);
-		width: 100px;
-		height: 100px;
-		pointer-events: none;
-	}
-
-	.zoom-result {
-		background-color: #fff;
-		border: 1px solid #e5e5e5;
-		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-		z-index: 1000;
-	}
-
-	@media (max-width: 991px) {
-		.zoom-result {
-			display: none !important;
+	/* Slightly increase touch target on mobiles */
+	@media (max-width: 768px) {
+		.slider-nav {
+			width: 48px;
+			height: 48px;
 		}
 	}
 
-	/* Star Rating Styles */
-	.star-rating__wrap {
-		direction: rtl;
-		display: inline-flex;
+	/* Recommendations Section Styles */
+	.product-recommendations {
+		background: #f8f9fa;
+		padding: 80px 0;
+		position: relative;
+		overflow: hidden;
 	}
 
-	.star-rating__input {
-		display: none;
+	.product-recommendations::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 1px;
+		background: linear-gradient(90deg, transparent, #e9ecef, transparent);
 	}
 
-	.star-rating__ico {
-		font-size: 24px;
-		color: #ccc;
-		cursor: pointer;
-		transition: color 0.2s;
+	.recommendations-title {
+		text-align: center;
+		margin-bottom: 60px;
+		position: relative;
 	}
 
-	.star-rating__input:checked~.star-rating__ico,
-	.star-rating__ico:hover,
-	.star-rating__ico:hover~.star-rating__ico {
-		color: orange;
-	}
-
-	.rating_box {
-		display: inline-flex;
-	}
-
-	.star-rating {
-		font-size: 0;
-		padding-left: 10px;
-		padding-right: 10px;
-	}
-
-	.star-rating__wrap {
+	.recommendations-title h2 {
+		font-size: 2.5rem;
+		font-weight: 700;
+		color: #2c3e50;
+		margin-bottom: 15px;
+		position: relative;
 		display: inline-block;
-		font-size: 1rem;
 	}
 
-	.star-rating__wrap:after {
-		content: "";
-		display: table;
-		clear: both;
+	.recommendations-title h2::after {
+		content: '';
+		position: absolute;
+		bottom: -10px;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 60px;
+		height: 4px;
+		background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+		border-radius: 2px;
 	}
 
-	.star-rating__ico {
-		float: right;
-		padding-left: 2px;
-		cursor: pointer;
-		color: #F7941D;
-		font-size: 16px;
-		margin-top: 5px;
+	.recommendations-title p {
+		color: #6c757d;
+		font-size: 1.1rem;
+		margin: 0;
 	}
 
-	.star-rating__ico:last-child {
-		padding-left: 0;
-	}
-
-	/* Size Selection Styles */
-	.size-selector {
+	/* Recommendations Slider Container */
+	.recommendations-slider {
 		display: flex;
-		gap: 10px;
-		flex-wrap: wrap;
+		gap: 25px;
+		padding: 20px 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scroll-behavior: smooth;
+		scrollbar-width: none;
+		-ms-overflow-style: none;
 	}
 
-	.size-option {
-		display: inline-block;
-		padding: 8px 15px;
-		border: 2px solid #e5e5e5;
-		border-radius: 5px;
-		cursor: pointer;
-		transition: all 0.3s ease;
-		background: #fff;
-	}
-
-	.size-option.active {
-		border-color: #007bff;
-		background: #e7f3ff;
-		color: #007bff;
-		font-weight: bold;
-	}
-
-	.size-option:hover {
-		border-color: #0056b3;
-		background: #f0f8ff;
-	}
-
-	.size-option input {
+	.recommendations-slider::-webkit-scrollbar {
 		display: none;
 	}
 
-	.size-option span {
+	/* Individual Recommendation Card */
+	.recommendation-card {
+		flex: 0 0 280px;
+		background: #ffffff;
+		border-radius: 15px;
+		overflow: hidden;
+		box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+		transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+		position: relative;
+		border: 1px solid rgba(0, 0, 0, 0.05);
+	}
+
+	.recommendation-card:hover {
+		transform: translateY(-8px);
+		box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+	}
+
+	/* Recommendation Image Container */
+	.recommendation-image-wrapper {
+		position: relative;
+		height: 220px;
+		overflow: hidden;
+		background: #f8f9fa;
+	}
+
+	.recommendation-image {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		transition: transform 0.5s ease;
+	}
+
+	.recommendation-card:hover .recommendation-image {
+		transform: scale(1.1);
+	}
+
+	/* Discount Label */
+	.discount-label {
+		position: absolute;
+		top: 15px;
+		left: 15px;
+		background: linear-gradient(45deg, #ff6b6b, #ee5a52);
+		color: white;
+		padding: 8px 12px;
+		border-radius: 20px;
+		font-size: 0.85rem;
+		font-weight: 600;
+		z-index: 10;
+		box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+	}
+
+	/* Recommendation Actions Overlay */
+	.recommendation-actions {
+		position: absolute;
+		top: 15px;
+		right: 15px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		opacity: 0;
+		transform: translateX(20px);
+		transition: all 0.3s ease;
+	}
+
+	.recommendation-card:hover .recommendation-actions {
+		opacity: 1;
+		transform: translateX(0);
+	}
+
+	.action-button {
+		width: 40px;
+		height: 40px;
+		background: rgba(255, 255, 255, 0.95);
+		border: none;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #666;
 		font-size: 16px;
+		transition: all 0.3s ease;
+		box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+		backdrop-filter: blur(10px);
+	}
+
+	.action-button:hover {
+		background: #fff;
+		color: #ff6b6b;
+		transform: scale(1.1);
+		box-shadow: 0 6px 20px rgba(255, 107, 107, 0.3);
+	}
+
+	/* Recommendation Content */
+	.recommendation-content {
+		padding: 25px 20px;
+		text-align: center;
+	}
+
+	.recommendation-title {
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: #2c3e50;
+		margin-bottom: 12px;
+		text-decoration: none;
+		display: block;
+		line-height: 1.4;
+		transition: color 0.3s ease;
+	}
+
+	.recommendation-title:hover {
+		color: #ff6b6b;
+		text-decoration: none;
+	}
+
+	/* Price Section */
+	.recommendation-price {
+		margin-bottom: 20px;
+	}
+
+	.price-current {
+		font-size: 1.8rem;
+		font-weight: bold;
+		color: #e74c3c;
+	}
+
+	.nav-tabs .nav-link {
+		border: none;
+		font-weight: 600;
+		color: #555;
+		transition: 0.3s;
+	}
+
+	.nav-tabs .nav-link.active {
+		color: #fff;
+		background: linear-gradient(45deg, #667eea, #764ba2);
+		border-radius: 20px;
+		padding: 8px 20px;
+	}
+
+	.price-old {
+		font-size: 1rem;
+		text-decoration: line-through;
+		color: #95a5a6;
+		margin-left: 8px;
+	}
+
+	.discount-tag {
+		background: #ff4757;
+		color: #fff;
+		padding: 3px 8px;
+		font-size: 0.8rem;
+		border-radius: 4px;
+		margin-left: 10px;
+	}
+
+	.price-previous {
+		font-size: 1rem;
+		color: #95a5a6;
+		text-decoration: line-through;
+	}
+
+	.price-current.price-single {
+		color: #2c3e50;
+	}
+
+	/* Add to Cart Button */
+	.cart-button {
+		width: 100%;
+		background: linear-gradient(45deg, #667eea, #764ba2);
+		color: white;
+		border: none;
+		padding: 12px 20px;
+		border-radius: 25px;
+		font-weight: 600;
+		font-size: 0.95rem;
+		transition: all 0.3s ease;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.cart-button:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+		background: linear-gradient(45deg, #5a67d8, #6b46c1);
+	}
+
+	/* Navigation Arrows */
+	.slider-nav {
+		position: absolute;
+		top: 50%;
+		transform: translateY(-50%);
+		background: rgba(255, 255, 255, 0.95);
+		border: none;
+		width: 50px;
+		height: 50px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #666;
+		font-size: 18px;
+		transition: all 0.3s ease;
+		box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+		z-index: 100;
+		backdrop-filter: blur(10px);
+	}
+
+	.slider-nav:hover {
+		background: #fff;
+		color: #ff6b6b;
+		transform: translateY(-50%) scale(1.1);
+		box-shadow: 0 8px 25px rgba(255, 107, 107, 0.3);
+	}
+
+	.slider-nav-prev {
+		left: -25px;
+	}
+
+	.slider-nav-next {
+		right: -25px;
+	}
+
+	/* Responsive Design */
+	@media (max-width: 768px) {
+		.recommendations-title h2 {
+			font-size: 2rem;
+		}
+
+		.product-recommendations {
+			padding: 50px 0;
+		}
+
+		.recommendation-card {
+			flex: 0 0 250px;
+		}
+
+		.slider-nav {
+			display: none;
+		}
+	}
+
+	@media (max-width: 576px) {
+		.recommendation-card {
+			flex: 0 0 220px;
+		}
+
+		.recommendations-slider {
+			gap: 15px;
+		}
 	}
 </style>
 @endpush
@@ -522,87 +722,141 @@
 @push('scripts')
 <script>
 	document.addEventListener('DOMContentLoaded', function() {
-		// Thumbnail click handler
-		const thumbnails = document.querySelectorAll('.thumbnail-image');
-		const mainImage = document.querySelector('#mainImage');
+		const slider = document.getElementById('productsSlider');
+		const prevBtn = document.getElementById('prevBtn');
+		const nextBtn = document.getElementById('nextBtn');
 
-		thumbnails.forEach(thumb => {
-			thumb.addEventListener('click', function() {
-				thumbnails.forEach(t => t.classList.remove('active'));
-				this.classList.add('active');
-				mainImage.src = this.dataset.image;
+		if (slider && prevBtn && nextBtn) {
+			// Dynamically detect one card width (including margin/gap)
+			const getCardWidth = () => {
+				const card = slider.querySelector('.recommendation-card, .product-card-container');
+				if (!card) return 300;
+				const style = window.getComputedStyle(card);
+				return card.offsetWidth + parseInt(style.marginRight || 0);
+			};
+
+			prevBtn.addEventListener('click', () => {
+				slider.scrollBy({
+					left: -getCardWidth(),
+					behavior: 'smooth'
+				});
 			});
+
+			nextBtn.addEventListener('click', () => {
+				slider.scrollBy({
+					left: getCardWidth(),
+					behavior: 'smooth'
+				});
+			});
+		}
+	});
+	document.addEventListener('DOMContentLoaded', function() {
+
+		// compute card width (first visible card + gap)
+		const getCardWidth = () => {
+			const firstCard = slider.querySelector('.recommendation-card') || slider.firstElementChild;
+			const style = window.getComputedStyle(slider);
+			const gap = parseFloat(style.gap || style.columnGap) || 25;
+			if (!firstCard) return Math.min(300, slider.clientWidth);
+			const rect = firstCard.getBoundingClientRect();
+			return Math.round(rect.width + gap);
+		};
+
+		const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+		const scrollByAmount = (amount) => {
+			// calculate target and clamp to bounds
+			const maxLeft = Math.max(0, slider.scrollWidth - slider.clientWidth);
+			const target = clamp(Math.round(slider.scrollLeft + amount), 0, maxLeft);
+			slider.scrollTo({
+				left: target,
+				behavior: 'smooth'
+			});
+		};
+
+		// click handlers
+		if (prevBtn) prevBtn.addEventListener('click', (e) => {
+			e.preventDefault();
+			scrollByAmount(-getCardWidth());
+		});
+		if (nextBtn) nextBtn.addEventListener('click', (e) => {
+			e.preventDefault();
+			scrollByAmount(getCardWidth());
 		});
 
-		// Image Zoom Functionality
-		const mainImageContainer = document.querySelector('.main-image-container');
-		const zoomLens = document.querySelector('.zoom-lens');
-		const zoomResult = document.querySelector('.zoom-result');
+		// update UI for buttons (disabled or faded)
+		const updateNavButtons = () => {
+			if (!prevBtn || !nextBtn) return;
+			const maxLeft = Math.max(0, slider.scrollWidth - slider.clientWidth);
+			prevBtn.disabled = slider.scrollLeft <= 0;
+			nextBtn.disabled = slider.scrollLeft >= (maxLeft - 1);
+			prevBtn.style.opacity = prevBtn.disabled ? '0.3' : '1';
+			nextBtn.style.opacity = nextBtn.disabled ? '0.3' : '1';
+		};
 
-		mainImageContainer.addEventListener('mouseenter', function() {
-			if (window.innerWidth > 991) { // Disable zoom on mobile
-				zoomLens.classList.remove('d-none');
-				zoomResult.classList.remove('d-none');
-				zoomResult.style.backgroundImage = `url(${mainImage.src})`;
-				zoomResult.style.backgroundSize = `${mainImage.width * 2}px ${mainImage.height * 2}px`;
-			}
+		// throttle update with rAF
+		slider.addEventListener('scroll', () => {
+			window.requestAnimationFrame(updateNavButtons);
+		});
+		window.addEventListener('resize', () => {
+			window.requestAnimationFrame(updateNavButtons);
 		});
 
-		mainImageContainer.addEventListener('mouseleave', function() {
-			zoomLens.classList.add('d-none');
-			zoomResult.classList.add('d-none');
-		});
+		// initial state
+		setTimeout(updateNavButtons, 100);
 
-		mainImageContainer.addEventListener('mousemove', function(e) {
-			if (window.innerWidth > 991) {
-				const rect = mainImage.getBoundingClientRect();
-				const lensSize = 100; // Size of the zoom lens
-				let x = e.clientX - rect.left - lensSize / 2;
-				let y = e.clientY - rect.top - lensSize / 2;
-
-				// Keep lens within image bounds
-				x = Math.max(0, Math.min(x, rect.width - lensSize));
-				y = Math.max(0, Math.min(y, rect.height - lensSize));
-
-				zoomLens.style.left = `${x}px`;
-				zoomLens.style.top = `${y}px`;
-
-				// Calculate background position for zoom
-				const bgX = (x / rect.width) * (mainImage.width * 2);
-				const bgY = (y / rect.height) * (mainImage.height * 2);
-				zoomResult.style.backgroundPosition = `-${bgX}px -${bgY}px`;
-			}
-		});
-
-		// Star Rating Handler
-		document.querySelectorAll('.star-rating__input').forEach(radio => {
-			radio.addEventListener('change', function() {
-				let allLabels = document.querySelectorAll('.star-rating__ico');
-				allLabels.forEach(label => label.classList.remove('fa-star'));
-				allLabels.forEach(label => label.classList.add('fa-star-o'));
-
-				let val = parseInt(this.value);
-				for (let i = 1; i <= val; i++) {
-					document.querySelector('label[for="star-rating-' + i + '"]').classList.add('fa-star');
-					document.querySelector('label[for="star-rating-' + i + '"]').classList.remove('fa-star-o');
+		// keyboard accessibility
+		[prevBtn, nextBtn].forEach(btn => {
+			if (!btn) return;
+			btn.addEventListener('keydown', (e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					btn.click();
 				}
 			});
 		});
 
-		// Size Selection Handler
-		const sizeOptions = document.querySelectorAll('.size-option');
-		const selectedSizeInput = document.querySelector('#selectedSize');
+		// Pointer (drag) support for desktop & touch:
+		// uses pointer events so it works with mouse, touch, stylus
+		let isDown = false;
+		let startX = 0;
+		let startScroll = 0;
 
-		sizeOptions.forEach(option => {
-			option.addEventListener('click', function() {
-				sizeOptions.forEach(opt => opt.classList.remove('active'));
-				this.classList.add('active');
-				const selectedSize = this.querySelector('input').value;
-				selectedSizeInput.value = selectedSize;
-			});
+		// set initial cursor
+		slider.style.cursor = 'grab';
+
+		slider.addEventListener('pointerdown', (e) => {
+			isDown = true;
+			startX = e.clientX;
+			startScroll = slider.scrollLeft;
+			slider.setPointerCapture && slider.setPointerCapture(e.pointerId);
+			slider.style.cursor = 'grabbing';
 		});
+
+		slider.addEventListener('pointermove', (e) => {
+			if (!isDown) return;
+			const dx = e.clientX - startX;
+			slider.scrollLeft = startScroll - dx;
+		});
+
+		const releasePointer = (e) => {
+			if (!isDown) return;
+			isDown = false;
+			try {
+				slider.releasePointerCapture && slider.releasePointerCapture(e.pointerId);
+			} catch (err) {}
+			slider.style.cursor = 'grab';
+			// small timeout to update buttons after natural momentum
+			setTimeout(updateNavButtons, 100);
+		};
+
+		slider.addEventListener('pointerup', releasePointer);
+		slider.addEventListener('pointercancel', releasePointer);
+		slider.addEventListener('pointerleave', releasePointer);
+
+		// Helpful debug logs if things still misbehave
+		// (remove in production)
+		// console.log('[slider] initialized', { scrollWidth: slider.scrollWidth, clientWidth: slider.clientWidth });
 	});
 </script>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert.min.js"></script>
 @endpush

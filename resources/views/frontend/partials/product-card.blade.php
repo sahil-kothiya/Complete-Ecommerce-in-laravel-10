@@ -13,10 +13,10 @@
                     $srcset = [];
                     $sizes = [160, 235, 320, 480];
                     foreach ($sizes as $size) {
-                        $responsivePath = "{$directory}/{$filename}_{$size}x{$size}.webp";
-                        if (file_exists(public_path($responsivePath))) {
-                            $srcset[] = asset($responsivePath) . " {$size}w";
-                        }
+                    $responsivePath = "{$directory}/{$filename}_{$size}x{$size}.webp";
+                    if (file_exists(public_path($responsivePath))) {
+                    $srcset[] = asset($responsivePath) . " {$size}w";
+                    }
                     }
                     $srcset[] = asset($img->image_path) . " 370w";
                     $srcsetString = implode(', ', $srcset);
@@ -32,7 +32,6 @@
                         height="235"
                         decoding="async"
                         fetchpriority="low"
-                        tabindex="{{ 40 + $index }}"
                         onerror="this.src='{{ asset('images/no-image.png') }}';">
                     @endforeach
                 </div>
@@ -43,13 +42,13 @@
             @elseif($product->condition === 'new')
             <span class="badge badge-success badge-status">New</span>
             @elseif($product->stock <= 0)
-            <span class="badge badge-danger badge-status">Sold Out</span>
-            @endif
+                <span class="badge badge-danger badge-status">Sold Out</span>
+                @endif
         </div>
 
         <div class="card-body d-flex flex-column px-3 py-2">
             <h6 class="text-dark text-truncate mb-1">
-                <a href="{{ route('product-detail', $product->slug) }}" class="text-dark" tabindex="41">
+                <a href="{{ route('product-detail', $product->slug) }}" class="text-dark">
                     {{ Str::limit($product->title, 50) }}
                 </a>
             </h6>
@@ -71,22 +70,19 @@
 
             <div class="mt-auto">
                 <a href="{{ route('add-to-cart', $product->slug) }}"
-                    class="btn btn-sm btn-block btn-dark text-uppercase mb-3 text-center {{ $product->stock <= 0 ? 'disabled' : '' }}"
-                    tabindex="42">
+                    class="btn btn-sm btn-block btn-dark text-uppercase mb-3 text-center {{ $product->stock <= 0 ? 'disabled' : '' }}">
                     <i class="ti-shopping-cart mr-1"></i>
                     {{ $product->stock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
                 </a>
 
                 <div class="d-flex justify-content-between align-items-center small text-muted px-1">
                     <a href="{{ route('add-to-wishlist', $product->slug) }}"
-                        class="text-decoration-none"
-                        tabindex="43">
+                        class="text-decoration-none">
                         <i class="ti-heart mr-1" style="color: {{ $inWishlist ? 'red' : '#6c757d' }}"></i> Wishlist
                     </a>
                     <a href="#"
                         class="text-decoration-none text-muted hover-text-dark"
-                        onclick="event.preventDefault(); $('#productModal{{ $product->id }}').modal('show');"
-                        tabindex="44">
+                        onclick="event.preventDefault(); $('#productModal{{ $product->id }}').modal('show');">
                         <i class="ti-eye mr-1"></i> Quick View
                     </a>
                 </div>
@@ -172,48 +168,48 @@
 
 @push('scripts')
 <script>
-document.addEventListener("DOMContentLoaded", function() {
-    // Initialize sliders for product images
-    document.querySelectorAll("[data-slider]").forEach(wrapper => {
-        const track = wrapper.querySelector('.slider-track');
-        const images = wrapper.querySelectorAll('.slider-image');
-        const total = images.length;
+    document.addEventListener("DOMContentLoaded", function() {
+        // Initialize sliders for product images
+        document.querySelectorAll("[data-slider]").forEach(wrapper => {
+            const track = wrapper.querySelector('.slider-track');
+            const images = wrapper.querySelectorAll('.slider-image');
+            const total = images.length;
 
-        if (total <= 1) return;
+            if (total <= 1) return;
 
-        let index = 0;
-        let interval;
+            let index = 0;
+            let interval;
 
-        const slide = () => {
-            track.style.transform = `translateX(-${index * 100}%)`;
-        };
+            const slide = () => {
+                track.style.transform = `translateX(-${index * 100}%)`;
+            };
 
-        wrapper.addEventListener("mouseenter", () => {
-            index = 0;
-            interval = setInterval(() => {
-                index = (index + 1) % total;
+            wrapper.addEventListener("mouseenter", () => {
+                index = 0;
+                interval = setInterval(() => {
+                    index = (index + 1) % total;
+                    slide();
+                }, 1000);
+            });
+
+            wrapper.addEventListener("mouseleave", () => {
+                clearInterval(interval);
+                index = 0;
                 slide();
-            }, 1000);
+            });
         });
 
-        wrapper.addEventListener("mouseleave", () => {
-            clearInterval(interval);
-            index = 0;
-            slide();
-        });
+        // Modal accessibility handling
+        const modal = document.querySelector('#productModal{{ $product->id }}');
+        if (modal) {
+            modal.addEventListener('hidden.bs.modal', function() {
+                this.setAttribute('inert', '');
+            });
+
+            modal.addEventListener('show.bs.modal', function() {
+                this.removeAttribute('inert');
+            });
+        }
     });
-
-    // Modal accessibility handling
-    const modal = document.querySelector('#productModal{{ $product->id }}');
-    if (modal) {
-        modal.addEventListener('hidden.bs.modal', function() {
-            this.setAttribute('inert', '');
-        });
-
-        modal.addEventListener('show.bs.modal', function() {
-            this.removeAttribute('inert');
-        });
-    }
-});
 </script>
 @endpush
