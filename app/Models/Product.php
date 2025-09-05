@@ -63,7 +63,7 @@ class Product extends Model
     }
     public function rel_prods()
     {
-        return $this->hasMany(Product::class, 'cat_id', 'cat_id')->where('status', 'active')->orderBy('id', 'DESC')->limit(8);
+        return $this->hasMany(Product::class, 'cat_id', 'cat_id')->where('status', 'active')->orderBy('id', 'DESC')->limit(12);
     }
     public function getReview()
     {

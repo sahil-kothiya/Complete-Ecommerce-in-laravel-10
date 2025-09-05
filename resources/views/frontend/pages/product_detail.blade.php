@@ -45,39 +45,37 @@
 						<!-- Product Gallery -->
 						<div class="product-gallery">
 							<!-- Main Image Viewer -->
-							<div class="main-image-container position-relative mb-3">
+
+							<div class="main-image-container position-relative mb-3" style="display: flex; align-items: center; justify-content: center;">
 								@if($product_detail->images->isNotEmpty())
-								<img src="{{ asset($product_detail->images->first()->image_path) }}"
+								<img src="{{ asset($product_detail->images[0]->image_path) }}"
 									alt="{{$product_detail->title}}"
-									class="main-image img-fluid w-100"
+									class="main-image img-fluid"
 									id="mainImage"
 									tabindex="15"
-									style="max-height: 500px; object-fit: contain; border-radius: 10px;">
-								<!-- Zoom Lens -->
-								<div class="zoom-lens d-none"></div>
-								<!-- Zoom Result -->
-								<div class="zoom-result d-none position-absolute" style="width: 300px; height: 300px; right: -320px; top: 0; border-radius: 10px; overflow: hidden;"></div>
+									style="max-height: 500px; object-fit: contain; border-radius: 10px; width: 100%; min-width: 300px; border: 2px solid #eee;">
 								@else
 								<img src="{{ asset('images/no-image.png') }}"
 									alt="No Image"
-									class="main-image img-fluid w-100"
+									class="main-image img-fluid"
 									id="mainImage"
 									tabindex="15"
-									style="max-height: 500px; object-fit: contain; border-radius: 10px;">
+									style="max-height: 500px; object-fit: contain; border-radius: 10px; width: 100%; min-width: 300px; border: 2px solid #eee;">
 								@endif
 							</div>
 
 							<!-- Thumbnail Carousel -->
-							<div class="thumbnail-carousel">
-								<div class="thumbnails d-flex flex-row flex-nowrap overflow-auto">
+
+							<div class="thumbnail-carousel mt-2">
+								<div class="thumbnails d-flex flex-row flex-nowrap">
 									@forelse($product_detail->images as $index => $image)
 									<div class="thumbnail-item mx-1" style="flex: 0 0 auto;">
 										<img src="{{ asset($image->image_path) }}"
 											alt="Thumbnail {{$index + 1}}"
 											tabindex="{{ 16 + $index }}"
 											class="img-fluid thumbnail-image {{ $index == 0 ? 'active' : '' }}"
-											style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px; cursor: pointer;"
-											data-image="{{ asset($image->image_path) }}">
+											style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px; cursor: pointer; border: 2px solid <?php echo ($index == 0) ? '#2874f0' : '#eee'; ?>;"
+											data-index="{{ $index }}">
 									</div>
 									@empty
 									<div class="thumbnail-item mx-1" style="flex: 0 0 auto;">
@@ -85,13 +83,15 @@
 											alt="No Image"
 											tabindex="16"
 											class="img-fluid thumbnail-image active"
-											style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px; cursor: pointer;"
-											data-image="{{ asset('images/no-image.png') }}">
+											style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px; cursor: pointer; border: 2px solid #2874f0;"
+											data-index="0">
 									</div>
 									@endforelse
 								</div>
 							</div>
 						</div>
+						<!-- Auto Slider Script -->
+
 						<!-- End Product Gallery -->
 					</div>
 					<div class="col-lg-6 col-12">
@@ -154,20 +154,100 @@
 							<!-- Size -->
 							@if($product_detail->size)
 							<div class="size mt-4">
-								<h4 tabindex="21">Size</h4>
+								<h4 tabindex="21">Size
+									<a href="#" class="size-guide-link" data-toggle="modal" data-target="#sizeGuideModal">
+										<i class="ti-ruler-alt"></i> Size Guide
+									</a>
+								</h4>
 								<div class="size-selector">
 									@php
 									$sizes = explode(',', $product_detail->size);
 									@endphp
 									@foreach($sizes as $index => $size)
 									<label class="size-option {{ $index == 0 ? 'active' : '' }}">
-										<input type="radio" name="size" value="{{ $size }}" {{ $index == 0 ? 'checked' : '' }} class="d-none">
-										<span tabindex="{{ 22 + $index }}">{{ $size }}</span>
+										<input type="radio"
+											name="size"
+											value="{{ trim($size) }}"
+											{{ $index == 0 ? 'checked' : '' }}
+											class="d-none size-input"
+											data-size="{{ trim($size) }}">
+										<span tabindex="{{ 22 + $index }}">{{ trim($size) }}</span>
 									</label>
 									@endforeach
 									@error('size')
-									<span class="text-danger">{{ $message }}</span>
+									<span class="text-danger size-error">{{ $message }}</span>
 									@enderror
+								</div>
+
+								<!-- Selected size display -->
+								<div class="selected-size-info mt-2">
+									<small class="text-muted">Selected: <strong id="selectedSizeDisplay">{{ trim(explode(',', $product_detail->size)[0]) }}</strong></small>
+								</div>
+							</div>
+
+							<!-- Size Guide Modal (Optional) -->
+							<div class="modal fade" id="sizeGuideModal" tabindex="-1" role="dialog" aria-labelledby="sizeGuideModalLabel">
+								<div class="modal-dialog modal-lg" role="document">
+									<div class="modal-content">
+										<div class="modal-header">
+											<h5 class="modal-title" id="sizeGuideModalLabel">Size Guide</h5>
+											<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+												<span aria-hidden="true">&times;</span>
+											</button>
+										</div>
+										<div class="modal-body">
+											<div class="size-chart">
+												<table class="table table-bordered">
+													<thead class="thead-light">
+														<tr>
+															<th>Size</th>
+															<th>Chest (inches)</th>
+															<th>Waist (inches)</th>
+															<th>Length (inches)</th>
+														</tr>
+													</thead>
+													<tbody>
+														<tr>
+															<td><strong>XS</strong></td>
+															<td>32-34</td>
+															<td>28-30</td>
+															<td>26</td>
+														</tr>
+														<tr>
+															<td><strong>S</strong></td>
+															<td>34-36</td>
+															<td>30-32</td>
+															<td>27</td>
+														</tr>
+														<tr>
+															<td><strong>M</strong></td>
+															<td>36-38</td>
+															<td>32-34</td>
+															<td>28</td>
+														</tr>
+														<tr>
+															<td><strong>L</strong></td>
+															<td>38-40</td>
+															<td>34-36</td>
+															<td>29</td>
+														</tr>
+														<tr>
+															<td><strong>XL</strong></td>
+															<td>40-42</td>
+															<td>36-38</td>
+															<td>30</td>
+														</tr>
+														<tr>
+															<td><strong>XXL</strong></td>
+															<td>42-44</td>
+															<td>38-40</td>
+															<td>31</td>
+														</tr>
+													</tbody>
+												</table>
+											</div>
+										</div>
+									</div>
 								</div>
 							</div>
 							@endif
@@ -342,378 +422,585 @@
 </section>
 <!--/ End Shop Single -->
 
-<div class="product-recommendations">
+<!-- Related Products Section (Flipkart/Amazon Style Carousel) -->
+<div class="related-carousel-section">
 	<div class="container">
-		<div class="row">
-			<div class="col-12">
-				<div class="recommendations-title">
-					<h2>Related Products</h2>
-					<p>Discover similar items you might love</p>
-				</div>
+		<div class="d-flex align-items-center justify-content-between mb-2 flex-wrap">
+			<div>
+				<h2 class="carousel-title mb-0">Similar Products</h2>
+				<!-- <div class="carousel-subtitle">Inspired by your interest</div> -->
+			</div>
+			<div class="carousel-nav-btns">
+				<button type="button" class="carousel-nav-btn" id="carouselPrev" aria-label="Previous products">
+					<i class="ti-angle-left"></i>
+				</button>
+				<button type="button" class="carousel-nav-btn" id="carouselNext" aria-label="Next products">
+					<i class="ti-angle-right"></i>
+				</button>
 			</div>
 		</div>
-		<div class="row">
-			<div class="col-12">
-				<div class="position-relative">
-					<!-- Navigation Arrows -->
-					<button type="button" class="slider-nav slider-nav-prev" id="prevBtn" aria-label="Previous products">
-						<i class="ti-angle-left" aria-hidden="true"></i>
-					</button>
-					<button type="button" class="slider-nav slider-nav-next" id="nextBtn" aria-label="Next products">
-						<i class="ti-angle-right" aria-hidden="true"></i>
-					</button>
-
-					<!-- Products Slider -->
-					<div class="recommendations-slider" id="productsSlider">
-						@foreach($related_products as $product)
-						@include('frontend.partials.product-card', ['product' => $product])
-						@endforeach
+		<div class="carousel-viewport position-relative">
+			<div class="carousel-track flipkart-carousel" id="relatedCarousel">
+				@if($related_products && count($related_products))
+				@foreach($related_products as $product)
+				@php
+					$inWishlist = Helper::isProductInWishlist($product->slug);
+				@endphp
+				<div class="carousel-item flipkart-card">
+					<div class="flipkart-card-img-wrap">
+						<a href="{{ route('product-detail', $product->slug) }}">
+							<img src="{{ $product->images->first() ? asset($product->images->first()->image_path) : asset('images/no-image.png') }}" alt="{{ $product->title }}" class="flipkart-card-img" loading="lazy">
+						</a>
+						@if($product->discount > 0)
+						<span class="flipkart-discount-badge">{{ $product->discount }}% OFF</span>
+						@endif
+						<div class="flipkart-card-icons">
+							<a href="{{ route('add-to-wishlist', $product->slug) }}" class="flipkart-icon-btn" title="Add to Wishlist">
+								<i class="ti-heart" style="color: {{ $inWishlist ? 'red' : '#6c757d' }}"></i>
+							</a>
+							<a href="#" class="flipkart-icon-btn" title="Quick View" onclick="event.preventDefault(); $('#productModal{{ $product->id }}').modal('show');"><i class="ti-eye"></i></a>
+						</div>
+					</div>
+					<div class="flipkart-card-body">
+						<a href="{{ route('product-detail', $product->slug) }}" class="flipkart-card-title">{{ Str::limit($product->title, 40) }}</a>
+						<div class="flipkart-card-price">
+							@if($product->discount > 0)
+							<span class="flipkart-price-discounted">${{ number_format($product->price - ($product->price * $product->discount / 100), 2) }}</span>
+							<span class="flipkart-price-original">${{ number_format($product->price, 2) }}</span>
+							@else
+							<span class="flipkart-price-discounted">${{ number_format($product->price, 2) }}</span>
+							@endif
+						</div>
+						<div class="add-to-cart mt-4 d-flex align-items-center gap-2">
+							<a href="{{ route('add-to-cart', $product->slug) }}" class="btn btn-sm btn-dark text-uppercase text-center {{ $product->stock <= 0 ? 'disabled' : '' }}">
+								<i class="ti-shopping-cart"></i> {{ $product->stock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
+							</a>
+							@if(auth()->check())
+								<a href="{{ route('add-to-wishlist', $product->slug) }}" class="btn min" title="Add to Wishlist">
+									<i class="ti-heart" style="color: {{ $inWishlist ? 'red' : '#6c757d' }}"></i>
+								</a>
+							@else
+								<a href="{{ route('login.form') }}" class="btn min wishlist-login-prompt" title="Add to Wishlist">
+									<i class="ti-heart" style="color: #6c757d"></i>
+								</a>
+							@endif
+						</div>
 					</div>
 				</div>
+				@endforeach
+				@else
+				<div class="carousel-item text-center" style="min-width:180px;max-width:180px;opacity:0.7;">
+					<div class="p-4">No related products found.</div>
+				</div>
+				@endif
 			</div>
 		</div>
 	</div>
 </div>
-<!-- End Most Popular Area -->
+<!-- End Related Products Carousel -->
+
+<!-- Optional: Login Modal (Bootstrap) -->
+<div class="modal fade" id="loginPromptModal" tabindex="-1" role="dialog" aria-labelledby="loginPromptModalLabel" aria-hidden="true">
+	<div class="modal-dialog modal-dialog-centered" role="document">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title" id="loginPromptModalLabel">Login Required</h5>
+				<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+					<span aria-hidden="true">&times;</span>
+				</button>
+			</div>
+			<div class="modal-body">
+				Please <a href="{{ route('login.form') }}">login</a> to add products to your wishlist.
+			</div>
+			<div class="modal-footer">
+				<a href="{{ route('login.form') }}" class="btn btn-primary">Login</a>
+				<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+			</div>
+		</div>
+	</div>
+</div>
 
 @endsection
 
 @push('styles')
 <style>
-	/* Ensure parent allows absolute arrows to be visible */
-	.position-relative {
-		overflow: visible !important;
-	}
-
-	/* Ensure arrows are always on top & clickable */
-	.slider-nav {
-		pointer-events: auto;
-		z-index: 9999;
-	}
-
-	/* Slightly increase touch target on mobiles */
-	@media (max-width: 768px) {
-		.slider-nav {
-			width: 48px;
-			height: 48px;
-		}
-	}
-
-	/* Recommendations Section Styles */
-	.product-recommendations {
-		background: #f8f9fa;
-		padding: 80px 0;
-		position: relative;
-		overflow: hidden;
-	}
-
-	.product-recommendations::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		height: 1px;
-		background: linear-gradient(90deg, transparent, #e9ecef, transparent);
-	}
-
-	.recommendations-title {
-		text-align: center;
-		margin-bottom: 60px;
-		position: relative;
-	}
-
-	.recommendations-title h2 {
-		font-size: 2.5rem;
-		font-weight: 700;
-		color: #2c3e50;
-		margin-bottom: 15px;
-		position: relative;
-		display: inline-block;
-	}
-
-	.recommendations-title h2::after {
-		content: '';
-		position: absolute;
-		bottom: -10px;
-		left: 50%;
-		transform: translateX(-50%);
-		width: 60px;
-		height: 4px;
-		background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
-		border-radius: 2px;
-	}
-
-	.recommendations-title p {
-		color: #6c757d;
-		font-size: 1.1rem;
-		margin: 0;
-	}
-
-	/* Recommendations Slider Container */
-	.recommendations-slider {
-		display: flex;
-		gap: 25px;
-		padding: 20px 0;
-		overflow-x: auto;
-		overflow-y: hidden;
-		scroll-behavior: smooth;
-		scrollbar-width: none;
-		-ms-overflow-style: none;
-	}
-
-	.recommendations-slider::-webkit-scrollbar {
-		display: none;
-	}
-
-	/* Individual Recommendation Card */
-	.recommendation-card {
-		flex: 0 0 280px;
-		background: #ffffff;
-		border-radius: 15px;
-		overflow: hidden;
-		box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
-		transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-		position: relative;
-		border: 1px solid rgba(0, 0, 0, 0.05);
-	}
-
-	.recommendation-card:hover {
-		transform: translateY(-8px);
-		box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
-	}
-
-	/* Recommendation Image Container */
-	.recommendation-image-wrapper {
-		position: relative;
-		height: 220px;
-		overflow: hidden;
-		background: #f8f9fa;
-	}
-
-	.recommendation-image {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		transition: transform 0.5s ease;
-	}
-
-	.recommendation-card:hover .recommendation-image {
-		transform: scale(1.1);
-	}
-
-	/* Discount Label */
-	.discount-label {
-		position: absolute;
-		top: 15px;
-		left: 15px;
-		background: linear-gradient(45deg, #ff6b6b, #ee5a52);
-		color: white;
-		padding: 8px 12px;
-		border-radius: 20px;
-		font-size: 0.85rem;
-		font-weight: 600;
-		z-index: 10;
-		box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
-	}
-
-	/* Recommendation Actions Overlay */
-	.recommendation-actions {
-		position: absolute;
-		top: 15px;
-		right: 15px;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		opacity: 0;
-		transform: translateX(20px);
-		transition: all 0.3s ease;
-	}
-
-	.recommendation-card:hover .recommendation-actions {
-		opacity: 1;
-		transform: translateX(0);
-	}
-
-	.action-button {
-		width: 40px;
-		height: 40px;
-		background: rgba(255, 255, 255, 0.95);
-		border: none;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: #666;
-		font-size: 16px;
-		transition: all 0.3s ease;
-		box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-		backdrop-filter: blur(10px);
-	}
-
-	.action-button:hover {
-		background: #fff;
-		color: #ff6b6b;
-		transform: scale(1.1);
-		box-shadow: 0 6px 20px rgba(255, 107, 107, 0.3);
-	}
-
-	/* Recommendation Content */
-	.recommendation-content {
-		padding: 25px 20px;
-		text-align: center;
-	}
-
-	.recommendation-title {
-		font-size: 1.1rem;
-		font-weight: 600;
-		color: #2c3e50;
-		margin-bottom: 12px;
-		text-decoration: none;
-		display: block;
-		line-height: 1.4;
-		transition: color 0.3s ease;
-	}
-
-	.recommendation-title:hover {
-		color: #ff6b6b;
-		text-decoration: none;
-	}
-
-	/* Price Section */
-	.recommendation-price {
+	/* Modern Size Selector - Flipkart/Amazon Style */
+	.size {
+		margin-top: 20px;
 		margin-bottom: 20px;
 	}
 
-	.price-current {
-		font-size: 1.8rem;
-		font-weight: bold;
-		color: #e74c3c;
-	}
-
-	.nav-tabs .nav-link {
-		border: none;
+	.size h4 {
+		font-size: 16px;
 		font-weight: 600;
-		color: #555;
-		transition: 0.3s;
-	}
-
-	.nav-tabs .nav-link.active {
-		color: #fff;
-		background: linear-gradient(45deg, #667eea, #764ba2);
-		border-radius: 20px;
-		padding: 8px 20px;
-	}
-
-	.price-old {
-		font-size: 1rem;
-		text-decoration: line-through;
-		color: #95a5a6;
-		margin-left: 8px;
-	}
-
-	.discount-tag {
-		background: #ff4757;
-		color: #fff;
-		padding: 3px 8px;
-		font-size: 0.8rem;
-		border-radius: 4px;
-		margin-left: 10px;
-	}
-
-	.price-previous {
-		font-size: 1rem;
-		color: #95a5a6;
-		text-decoration: line-through;
-	}
-
-	.price-current.price-single {
-		color: #2c3e50;
-	}
-
-	/* Add to Cart Button */
-	.cart-button {
-		width: 100%;
-		background: linear-gradient(45deg, #667eea, #764ba2);
-		color: white;
-		border: none;
-		padding: 12px 20px;
-		border-radius: 25px;
-		font-weight: 600;
-		font-size: 0.95rem;
-		transition: all 0.3s ease;
+		color: #212121;
+		margin-bottom: 12px;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 	}
 
-	.cart-button:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
-		background: linear-gradient(45deg, #5a67d8, #6b46c1);
+	.size-selector {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		align-items: center;
 	}
 
-	/* Navigation Arrows */
-	.slider-nav {
+	.size-option {
+		position: relative;
+		cursor: pointer;
+		margin: 0;
+		display: inline-block;
+	}
+
+	.size-option input[type="radio"] {
+		position: absolute;
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	.size-option span {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 48px;
+		height: 40px;
+		padding: 8px 16px;
+		border: 1.5px solid #d4d5d9;
+		border-radius: 6px;
+		background-color: #fff;
+		font-size: 14px;
+		font-weight: 500;
+		color: #282c3f;
+		text-transform: uppercase;
+		letter-spacing: 0.3px;
+		transition: all 0.2s ease;
+		user-select: none;
+		white-space: nowrap;
+		position: relative;
+	}
+
+	.size-option span:hover {
+		border-color: #2874f0;
+		background-color: #f8f9ff;
+		transform: translateY(-1px);
+		box-shadow: 0 2px 8px rgba(40, 116, 240, 0.15);
+	}
+
+	.size-option.active span,
+	.size-option input[type="radio"]:checked+span {
+		border-color: #2874f0;
+		background-color: #2874f0;
+		color: #fff;
+		font-weight: 600;
+		box-shadow: 0 2px 12px rgba(40, 116, 240, 0.25);
+		transform: translateY(-1px);
+	}
+
+	.size-option.active span:before,
+	.size-option input[type="radio"]:checked+span:before {
+		content: "✓";
+		position: absolute;
+		top: -8px;
+		right: -8px;
+		width: 18px;
+		height: 18px;
+		background: #388e3c;
+		color: white;
+		border-radius: 50%;
+		font-size: 10px;
+		font-weight: bold;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: 2px solid #fff;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+	}
+
+	/* Focus states for accessibility */
+	.size-option span:focus,
+	.size-option input[type="radio"]:focus+span {
+		outline: none;
+		border-color: #2874f0;
+		box-shadow: 0 0 0 3px rgba(40, 116, 240, 0.1);
+	}
+
+	/* Disabled state */
+	.size-option.disabled span,
+	.size-option input[type="radio"]:disabled+span {
+		background-color: #f5f5f5;
+		border-color: #e0e0e0;
+		color: #9e9e9e;
+		cursor: not-allowed;
+		position: relative;
+	}
+
+	.size-option.disabled span:before,
+	.size-option input[type="radio"]:disabled+span:before {
+		content: "";
 		position: absolute;
 		top: 50%;
-		transform: translateY(-50%);
-		background: rgba(255, 255, 255, 0.95);
+		left: 50%;
+		width: 1px;
+		height: 100%;
+		background: #e0e0e0;
+		transform: translate(-50%, -50%) rotate(45deg);
+	}
+
+	/* Size guide link (optional) */
+	.size-guide-link {
+		margin-left: 12px;
+		color: #2874f0;
+		font-size: 13px;
+		text-decoration: none;
+		font-weight: 500;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.size-guide-link:hover {
+		text-decoration: underline;
+		color: #1a5db8;
+	}
+
+	/* Responsive Design */
+	@media (max-width: 768px) {
+		.size h4 {
+			font-size: 15px;
+			margin-bottom: 10px;
+		}
+
+		.size-option span {
+			min-width: 44px;
+			height: 36px;
+			padding: 6px 12px;
+			font-size: 13px;
+		}
+
+		.size-selector {
+			gap: 6px;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.size-option span {
+			min-width: 40px;
+			height: 32px;
+			padding: 4px 10px;
+			font-size: 12px;
+		}
+
+		.size-selector {
+			gap: 5px;
+		}
+	}
+
+	.btn {
+		position: relative;
+		/* font-weight: 500; */
+		font-size: 14px;
+		color: #fff;
+		background: #333;
+		-webkit-transition: .4s;
+		-moz-transition: .4s;
+		transition: .4s;
+		z-index: 5;
+		display: inline-block;
+		padding: 13px 20px;
+		border-radius: 0;
+		text-transform: uppercase;
+	}
+
+	.related-carousel-section {
+		background: #f8f9fa;
+		padding: 32px 0 24px 0;
+		margin-top: 32px;
+		border-radius: 0 0 18px 18px;
+		box-shadow: 0 2px 16px rgba(0, 0, 0, 0.04);
+	}
+
+	.carousel-title {
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: #222;
+		margin-bottom: 0;
+	}
+
+	.carousel-subtitle {
+		color: #6c757d;
+		font-size: 1rem;
+		margin-top: 2px;
+	}
+
+	.carousel-nav-btns {
+		display: flex;
+		gap: 8px;
+	}
+
+	.carousel-nav-btn {
+		width: 38px;
+		height: 38px;
+		border-radius: 50%;
 		border: none;
-		width: 50px;
-		height: 50px;
+		background: #fff;
+		color: #444;
+		font-size: 1.3rem;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+		z-index: 10;
+	}
+
+	.carousel-nav-btn:disabled {
+		opacity: 0.4;
+		pointer-events: none;
+	}
+
+	.carousel-nav-btn:hover {
+		background: #f1f3f6;
+		color: #ff6b6b;
+		box-shadow: 0 4px 16px rgba(255, 107, 107, 0.13);
+	}
+
+
+	.carousel-viewport {
+		overflow-x: hidden; /* Hide horizontal scrollbar */
+		overflow-y: visible;
+		width: 100%;
+		position: relative;
+		padding-bottom: 8px;
+		scrollbar-width: none; /* Firefox */
+	}
+	.carousel-viewport::-webkit-scrollbar {
+		display: none; /* Chrome, Safari, Opera */
+	}
+
+	/* Prevent mouse/touch scroll */
+	.carousel-viewport {
+		pointer-events: auto;
+	}
+	.carousel-viewport,
+	.carousel-viewport * {
+		-ms-overflow-style: none;
+		overscroll-behavior-x: contain;
+		touch-action: none;
+	}
+
+	.flipkart-carousel {
+		display: flex;
+		gap: 16px;
+		transition: transform 0.5s cubic-bezier(.4, 0, .2, 1);
+		will-change: transform;
+		user-select: none;
+		touch-action: pan-x;
+		padding-bottom: 8px;
+		white-space: nowrap;
+		/* force horizontal layout */
+		background: linear-gradient(90deg, #f8fafc 60%, #e3e9f7 100%);
+		box-shadow: 0 2px 12px rgba(40, 116, 240, 0.06);
+		border: none;
+	}
+
+	.flipkart-card {
+		flex: 0 0 180px;
+		max-width: 180px;
+		min-width: 160px;
+		background: #fff;
+		border-radius: 8px;
+		box-shadow: 0 1px 8px rgba(0, 0, 0, 0.07);
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		margin-bottom: 0;
+		position: relative;
+		border: 1px solid #f1f1f1;
+		overflow: hidden;
+		transition: box-shadow 0.2s, transform 0.2s;
+	}
+
+	.flipkart-card:hover {
+		box-shadow: 0 4px 24px rgba(0, 0, 0, 0.13);
+		transform: translateY(-2px) scale(1.03);
+	}
+
+	.flipkart-card-img-wrap {
+		position: relative;
+		width: 100%;
+		aspect-ratio: 1/1;
+		background: #f6f7fa;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		overflow: hidden;
+	}
+
+	.flipkart-card-img {
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
+		background: #fff;
+		border-radius: 0;
+		transition: transform 0.3s;
+	}
+
+	.flipkart-card:hover .flipkart-card-img {
+		transform: scale(1.07);
+	}
+
+	.flipkart-discount-badge {
+		position: absolute;
+		top: 8px;
+		left: 8px;
+		background: #2874f0;
+		color: #fff;
+		font-size: 0.8rem;
+		font-weight: 600;
+		padding: 3px 10px;
+		border-radius: 12px;
+		z-index: 2;
+		box-shadow: 0 2px 8px rgba(255, 97, 97, 0.13);
+	}
+
+	.flipkart-card-icons {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 7px;
+		z-index: 2;
+	}
+
+	.flipkart-icon-btn {
+		width: 32px;
+		height: 32px;
+		background: rgba(255, 255, 255, 0.95);
 		border-radius: 50%;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		color: #666;
-		font-size: 18px;
-		transition: all 0.3s ease;
-		box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
-		z-index: 100;
-		backdrop-filter: blur(10px);
+		font-size: 1.1rem;
+		border: none;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+		transition: background 0.2s, color 0.2s;
+		margin-bottom: 0;
+		text-decoration: none;
 	}
 
-	.slider-nav:hover {
+	.flipkart-icon-btn:hover {
 		background: #fff;
-		color: #ff6b6b;
-		transform: translateY(-50%) scale(1.1);
-		box-shadow: 0 8px 25px rgba(255, 107, 107, 0.3);
+		color: #ff6161;
 	}
 
-	.slider-nav-prev {
-		left: -25px;
+	.flipkart-card-body {
+		padding: 12px 10px 10px 10px;
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		flex: 1 1 auto;
 	}
 
-	.slider-nav-next {
-		right: -25px;
+	.flipkart-card-title {
+		font-size: 1rem;
+		font-weight: 600;
+		color: #222;
+		margin-bottom: 6px;
+		text-decoration: none;
+		display: block;
+		line-height: 1.3;
+		min-height: 2.2em;
+		transition: color 0.2s;
 	}
 
-	/* Responsive Design */
+	.flipkart-card-title:hover {
+		color: #2874f0;
+	}
+
+	.flipkart-card-price {
+		margin-bottom: 8px;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.flipkart-price-discounted {
+		font-size: 1.1rem;
+		font-weight: 700;
+		color: #007bff;
+	}
+
+	.flipkart-price-original {
+		font-size: 0.95rem;
+		color: #888;
+		text-decoration: line-through;
+	}
+
+	.flipkart-cart-btn {
+		width: 100%;
+		background: linear-gradient(90deg, #2874f0 60%, #0f9d58 100%);
+		color: #fff;
+		border: none;
+		padding: 8px 0;
+		border-radius: 18px;
+		font-weight: 600;
+		font-size: 0.95rem;
+		margin-top: 4px;
+		transition: background 0.2s, box-shadow 0.2s;
+		text-transform: uppercase;
+		letter-spacing: 0.2px;
+		text-align: center;
+		text-decoration: none;
+		display: block;
+	}
+
+	.flipkart-cart-btn:hover {
+		background: linear-gradient(90deg, #0f9d58 60%, #2874f0 100%);
+		color: #fff;
+		box-shadow: 0 4px 16px rgba(40, 116, 240, 0.13);
+	}
+
+	.flipkart-cart-btn.disabled,
+	.flipkart-cart-btn[disabled] {
+		background: #e0e0e0;
+		color: #aaa;
+		pointer-events: none;
+		cursor: not-allowed;
+	}
+
+	@media (max-width: 992px) {
+		.flipkart-card {
+			flex-basis: 150px;
+			max-width: 150px;
+		}
+	}
+
 	@media (max-width: 768px) {
-		.recommendations-title h2 {
-			font-size: 2rem;
+		.carousel-title {
+			font-size: 1.1rem;
 		}
 
-		.product-recommendations {
-			padding: 50px 0;
+		.flipkart-card {
+			flex-basis: 120px;
+			max-width: 120px;
 		}
 
-		.recommendation-card {
-			flex: 0 0 250px;
-		}
-
-		.slider-nav {
-			display: none;
+		.related-carousel-section {
+			padding: 18px 0 10px 0;
 		}
 	}
 
 	@media (max-width: 576px) {
-		.recommendation-card {
-			flex: 0 0 220px;
+		.flipkart-card {
+			flex-basis: 100px;
+			max-width: 100px;
 		}
 
-		.recommendations-slider {
-			gap: 15px;
+		.flipkart-carousel {
+			gap: 7px;
 		}
 	}
 </style>
@@ -722,141 +1009,378 @@
 @push('scripts')
 <script>
 	document.addEventListener('DOMContentLoaded', function() {
-		const slider = document.getElementById('productsSlider');
-		const prevBtn = document.getElementById('prevBtn');
-		const nextBtn = document.getElementById('nextBtn');
-
-		if (slider && prevBtn && nextBtn) {
-			// Dynamically detect one card width (including margin/gap)
-			const getCardWidth = () => {
-				const card = slider.querySelector('.recommendation-card, .product-card-container');
-				if (!card) return 300;
-				const style = window.getComputedStyle(card);
-				return card.offsetWidth + parseInt(style.marginRight || 0);
-			};
-
-			prevBtn.addEventListener('click', () => {
-				slider.scrollBy({
-					left: -getCardWidth(),
-					behavior: 'smooth'
-				});
+		// Intercept wishlist click for guests
+		document.querySelectorAll('.wishlist-login-prompt').forEach(function(btn) {
+			btn.addEventListener('click', function(e) {
+				e.preventDefault();
+				if (typeof $ !== 'undefined' && $('#loginPromptModal').length) {
+					$('#loginPromptModal').modal('show');
+				} else {
+					window.location.href = btn.getAttribute('href');
+				}
 			});
-
-			nextBtn.addEventListener('click', () => {
-				slider.scrollBy({
-					left: getCardWidth(),
-					behavior: 'smooth'
-				});
-			});
-		}
+		});
 	});
+</script>
+<script>
+	// Size Selector Functionality
 	document.addEventListener('DOMContentLoaded', function() {
+		const sizeOptions = document.querySelectorAll('.size-option');
+		const sizeInputs = document.querySelectorAll('.size-input');
+		const selectedSizeField = document.getElementById('selectedSize');
+		const selectedSizeDisplay = document.getElementById('selectedSizeDisplay');
 
-		// compute card width (first visible card + gap)
-		const getCardWidth = () => {
-			const firstCard = slider.querySelector('.recommendation-card') || slider.firstElementChild;
-			const style = window.getComputedStyle(slider);
-			const gap = parseFloat(style.gap || style.columnGap) || 25;
-			if (!firstCard) return Math.min(300, slider.clientWidth);
-			const rect = firstCard.getBoundingClientRect();
-			return Math.round(rect.width + gap);
-		};
+		// Handle size selection
+		sizeOptions.forEach(function(option, index) {
+			const input = option.querySelector('input[type="radio"]');
+			const span = option.querySelector('span');
 
-		const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-
-		const scrollByAmount = (amount) => {
-			// calculate target and clamp to bounds
-			const maxLeft = Math.max(0, slider.scrollWidth - slider.clientWidth);
-			const target = clamp(Math.round(slider.scrollLeft + amount), 0, maxLeft);
-			slider.scrollTo({
-				left: target,
-				behavior: 'smooth'
+			// Click handler for the label
+			option.addEventListener('click', function(e) {
+				e.preventDefault();
+				selectSize(index, input.value);
 			});
-		};
 
-		// click handlers
-		if (prevBtn) prevBtn.addEventListener('click', (e) => {
-			e.preventDefault();
-			scrollByAmount(-getCardWidth());
-		});
-		if (nextBtn) nextBtn.addEventListener('click', (e) => {
-			e.preventDefault();
-			scrollByAmount(getCardWidth());
-		});
-
-		// update UI for buttons (disabled or faded)
-		const updateNavButtons = () => {
-			if (!prevBtn || !nextBtn) return;
-			const maxLeft = Math.max(0, slider.scrollWidth - slider.clientWidth);
-			prevBtn.disabled = slider.scrollLeft <= 0;
-			nextBtn.disabled = slider.scrollLeft >= (maxLeft - 1);
-			prevBtn.style.opacity = prevBtn.disabled ? '0.3' : '1';
-			nextBtn.style.opacity = nextBtn.disabled ? '0.3' : '1';
-		};
-
-		// throttle update with rAF
-		slider.addEventListener('scroll', () => {
-			window.requestAnimationFrame(updateNavButtons);
-		});
-		window.addEventListener('resize', () => {
-			window.requestAnimationFrame(updateNavButtons);
-		});
-
-		// initial state
-		setTimeout(updateNavButtons, 100);
-
-		// keyboard accessibility
-		[prevBtn, nextBtn].forEach(btn => {
-			if (!btn) return;
-			btn.addEventListener('keydown', (e) => {
+			// Keyboard support
+			span.addEventListener('keydown', function(e) {
 				if (e.key === 'Enter' || e.key === ' ') {
 					e.preventDefault();
-					btn.click();
+					selectSize(index, input.value);
+				}
+			});
+
+			// Arrow key navigation
+			span.addEventListener('keydown', function(e) {
+				let newIndex = index;
+
+				if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+					e.preventDefault();
+					newIndex = (index + 1) % sizeOptions.length;
+				} else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+					e.preventDefault();
+					newIndex = (index - 1 + sizeOptions.length) % sizeOptions.length;
+				}
+
+				if (newIndex !== index) {
+					sizeOptions[newIndex].querySelector('span').focus();
 				}
 			});
 		});
 
-		// Pointer (drag) support for desktop & touch:
-		// uses pointer events so it works with mouse, touch, stylus
-		let isDown = false;
-		let startX = 0;
-		let startScroll = 0;
+		function selectSize(index, sizeValue) {
+			// Remove active class from all options
+			sizeOptions.forEach(function(opt) {
+				opt.classList.remove('active');
+				opt.querySelector('input').checked = false;
+			});
 
-		// set initial cursor
-		slider.style.cursor = 'grab';
+			// Add active class to selected option
+			sizeOptions[index].classList.add('active');
+			sizeOptions[index].querySelector('input').checked = true;
 
-		slider.addEventListener('pointerdown', (e) => {
-			isDown = true;
-			startX = e.clientX;
-			startScroll = slider.scrollLeft;
-			slider.setPointerCapture && slider.setPointerCapture(e.pointerId);
-			slider.style.cursor = 'grabbing';
-		});
+			// Update hidden field for form submission
+			if (selectedSizeField) {
+				selectedSizeField.value = sizeValue;
+			}
 
-		slider.addEventListener('pointermove', (e) => {
-			if (!isDown) return;
-			const dx = e.clientX - startX;
-			slider.scrollLeft = startScroll - dx;
-		});
+			// Update display
+			if (selectedSizeDisplay) {
+				selectedSizeDisplay.textContent = sizeValue;
+			}
 
-		const releasePointer = (e) => {
-			if (!isDown) return;
-			isDown = false;
-			try {
-				slider.releasePointerCapture && slider.releasePointerCapture(e.pointerId);
-			} catch (err) {}
-			slider.style.cursor = 'grab';
-			// small timeout to update buttons after natural momentum
-			setTimeout(updateNavButtons, 100);
-		};
+			// Add a subtle animation feedback
+			const selectedSpan = sizeOptions[index].querySelector('span');
+			selectedSpan.style.transform = 'scale(0.95)';
+			setTimeout(() => {
+				selectedSpan.style.transform = 'scale(1)';
+			}, 150);
+		}
 
-		slider.addEventListener('pointerup', releasePointer);
-		slider.addEventListener('pointercancel', releasePointer);
-		slider.addEventListener('pointerleave', releasePointer);
+		// Initialize with first size if none selected
+		const activeSize = document.querySelector('.size-option.active');
+		if (!activeSize && sizeOptions.length > 0) {
+			selectSize(0, sizeOptions[0].querySelector('input').value);
+		}
 
-		// Helpful debug logs if things still misbehave
-		// (remove in production)
-		// console.log('[slider] initialized', { scrollWidth: slider.scrollWidth, clientWidth: slider.clientWidth });
+		// Stock checking (if you want to disable out-of-stock sizes)
+		// This would require additional backend data
+		function checkSizeAvailability() {
+			// Example implementation - you'd need to pass stock data from backend
+			/*
+			const stockData = @json($sizeStockData ?? []); // Pass from controller
+			
+			sizeOptions.forEach(function(option) {
+			    const sizeValue = option.querySelector('input').value;
+			    const isOutOfStock = stockData[sizeValue] === 0;
+			    
+			    if (isOutOfStock) {
+			        option.classList.add('disabled');
+			        option.querySelector('input').disabled = true;
+			        option.style.pointerEvents = 'none';
+			    }
+			});
+			*/
+		}
+
+		// Call stock check if needed
+		// checkSizeAvailability();
 	});
+
+	document.addEventListener('DOMContentLoaded', function() {
+		const mainImage = document.getElementById('mainImage');
+		const thumbnails = Array.from(document.querySelectorAll('.thumbnail-image'));
+		const images = thumbnails.map(t => t.src);
+		let currentIndex = thumbnails.length > 0 ? thumbnails.findIndex(t => t.classList.contains('active')) : 0;
+		// Fix: thumbnails is now an array, so findIndex works
+
+		// Thumbnail click (manual selection)
+		thumbnails.forEach(function(thumb, idx) {
+			thumb.addEventListener('click', function() {
+				currentIndex = idx;
+				updateImage();
+			});
+		});
+
+		// Auto-slide (every 3s)
+		setInterval(function() {
+			currentIndex = (currentIndex + 1) % images.length;
+			updateImage();
+		}, 3000);
+
+		function updateImage() {
+			mainImage.src = images[currentIndex];
+			thumbnails.forEach((t, i) => {
+				t.classList.remove('active');
+				t.style.border = '2px solid #eee';
+				if (i === currentIndex) {
+					t.classList.add('active');
+					t.style.border = '2px solid #2874f0'; // Blue border for active
+				}
+			});
+		}
+
+		// Initial highlight
+		updateImage();
+	});
+
+	document.addEventListener('DOMContentLoaded', function() {
+		// Main image scroll and change logic
+		const mainImageContainer = document.querySelector('.main-image-scroll-container');
+		const mainImages = mainImageContainer ? mainImageContainer.querySelectorAll('.main-image') : [];
+		const thumbnails = document.querySelectorAll('.thumbnail-image');
+		let activeIndex = 0;
+
+		function setActiveImage(index) {
+			mainImages.forEach((img, i) => {
+				img.style.border = i === index ? '2px solid #2874f0' : '2px solid #eee';
+				img.style.opacity = i === index ? '1' : '0.6';
+			});
+			thumbnails.forEach((thumb, i) => {
+				thumb.classList.toggle('active', i === index);
+			});
+			activeIndex = index;
+			// Scroll main image into view
+			if (mainImages[index]) {
+				mainImages[index].scrollIntoView({
+					behavior: 'smooth',
+					inline: 'center'
+				});
+			}
+		}
+
+		thumbnails.forEach((thumb, i) => {
+			thumb.addEventListener('click', function() {
+				setActiveImage(i);
+			});
+		});
+
+		// Auto left/right scroll for main image area
+		let autoScrollTimer = null;
+		const autoScrollDelay = 4000;
+
+		function startAutoScroll() {
+			clearInterval(autoScrollTimer);
+			autoScrollTimer = setInterval(() => {
+				let nextIndex = (activeIndex + 1) % mainImages.length;
+				setActiveImage(nextIndex);
+			}, autoScrollDelay);
+		}
+
+		function stopAutoScroll() {
+			clearInterval(autoScrollTimer);
+		}
+		if (mainImages.length > 1) {
+			mainImageContainer.addEventListener('mouseenter', stopAutoScroll);
+			mainImageContainer.addEventListener('mouseleave', startAutoScroll);
+			startAutoScroll();
+		}
+
+		// Touch/drag support for main image scroll
+		let isDown = false,
+			startX = 0,
+			scrollLeft = 0;
+		if (mainImageContainer) {
+			mainImageContainer.addEventListener('pointerdown', (e) => {
+				isDown = true;
+				startX = e.clientX;
+				scrollLeft = mainImageContainer.scrollLeft;
+				mainImageContainer.setPointerCapture?.(e.pointerId);
+				mainImageContainer.style.cursor = 'grabbing';
+			});
+			mainImageContainer.addEventListener('pointermove', (e) => {
+				if (!isDown) return;
+				const dx = e.clientX - startX;
+				mainImageContainer.scrollLeft = scrollLeft - dx;
+			});
+			const releasePointer = (e) => {
+				if (!isDown) return;
+				isDown = false;
+				try {
+					mainImageContainer.releasePointerCapture?.(e.pointerId);
+				} catch {}
+				mainImageContainer.style.cursor = 'grab';
+			};
+			['pointerup', 'pointercancel', 'pointerleave'].forEach(evt => mainImageContainer.addEventListener(evt, releasePointer));
+			mainImageContainer.style.cursor = 'grab';
+		}
+
+		// Related products carousel (existing logic)
+		const track = document.getElementById('relatedCarousel');
+		if (!track) return;
+		const viewport = track.closest('.carousel-viewport');
+		const prevBtn = document.getElementById('carouselPrev');
+		const nextBtn = document.getElementById('carouselNext');
+
+		let autoPlayTimer = null;
+		const autoPlayDelay = 3500;
+		let isHovered = false;
+
+		function getItemWidth() {
+			const item = track.querySelector('.carousel-item');
+			if (!item) return 180;
+			const style = window.getComputedStyle(item);
+			return item.offsetWidth + parseInt(style.marginRight || 0) + parseInt(style.marginLeft || 0);
+		}
+
+		function scrollByCard(dir = 1) {
+			const itemWidth = getItemWidth();
+			if (!viewport) return;
+			viewport.scrollBy({
+				left: dir * itemWidth,
+				behavior: 'smooth'
+			});
+		}
+
+		if (prevBtn) prevBtn.addEventListener('click', () => scrollByCard(-1));
+		if (nextBtn) nextBtn.addEventListener('click', () => scrollByCard(1));
+
+		// Touch/drag support (native scroll)
+		let isDown2 = false,
+			startX2 = 0,
+			scrollLeft2 = 0;
+		if (viewport) {
+			viewport.addEventListener('pointerdown', (e) => {
+				isDown2 = true;
+				startX2 = e.clientX;
+				scrollLeft2 = viewport.scrollLeft;
+				viewport.setPointerCapture?.(e.pointerId);
+				viewport.style.cursor = 'grabbing';
+			});
+			viewport.addEventListener('pointermove', (e) => {
+				if (!isDown2) return;
+				const dx = e.clientX - startX2;
+				viewport.scrollLeft = scrollLeft2 - dx;
+			});
+			const releasePointer2 = (e) => {
+				if (!isDown2) return;
+				isDown2 = false;
+				try {
+					viewport.releasePointerCapture?.(e.pointerId);
+				} catch {}
+				viewport.style.cursor = 'grab';
+			};
+			['pointerup', 'pointercancel', 'pointerleave'].forEach(evt => viewport.addEventListener(evt, releasePointer2));
+			viewport.style.cursor = 'grab';
+		}
+
+		function startAutoPlay() {
+			clearInterval(autoPlayTimer);
+			autoPlayTimer = setInterval(() => {
+				if (!isHovered) scrollByCard(1);
+			}, autoPlayDelay);
+		}
+
+		function stopAutoPlay() {
+			clearInterval(autoPlayTimer);
+		}
+
+		track.addEventListener('mouseenter', () => {
+			isHovered = true;
+			stopAutoPlay();
+		});
+		track.addEventListener('mouseleave', () => {
+			isHovered = false;
+			startAutoPlay();
+		});
+		[prevBtn, nextBtn].forEach(btn => {
+			if (!btn) return;
+			btn.addEventListener('mouseenter', () => {
+				isHovered = true;
+				stopAutoPlay();
+			});
+			btn.addEventListener('mouseleave', () => {
+				isHovered = false;
+				startAutoPlay();
+			});
+		});
+
+		// Init
+		setTimeout(() => {
+			startAutoPlay();
+		}, 200);
+	});
+</script>
+@endpush
+
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+	// Quantity plus/minus button logic
+	const minusBtn = document.querySelector('.button.minus .btn-number');
+	const plusBtn = document.querySelector('.button.plus .btn-number');
+	const qtyInput = document.querySelector('.input-number');
+    
+	if (plusBtn && qtyInput) {
+		plusBtn.addEventListener('click', function() {
+			let max = parseInt(qtyInput.getAttribute('data-max')) || 1000;
+			let current = parseInt(qtyInput.value) || 1;
+			if (current < max) {
+				qtyInput.value = current + 1;
+				minusBtn.removeAttribute('disabled');
+			}
+		});
+	}
+	if (minusBtn && qtyInput) {
+		minusBtn.addEventListener('click', function() {
+			let min = parseInt(qtyInput.getAttribute('data-min')) || 1;
+			let current = parseInt(qtyInput.value) || 1;
+			if (current > min) {
+				qtyInput.value = current - 1;
+			}
+			if (parseInt(qtyInput.value) <= min) {
+				minusBtn.setAttribute('disabled', 'disabled');
+			}
+		});
+	}
+	// Initialize minus button state
+	if (minusBtn && qtyInput) {
+		let min = parseInt(qtyInput.getAttribute('data-min')) || 1;
+		if (parseInt(qtyInput.value) <= min) {
+			minusBtn.setAttribute('disabled', 'disabled');
+		} else {
+			minusBtn.removeAttribute('disabled');
+		}
+	}
+});
 </script>
 @endpush
