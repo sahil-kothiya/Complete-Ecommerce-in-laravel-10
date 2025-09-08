@@ -18,7 +18,6 @@
 </div>
 @endif
 
-<!-- Brands Widget -->
 @if(!isset($mainCategory) || $mainCategory->filters->where('name', 'brand')->count())
 <div class="single-widget mainCategory">
     <h3 class="title">Brands</h3>
@@ -170,11 +169,11 @@
         @endif
     </div>
     @if(isset($recent_products) && $recent_products->count() > 4)
-    <div class="view-all-container">
+    {{-- <div class="view-all-container">
         <a href="{{ route('recent-products') }}" class="view-all-link" tabindex="36">
             View All Recent Products <i class="ti-arrow-right"></i>
         </a>
-    </div>
+    </div> --}}
     @endif
 </div>
 @endif

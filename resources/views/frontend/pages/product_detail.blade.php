@@ -428,7 +428,6 @@
 		<div class="d-flex align-items-center justify-content-between mb-2 flex-wrap">
 			<div>
 				<h2 class="carousel-title mb-0">Similar Products</h2>
-				<!-- <div class="carousel-subtitle">Inspired by your interest</div> -->
 			</div>
 			<div class="carousel-nav-btns">
 				<button type="button" class="carousel-nav-btn" id="carouselPrev" aria-label="Previous products">
@@ -444,7 +443,7 @@
 				@if($related_products && count($related_products))
 				@foreach($related_products as $product)
 				@php
-					$inWishlist = Helper::isProductInWishlist($product->slug);
+				$inWishlist = Helper::isProductInWishlist($product->slug);
 				@endphp
 				<div class="carousel-item flipkart-card">
 					<div class="flipkart-card-img-wrap">
@@ -458,7 +457,7 @@
 							<a href="{{ route('add-to-wishlist', $product->slug) }}" class="flipkart-icon-btn" title="Add to Wishlist">
 								<i class="ti-heart" style="color: {{ $inWishlist ? 'red' : '#6c757d' }}"></i>
 							</a>
-							<a href="#" class="flipkart-icon-btn" title="Quick View" onclick="event.preventDefault(); $('#productModal{{ $product->id }}').modal('show');"><i class="ti-eye"></i></a>
+							<!-- <a href="#" class="flipkart-icon-btn" title="Quick View" onclick="event.preventDefault(); $('#productModal{{ $product->id }}').modal('show');"><i class="ti-eye"></i></a> -->
 						</div>
 					</div>
 					<div class="flipkart-card-body">
@@ -475,15 +474,6 @@
 							<a href="{{ route('add-to-cart', $product->slug) }}" class="btn btn-sm btn-dark text-uppercase text-center {{ $product->stock <= 0 ? 'disabled' : '' }}">
 								<i class="ti-shopping-cart"></i> {{ $product->stock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
 							</a>
-							@if(auth()->check())
-								<a href="{{ route('add-to-wishlist', $product->slug) }}" class="btn min" title="Add to Wishlist">
-									<i class="ti-heart" style="color: {{ $inWishlist ? 'red' : '#6c757d' }}"></i>
-								</a>
-							@else
-								<a href="{{ route('login.form') }}" class="btn min wishlist-login-prompt" title="Add to Wishlist">
-									<i class="ti-heart" style="color: #6c757d"></i>
-								</a>
-							@endif
 						</div>
 					</div>
 				</div>
@@ -525,6 +515,31 @@
 @push('styles')
 <style>
 	/* Modern Size Selector - Flipkart/Amazon Style */
+	.flipkart-card-icons {
+		opacity: 0;
+		pointer-events: none;
+		/* Prevent blocking when hidden */
+		transition: opacity 0.2s;
+		z-index: 20;
+	}
+
+	.flipkart-icon-btn:hover i {
+		color: #ff6161 !important;
+	}
+
+	.flipkart-card:hover .flipkart-card-icons,
+	.flipkart-card:focus-within .flipkart-card-icons {
+		opacity: 1;
+		pointer-events: auto;
+		/* Enable clicks when visible */
+	}
+
+	.flipkart-card-icons .flipkart-icon-btn {
+		pointer-events: auto;
+		z-index: 21;
+		position: relative;
+	}
+
 	.size {
 		margin-top: 20px;
 		margin-bottom: 20px;
@@ -767,21 +782,26 @@
 
 
 	.carousel-viewport {
-		overflow-x: hidden; /* Hide horizontal scrollbar */
+		overflow-x: hidden;
+		/* Hide horizontal scrollbar */
 		overflow-y: visible;
 		width: 100%;
 		position: relative;
 		padding-bottom: 8px;
-		scrollbar-width: none; /* Firefox */
+		scrollbar-width: none;
+		/* Firefox */
 	}
+
 	.carousel-viewport::-webkit-scrollbar {
-		display: none; /* Chrome, Safari, Opera */
+		display: none;
+		/* Chrome, Safari, Opera */
 	}
 
 	/* Prevent mouse/touch scroll */
 	.carousel-viewport {
 		pointer-events: auto;
 	}
+
 	.carousel-viewport,
 	.carousel-viewport * {
 		-ms-overflow-style: none;
@@ -1023,6 +1043,13 @@
 	});
 </script>
 <script>
+	$(function() {
+        $('.flipkart-icon-btn').on('click', function(e) {
+            
+            alert('Please login to add items to your wishlist.');
+        });
+    });
+
 	// Size Selector Functionality
 	document.addEventListener('DOMContentLoaded', function() {
 		const sizeOptions = document.querySelectorAll('.size-option');
@@ -1344,43 +1371,43 @@
 
 @push('scripts')
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-	// Quantity plus/minus button logic
-	const minusBtn = document.querySelector('.button.minus .btn-number');
-	const plusBtn = document.querySelector('.button.plus .btn-number');
-	const qtyInput = document.querySelector('.input-number');
-    
-	if (plusBtn && qtyInput) {
-		plusBtn.addEventListener('click', function() {
-			let max = parseInt(qtyInput.getAttribute('data-max')) || 1000;
-			let current = parseInt(qtyInput.value) || 1;
-			if (current < max) {
-				qtyInput.value = current + 1;
-				minusBtn.removeAttribute('disabled');
-			}
-		});
-	}
-	if (minusBtn && qtyInput) {
-		minusBtn.addEventListener('click', function() {
+	document.addEventListener('DOMContentLoaded', function() {
+		// Quantity plus/minus button logic
+		const minusBtn = document.querySelector('.button.minus .btn-number');
+		const plusBtn = document.querySelector('.button.plus .btn-number');
+		const qtyInput = document.querySelector('.input-number');
+
+		if (plusBtn && qtyInput) {
+			plusBtn.addEventListener('click', function() {
+				let max = parseInt(qtyInput.getAttribute('data-max')) || 1000;
+				let current = parseInt(qtyInput.value) || 1;
+				if (current < max) {
+					qtyInput.value = current + 1;
+					minusBtn.removeAttribute('disabled');
+				}
+			});
+		}
+		if (minusBtn && qtyInput) {
+			minusBtn.addEventListener('click', function() {
+				let min = parseInt(qtyInput.getAttribute('data-min')) || 1;
+				let current = parseInt(qtyInput.value) || 1;
+				if (current > min) {
+					qtyInput.value = current - 1;
+				}
+				if (parseInt(qtyInput.value) <= min) {
+					minusBtn.setAttribute('disabled', 'disabled');
+				}
+			});
+		}
+		// Initialize minus button state
+		if (minusBtn && qtyInput) {
 			let min = parseInt(qtyInput.getAttribute('data-min')) || 1;
-			let current = parseInt(qtyInput.value) || 1;
-			if (current > min) {
-				qtyInput.value = current - 1;
-			}
 			if (parseInt(qtyInput.value) <= min) {
 				minusBtn.setAttribute('disabled', 'disabled');
+			} else {
+				minusBtn.removeAttribute('disabled');
 			}
-		});
-	}
-	// Initialize minus button state
-	if (minusBtn && qtyInput) {
-		let min = parseInt(qtyInput.getAttribute('data-min')) || 1;
-		if (parseInt(qtyInput.value) <= min) {
-			minusBtn.setAttribute('disabled', 'disabled');
-		} else {
-			minusBtn.removeAttribute('disabled');
 		}
-	}
-});
+	});
 </script>
 @endpush
