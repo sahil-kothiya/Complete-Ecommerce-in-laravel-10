@@ -604,25 +604,38 @@ $(document).ready(function() {
         const currency = $("#slider-range").data('currency') || '$';
         let priceRange = minValue + '-' + maxValue;
 
-        if ($("#price_range").val()) {
+        // Check localStorage for saved price range
+        const savedPriceRange = localStorage.getItem('filter_price_range');
+        if (savedPriceRange) {
+            priceRange = savedPriceRange;
+        } else if ($("#price_range").val()) {
             priceRange = $("#price_range").val().trim();
         }
 
-        const price = priceRange.split('-');
+        const price = priceRange.split('-').map(p => parseInt(p));
 
         $("#slider-range").slider({
             range: true,
             min: minValue,
             max: maxValue,
-            values: price.map(p => parseInt(p)),
+            values: price,
             slide: function(event, ui) {
                 $("#amount").val(currency + ui.values[0] + " - " + currency + ui.values[1]);
                 $("#price_range").val(ui.values[0] + "-" + ui.values[1]);
+                // Save price range to localStorage
+                localStorage.setItem('filters_price_range', ui.values[0] + "-" + ui.values[1]);
+            },
+            stop: function(event, ui) {
+                // Ensure final value is saved when slider interaction stops
+                localStorage.setItem('filter_price_range', ui.values[0] + "-" + ui.values[1]);
             }
         });
 
-        $("#amount").val(currency + $("#slider-range").slider("values", 0) +
-            " - " + currency + $("#slider-range").slider("values", 1));
+        // Explicitly set the UI and hidden input to reflect saved or initial values
+        $("#amount").val(currency + price[0] + " - " + currency + price[1]);
+        $("#price_range").val(price[0] + "-" + price[1]);
+        $("#slider-range").slider("values", 0, price[0]);
+        $("#slider-range").slider("values", 1, price[1]);
     }
 
     // Handle scrollable recent products
@@ -654,6 +667,83 @@ $(document).ready(function() {
             }, 300);
         });
     }
+
+    // Persistent filter functionality using localStorage
+    // Initialize filter keys for localStorage
+    const filterKeys = {
+        brand: 'filter_brands',
+        min_rating: 'filter_ratings',
+        min_discount: 'filter_discounts',
+        price_range: 'filter_price_range'
+    };
+
+    // Function to load filters from localStorage
+    function loadFilters() {
+        // Load brands
+        const savedBrands = localStorage.getItem(filterKeys.brand);
+        if (savedBrands) {
+            const brands = JSON.parse(savedBrands);
+            $('input[name="brand[]"]').each(function() {
+                if (brands.includes($(this).val())) {
+                    $(this).prop('checked', true);
+                }
+            });
+        }
+
+        // Load ratings
+        const savedRatings = localStorage.getItem(filterKeys.min_rating);
+        if (savedRatings) {
+            const ratings = JSON.parse(savedRatings);
+            $('input[name="min_rating[]"]').each(function() {
+                if (ratings.includes($(this).val())) {
+                    $(this).prop('checked', true);
+                }
+            });
+        }
+
+        // Load discounts
+        const savedDiscounts = localStorage.getItem(filterKeys.min_discount);
+        if (savedDiscounts) {
+            const discounts = JSON.parse(savedDiscounts);
+            $('input[name="min_discount[]"]').each(function() {
+                if (discounts.includes($(this).val())) {
+                    $(this).prop('checked', true);
+                }
+            });
+        }
+    }
+
+    // Function to save filters to localStorage
+    function saveFilters(filterType, values) {
+        localStorage.setItem(filterKeys[filterType], JSON.stringify(values));
+    }
+
+    // Load saved filters on page load
+    loadFilters();
+
+    // Handle checkbox changes for brands
+    $('input[name="brand[]"]').on('change', function() {
+        const selectedBrands = $('input[name="brand[]"]:checked').map(function() {
+            return $(this).val();
+        }).get();
+        saveFilters('brand', selectedBrands);
+    });
+
+    // Handle checkbox changes for ratings
+    $('input[name="min_rating[]"]').on('change', function() {
+        const selectedRatings = $('input[name="min_rating[]"]:checked').map(function() {
+            return $(this).val();
+        }).get();
+        saveFilters('min_rating', selectedRatings);
+    });
+
+    // Handle checkbox changes for discounts
+    $('input[name="min_discount[]"]').on('change', function() {
+        const selectedDiscounts = $('input[name="min_discount[]"]:checked').map(function() {
+            return $(this).val();
+        }).get();
+        saveFilters('min_discount', selectedDiscounts);
+    });
 });
 </script>
 @endpush

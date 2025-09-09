@@ -1159,7 +1159,7 @@ class FrontendController extends Controller
         $perPage = $request->get('show', 12);
         $page    = $request->get('page', 1);
 
-        $service = app(\App\Services\ProductFilterService::class);
+        $service = app(ProductFilterService::class);
         $products = $service->getProducts($filters, $perPage, $page);
 
         return view('frontend.pages.product-grids', [

@@ -444,8 +444,9 @@
 				@foreach($related_products as $product)
 				@php
 				$inWishlist = Helper::isProductInWishlist($product->slug);
+				$tabindex = 47;
 				@endphp
-				<div class="carousel-item flipkart-card">
+				<div class="carousel-item flipkart-card" tabindex="{{$tabindex}}">
 					<div class="flipkart-card-img-wrap">
 						<a href="{{ route('product-detail', $product->slug) }}">
 							<img src="{{ $product->images->first() ? asset($product->images->first()->image_path) : asset('images/no-image.png') }}" alt="{{ $product->title }}" class="flipkart-card-img" loading="lazy">
@@ -470,13 +471,16 @@
 							<span class="flipkart-price-discounted">${{ number_format($product->price, 2) }}</span>
 							@endif
 						</div>
-						<div class="add-to-cart mt-4 d-flex align-items-center gap-2">
+						<div class="add-to-cart mt-2 d-flex align-items-center gap-2">
 							<a href="{{ route('add-to-cart', $product->slug) }}" class="btn btn-sm btn-dark text-uppercase text-center {{ $product->stock <= 0 ? 'disabled' : '' }}">
 								<i class="ti-shopping-cart"></i> {{ $product->stock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
 							</a>
 						</div>
 					</div>
 				</div>
+				@php
+				$tabindex++;
+				@endphp
 				@endforeach
 				@else
 				<div class="carousel-item text-center" style="min-width:180px;max-width:180px;opacity:0.7;">
@@ -928,7 +932,6 @@
 		font-size: 1rem;
 		font-weight: 600;
 		color: #222;
-		margin-bottom: 6px;
 		text-decoration: none;
 		display: block;
 		line-height: 1.3;
@@ -941,7 +944,6 @@
 	}
 
 	.flipkart-card-price {
-		margin-bottom: 8px;
 		display: flex;
 		align-items: center;
 		gap: 8px;
@@ -1029,8 +1031,11 @@
 @push('scripts')
 <script>
 	document.addEventListener('DOMContentLoaded', function() {
-		// Intercept wishlist click for guests
-		document.querySelectorAll('.wishlist-login-prompt').forEach(function(btn) {
+
+		/* ===============================
+			WISHLIST LOGIN PROMPT
+		=============================== */
+		document.querySelectorAll('.wishlist-login-prompt').forEach(btn => {
 			btn.addEventListener('click', function(e) {
 				e.preventDefault();
 				if (typeof $ !== 'undefined' && $('#loginPromptModal').length) {
@@ -1040,175 +1045,113 @@
 				}
 			});
 		});
-	});
-</script>
-<script>
-	$(function() {
-        $('.flipkart-icon-btn').on('click', function(e) {
-            
-            alert('Please login to add items to your wishlist.');
-        });
-    });
 
-	// Size Selector Functionality
-	document.addEventListener('DOMContentLoaded', function() {
+		/* ===============================
+			SIZE SELECTOR
+		=============================== */
 		const sizeOptions = document.querySelectorAll('.size-option');
-		const sizeInputs = document.querySelectorAll('.size-input');
-		const selectedSizeField = document.getElementById('selectedSize');
-		const selectedSizeDisplay = document.getElementById('selectedSizeDisplay');
+		const selectedField = document.getElementById('selectedSize');
+		const sizeDisplay = document.getElementById('selectedSizeDisplay');
 
-		// Handle size selection
-		sizeOptions.forEach(function(option, index) {
-			const input = option.querySelector('input[type="radio"]');
+		function selectSize(index, value) {
+			sizeOptions.forEach(opt => {
+				opt.classList.remove('active');
+				opt.querySelector('input').checked = false;
+			});
+
+			const selected = sizeOptions[index];
+			selected.classList.add('active');
+			selected.querySelector('input').checked = true;
+
+			if (selectedField) selectedField.value = value;
+			if (sizeDisplay) sizeDisplay.textContent = value;
+
+			// Animation feedback
+			const span = selected.querySelector('span');
+			span.style.transform = 'scale(0.95)';
+			setTimeout(() => span.style.transform = 'scale(1)', 150);
+		}
+
+		sizeOptions.forEach((option, index) => {
+			const input = option.querySelector('input');
 			const span = option.querySelector('span');
 
-			// Click handler for the label
-			option.addEventListener('click', function(e) {
+			option.addEventListener('click', e => {
 				e.preventDefault();
 				selectSize(index, input.value);
 			});
 
-			// Keyboard support
-			span.addEventListener('keydown', function(e) {
-				if (e.key === 'Enter' || e.key === ' ') {
+			span.addEventListener('keydown', e => {
+				if (['Enter', ' '].includes(e.key)) {
 					e.preventDefault();
 					selectSize(index, input.value);
 				}
-			});
-
-			// Arrow key navigation
-			span.addEventListener('keydown', function(e) {
-				let newIndex = index;
-
-				if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+				if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(e.key)) {
 					e.preventDefault();
-					newIndex = (index + 1) % sizeOptions.length;
-				} else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-					e.preventDefault();
-					newIndex = (index - 1 + sizeOptions.length) % sizeOptions.length;
-				}
-
-				if (newIndex !== index) {
+					let newIndex = index;
+					if (['ArrowRight', 'ArrowDown'].includes(e.key)) newIndex = (index + 1) % sizeOptions.length;
+					if (['ArrowLeft', 'ArrowUp'].includes(e.key)) newIndex = (index - 1 + sizeOptions.length) % sizeOptions.length;
 					sizeOptions[newIndex].querySelector('span').focus();
 				}
 			});
 		});
 
-		function selectSize(index, sizeValue) {
-			// Remove active class from all options
-			sizeOptions.forEach(function(opt) {
-				opt.classList.remove('active');
-				opt.querySelector('input').checked = false;
-			});
-
-			// Add active class to selected option
-			sizeOptions[index].classList.add('active');
-			sizeOptions[index].querySelector('input').checked = true;
-
-			// Update hidden field for form submission
-			if (selectedSizeField) {
-				selectedSizeField.value = sizeValue;
-			}
-
-			// Update display
-			if (selectedSizeDisplay) {
-				selectedSizeDisplay.textContent = sizeValue;
-			}
-
-			// Add a subtle animation feedback
-			const selectedSpan = sizeOptions[index].querySelector('span');
-			selectedSpan.style.transform = 'scale(0.95)';
-			setTimeout(() => {
-				selectedSpan.style.transform = 'scale(1)';
-			}, 150);
-		}
-
-		// Initialize with first size if none selected
-		const activeSize = document.querySelector('.size-option.active');
-		if (!activeSize && sizeOptions.length > 0) {
+		// Default selection
+		if (!document.querySelector('.size-option.active') && sizeOptions.length > 0) {
 			selectSize(0, sizeOptions[0].querySelector('input').value);
 		}
 
-		// Stock checking (if you want to disable out-of-stock sizes)
-		// This would require additional backend data
-		function checkSizeAvailability() {
-			// Example implementation - you'd need to pass stock data from backend
-			/*
-			const stockData = @json($sizeStockData ?? []); // Pass from controller
-			
-			sizeOptions.forEach(function(option) {
-			    const sizeValue = option.querySelector('input').value;
-			    const isOutOfStock = stockData[sizeValue] === 0;
-			    
-			    if (isOutOfStock) {
-			        option.classList.add('disabled');
-			        option.querySelector('input').disabled = true;
-			        option.style.pointerEvents = 'none';
-			    }
-			});
-			*/
-		}
 
-		// Call stock check if needed
-		// checkSizeAvailability();
-	});
-
-	document.addEventListener('DOMContentLoaded', function() {
+		/* ===============================
+			IMAGE THUMBNAILS + AUTO SLIDE
+		=============================== */
 		const mainImage = document.getElementById('mainImage');
 		const thumbnails = Array.from(document.querySelectorAll('.thumbnail-image'));
 		const images = thumbnails.map(t => t.src);
-		let currentIndex = thumbnails.length > 0 ? thumbnails.findIndex(t => t.classList.contains('active')) : 0;
-		// Fix: thumbnails is now an array, so findIndex works
+		let currentIndex = thumbnails.findIndex(t => t.classList.contains('active')) || 0;
 
-		// Thumbnail click (manual selection)
-		thumbnails.forEach(function(thumb, idx) {
-			thumb.addEventListener('click', function() {
+		function updateImage() {
+			if (!mainImage) return;
+			mainImage.src = images[currentIndex];
+			thumbnails.forEach((t, i) => {
+				t.classList.toggle('active', i === currentIndex);
+				t.style.border = i === currentIndex ? '2px solid #2874f0' : '2px solid #eee';
+			});
+		}
+
+		thumbnails.forEach((thumb, idx) => {
+			thumb.addEventListener('click', () => {
 				currentIndex = idx;
 				updateImage();
 			});
 		});
 
-		// Auto-slide (every 3s)
-		setInterval(function() {
-			currentIndex = (currentIndex + 1) % images.length;
-			updateImage();
-		}, 3000);
-
-		function updateImage() {
-			mainImage.src = images[currentIndex];
-			thumbnails.forEach((t, i) => {
-				t.classList.remove('active');
-				t.style.border = '2px solid #eee';
-				if (i === currentIndex) {
-					t.classList.add('active');
-					t.style.border = '2px solid #2874f0'; // Blue border for active
-				}
-			});
+		if (images.length > 1) {
+			setInterval(() => {
+				currentIndex = (currentIndex + 1) % images.length;
+				updateImage();
+			}, 3000);
 		}
 
-		// Initial highlight
 		updateImage();
-	});
 
-	document.addEventListener('DOMContentLoaded', function() {
-		// Main image scroll and change logic
+
+		/* ===============================
+			MAIN IMAGE SCROLL + AUTO SLIDE
+		=============================== */
 		const mainImageContainer = document.querySelector('.main-image-scroll-container');
-		const mainImages = mainImageContainer ? mainImageContainer.querySelectorAll('.main-image') : [];
-		const thumbnails = document.querySelectorAll('.thumbnail-image');
+		const scrollImages = mainImageContainer ? mainImageContainer.querySelectorAll('.main-image') : [];
 		let activeIndex = 0;
 
 		function setActiveImage(index) {
-			mainImages.forEach((img, i) => {
+			scrollImages.forEach((img, i) => {
 				img.style.border = i === index ? '2px solid #2874f0' : '2px solid #eee';
 				img.style.opacity = i === index ? '1' : '0.6';
 			});
-			thumbnails.forEach((thumb, i) => {
-				thumb.classList.toggle('active', i === index);
-			});
+			thumbnails.forEach((thumb, i) => thumb.classList.toggle('active', i === index));
 			activeIndex = index;
-			// Scroll main image into view
-			if (mainImages[index]) {
-				mainImages[index].scrollIntoView({
+			if (scrollImages[index]) {
+				scrollImages[index].scrollIntoView({
 					behavior: 'smooth',
 					inline: 'center'
 				});
@@ -1216,198 +1159,119 @@
 		}
 
 		thumbnails.forEach((thumb, i) => {
-			thumb.addEventListener('click', function() {
-				setActiveImage(i);
-			});
+			thumb.addEventListener('click', () => setActiveImage(i));
 		});
 
-		// Auto left/right scroll for main image area
-		let autoScrollTimer = null;
-		const autoScrollDelay = 4000;
+		if (scrollImages.length > 1 && mainImageContainer) {
+			let autoScrollTimer;
+			const autoScrollDelay = 4000;
 
-		function startAutoScroll() {
-			clearInterval(autoScrollTimer);
-			autoScrollTimer = setInterval(() => {
-				let nextIndex = (activeIndex + 1) % mainImages.length;
-				setActiveImage(nextIndex);
-			}, autoScrollDelay);
-		}
+			function startAutoScroll() {
+				clearInterval(autoScrollTimer);
+				autoScrollTimer = setInterval(() => {
+					setActiveImage((activeIndex + 1) % scrollImages.length);
+				}, autoScrollDelay);
+			}
 
-		function stopAutoScroll() {
-			clearInterval(autoScrollTimer);
-		}
-		if (mainImages.length > 1) {
+			function stopAutoScroll() {
+				clearInterval(autoScrollTimer);
+			}
+
 			mainImageContainer.addEventListener('mouseenter', stopAutoScroll);
 			mainImageContainer.addEventListener('mouseleave', startAutoScroll);
 			startAutoScroll();
-		}
 
-		// Touch/drag support for main image scroll
-		let isDown = false,
-			startX = 0,
-			scrollLeft = 0;
-		if (mainImageContainer) {
-			mainImageContainer.addEventListener('pointerdown', (e) => {
+			// Drag-to-scroll support
+			let isDown = false,
+				startX = 0,
+				scrollLeft = 0;
+			mainImageContainer.addEventListener('pointerdown', e => {
 				isDown = true;
 				startX = e.clientX;
 				scrollLeft = mainImageContainer.scrollLeft;
 				mainImageContainer.setPointerCapture?.(e.pointerId);
 				mainImageContainer.style.cursor = 'grabbing';
 			});
-			mainImageContainer.addEventListener('pointermove', (e) => {
+			mainImageContainer.addEventListener('pointermove', e => {
 				if (!isDown) return;
-				const dx = e.clientX - startX;
-				mainImageContainer.scrollLeft = scrollLeft - dx;
+				mainImageContainer.scrollLeft = scrollLeft - (e.clientX - startX);
 			});
-			const releasePointer = (e) => {
-				if (!isDown) return;
-				isDown = false;
-				try {
+			['pointerup', 'pointercancel', 'pointerleave'].forEach(evt => {
+				mainImageContainer.addEventListener(evt, e => {
+					if (!isDown) return;
+					isDown = false;
 					mainImageContainer.releasePointerCapture?.(e.pointerId);
-				} catch {}
-				mainImageContainer.style.cursor = 'grab';
-			};
-			['pointerup', 'pointercancel', 'pointerleave'].forEach(evt => mainImageContainer.addEventListener(evt, releasePointer));
+					mainImageContainer.style.cursor = 'grab';
+				});
+			});
 			mainImageContainer.style.cursor = 'grab';
 		}
 
-		// Related products carousel (existing logic)
+
+		/* ===============================
+			RELATED PRODUCTS CAROUSEL
+		=============================== */
 		const track = document.getElementById('relatedCarousel');
-		if (!track) return;
-		const viewport = track.closest('.carousel-viewport');
+		const viewport = track?.closest('.carousel-viewport');
 		const prevBtn = document.getElementById('carouselPrev');
 		const nextBtn = document.getElementById('carouselNext');
 
-		let autoPlayTimer = null;
-		const autoPlayDelay = 3500;
-		let isHovered = false;
-
 		function getItemWidth() {
-			const item = track.querySelector('.carousel-item');
+			const item = track?.querySelector('.carousel-item');
 			if (!item) return 180;
 			const style = window.getComputedStyle(item);
 			return item.offsetWidth + parseInt(style.marginRight || 0) + parseInt(style.marginLeft || 0);
 		}
 
 		function scrollByCard(dir = 1) {
-			const itemWidth = getItemWidth();
-			if (!viewport) return;
-			viewport.scrollBy({
-				left: dir * itemWidth,
-				behavior: 'smooth'
-			});
+			if (viewport) {
+				viewport.scrollBy({
+					left: dir * getItemWidth(),
+					behavior: 'smooth'
+				});
+			}
 		}
 
 		if (prevBtn) prevBtn.addEventListener('click', () => scrollByCard(-1));
 		if (nextBtn) nextBtn.addEventListener('click', () => scrollByCard(1));
 
-		// Touch/drag support (native scroll)
-		let isDown2 = false,
-			startX2 = 0,
-			scrollLeft2 = 0;
-		if (viewport) {
-			viewport.addEventListener('pointerdown', (e) => {
-				isDown2 = true;
-				startX2 = e.clientX;
-				scrollLeft2 = viewport.scrollLeft;
-				viewport.setPointerCapture?.(e.pointerId);
-				viewport.style.cursor = 'grabbing';
-			});
-			viewport.addEventListener('pointermove', (e) => {
-				if (!isDown2) return;
-				const dx = e.clientX - startX2;
-				viewport.scrollLeft = scrollLeft2 - dx;
-			});
-			const releasePointer2 = (e) => {
-				if (!isDown2) return;
-				isDown2 = false;
-				try {
-					viewport.releasePointerCapture?.(e.pointerId);
-				} catch {}
-				viewport.style.cursor = 'grab';
-			};
-			['pointerup', 'pointercancel', 'pointerleave'].forEach(evt => viewport.addEventListener(evt, releasePointer2));
-			viewport.style.cursor = 'grab';
-		}
 
-		function startAutoPlay() {
-			clearInterval(autoPlayTimer);
-			autoPlayTimer = setInterval(() => {
-				if (!isHovered) scrollByCard(1);
-			}, autoPlayDelay);
-		}
-
-		function stopAutoPlay() {
-			clearInterval(autoPlayTimer);
-		}
-
-		track.addEventListener('mouseenter', () => {
-			isHovered = true;
-			stopAutoPlay();
-		});
-		track.addEventListener('mouseleave', () => {
-			isHovered = false;
-			startAutoPlay();
-		});
-		[prevBtn, nextBtn].forEach(btn => {
-			if (!btn) return;
-			btn.addEventListener('mouseenter', () => {
-				isHovered = true;
-				stopAutoPlay();
-			});
-			btn.addEventListener('mouseleave', () => {
-				isHovered = false;
-				startAutoPlay();
-			});
-		});
-
-		// Init
-		setTimeout(() => {
-			startAutoPlay();
-		}, 200);
-	});
-</script>
-@endpush
-
-@push('scripts')
-<script>
-	document.addEventListener('DOMContentLoaded', function() {
-		// Quantity plus/minus button logic
+		/* ===============================
+			QUANTITY PLUS/MINUS
+		=============================== */
+		const qtyInput = document.querySelector('.input-number');
 		const minusBtn = document.querySelector('.button.minus .btn-number');
 		const plusBtn = document.querySelector('.button.plus .btn-number');
-		const qtyInput = document.querySelector('.input-number');
 
-		if (plusBtn && qtyInput) {
-			plusBtn.addEventListener('click', function() {
-				let max = parseInt(qtyInput.getAttribute('data-max')) || 1000;
-				let current = parseInt(qtyInput.value) || 1;
-				if (current < max) {
-					qtyInput.value = current + 1;
-					minusBtn.removeAttribute('disabled');
-				}
-			});
-		}
-		if (minusBtn && qtyInput) {
-			minusBtn.addEventListener('click', function() {
+		function updateMinusState() {
+			if (minusBtn && qtyInput) {
 				let min = parseInt(qtyInput.getAttribute('data-min')) || 1;
-				let current = parseInt(qtyInput.value) || 1;
-				if (current > min) {
-					qtyInput.value = current - 1;
-				}
-				if (parseInt(qtyInput.value) <= min) {
-					minusBtn.setAttribute('disabled', 'disabled');
-				}
-			});
-		}
-		// Initialize minus button state
-		if (minusBtn && qtyInput) {
-			let min = parseInt(qtyInput.getAttribute('data-min')) || 1;
-			if (parseInt(qtyInput.value) <= min) {
-				minusBtn.setAttribute('disabled', 'disabled');
-			} else {
-				minusBtn.removeAttribute('disabled');
+				qtyInput.value <= min ?
+					minusBtn.setAttribute('disabled', 'disabled') :
+					minusBtn.removeAttribute('disabled');
 			}
 		}
+
+		if (plusBtn && qtyInput) {
+			plusBtn.addEventListener('click', () => {
+				let max = parseInt(qtyInput.getAttribute('data-max')) || 1000;
+				let val = parseInt(qtyInput.value) || 1;
+				if (val < max) {
+					qtyInput.value = val + 1;
+					updateMinusState();
+				}
+			});
+		}
+		if (minusBtn && qtyInput) {
+			minusBtn.addEventListener('click', () => {
+				let min = parseInt(qtyInput.getAttribute('data-min')) || 1;
+				let val = parseInt(qtyInput.value) || 1;
+				if (val > min) qtyInput.value = val - 1;
+				updateMinusState();
+			});
+		}
+		updateMinusState();
+
 	});
 </script>
 @endpush
