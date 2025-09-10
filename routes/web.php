@@ -2,9 +2,10 @@
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Auth;
 use UniSharp\LaravelFilemanager\Lfm;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Http\Request;
 
 use App\Http\Controllers\{
     AdminController,
@@ -38,7 +39,7 @@ use App\Http\Controllers\{
     UsersController,
     WishlistController
 };
-use Illuminate\Http\Request;
+
 
 // Utility
 Route::get('/check-redis-cache', fn() => response()->json([
@@ -76,20 +77,14 @@ Route::post('/contact/message', [MessageController::class, 'store'])->name('cont
 Route::get('/product-detail/{slug}', [FrontendController::class, 'productDetail'])->name('product-detail');
 Route::match(['get', 'post'], '/search', [FrontendController::class, 'productSearch'])->name('product.search');
 Route::get('/autocomplete', [FrontendController::class, 'autocomplete'])->name('autocomplete');
-// Route::get('/product-cat/{slug}', [FrontendController::class, 'productCat'])->name('product-cat');
-Route::get('/product-cat/{any}', function (Request $request, $any) {
-    // No need to modify $any - pass it directly to the controller
-    // The controller will handle the full path properly
-    
-    return app(FrontendController::class)
-        ->productSubCat($request, $any);
-})->where('any', '.*')->name('product-cat');
+
+Route::get('/product-cat/{any}', [FrontendController::class, 'productSubCat'])->where('any', '.*')->name('product-cat');
+Route::get('/apply-filters', [FrontendController::class, 'applyFilters'])->name('apply.filters');
 
 Route::get('/product-brand/{slug}', [FrontendController::class, 'productBrand'])->name('product-brand');
 Route::get('/product-grids', [FrontendController::class, 'productGrids'])->name('product-grids');
 Route::get('/product-lists', [FrontendController::class, 'productLists'])->name('product-lists');
 Route::match(['get', 'post'], '/filter', [FrontendController::class, 'productFilter'])->name('shop.filter');
-Route::post('/apply-filters', [FrontendController::class, 'applyFilters'])->name('apply.filters');
 
 Route::get('/blog', [FrontendController::class, 'blog'])->name('blog');
 Route::get('/blog-detail/{slug}', [FrontendController::class, 'blogDetail'])->name('blog.detail');
@@ -100,7 +95,6 @@ Route::get('/blog-tag/{slug}', [FrontendController::class, 'blogByTag'])->name('
 Route::post('/subscribe', [FrontendController::class, 'subscribe'])->name('subscribe');
 
 // Cart & Wishlist
-// Route::get('/cart', fn() => view('frontend.pages.cart'))->name('cart');
 Route::get('/cart', [FrontendController::class, 'cart'])->name('cart');
 Route::get('/wishlist', fn() => view('frontend.pages.wishlist'))->name('wishlist');
 
@@ -164,7 +158,7 @@ Route::post('/mollie/webhook', [MollieController::class, 'webhook'])->name('moll
 Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::get('/', [AdminController::class, 'index'])->name('admin');
     Route::view('/file-manager', 'backend.layouts.file-manager')->name('file-manager');
-    Route::post('/category/{id}/child', [App\Http\Controllers\CategoryController::class, 'getChildByParent']);
+    Route::post('/category/{id}/child', [CategoryController::class, 'getChildByParent']);
 
     Route::get('/profile', [AdminController::class, 'profile'])->name('admin-profile');
     Route::post('/profile/{id}', [AdminController::class, 'profileUpdate'])->name('profile-update');

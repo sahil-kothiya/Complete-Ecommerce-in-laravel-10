@@ -149,4 +149,15 @@ class Category extends Model
 
         return $chain ? implode(' > ', $chain) : '';
     }
+
+    public function getFullSlugPath()
+    {
+        $path = [$this->slug];
+        $parent = $this->parent;
+        while ($parent) {
+            array_unshift($path, $parent->slug);
+            $parent = $parent->parent;
+        }
+        return implode('/', $path);
+    }
 }

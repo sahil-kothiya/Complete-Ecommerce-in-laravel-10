@@ -1,26 +1,20 @@
 {{-- Single file: category-menu.blade.php --}}
 @php
-    $categories = Helper::getAllCategory();
-    
     // Recursive function to render categories
     function renderCategory($category, $parentSlug = '', $visited = [], $depth = 0) {
-        // Prevent infinite loops
         if (in_array($category->id, $visited) || $depth >= 10) {
             return '';
         }
-
         $visited[] = $category->id;
         $path = $parentSlug ? $parentSlug . '/' . $category->slug : $category->slug;
         $hasChildren = $category->children && $category->children->count() > 0;
-        
+
         $output = '<li>';
         $output .= '<a href="' . route('product-cat', $path) . '">';
         $output .= e($category->title);
-
         if ($hasChildren) {
             $output .= '<span class="menu-arrow">›</span>';
         }
-
         $output .= '</a>';
 
         if ($hasChildren) {
@@ -30,10 +24,10 @@
             }
             $output .= '</ul>';
         }
-
         $output .= '</li>';
         return $output;
     }
+    $categories = Helper::getAllCategory();
 @endphp
 
 <li>

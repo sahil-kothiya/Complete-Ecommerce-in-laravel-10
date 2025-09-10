@@ -9,7 +9,7 @@
                 <div class="label-input range-input">
                     <span class="range-label">Range:</span>
                     <input type="text" id="amount" class="price-range-display" readonly tabindex="11" />
-                    <input type="hidden" name="price_range" id="price_range" value="{{ request('price') }}" />
+                    <input type="hidden" name="price_range" id="price_range" value="{{ request('price_range') }}" />
                 </div>
                 <!-- <button type="button" class="filter_button" tabindex="12">Apply Filter</button> -->
             </div>
@@ -32,7 +32,7 @@
         <li>
             <label>
                 @php
-                $selectedBrands = is_string(request('brand')) ? explode(',', request('brand')) : (request('brand', []) ?: []);
+                $selectedBrands = is_array(request('brand')) ? request('brand') : (request('brand') ? explode(',', request('brand')) : []);
                 @endphp
                 <input type="checkbox" name="brand[]" value="{{ $brand->slug }}" {{ in_array($brand->slug, $selectedBrands) ? 'checked' : '' }} tabindex="{{ 13 + $index }}">
                 {{ $brand->title }}
@@ -61,7 +61,7 @@
         <li>
             <label>
                 @php
-                $minRatings = is_string(request('min_rating')) ? explode(',', request('min_rating')) : (request('min_rating', []) ?: []);
+                $minRatings = is_array(request('min_rating')) ? request('min_rating') : (request('min_rating') ? explode(',', request('min_rating')) : []);
                 @endphp
                 <input type="checkbox" name="min_rating[]" value="{{ $rating }}" {{ in_array((string)$rating, $minRatings) ? 'checked' : '' }} tabindex="{{ 20 + $index }}">
                 {{ $rating }} ★ & above
@@ -81,7 +81,7 @@
         <li>
             <label>
                 @php
-                $minDiscounts = is_string(request('min_discount')) ? explode(',', request('min_discount')) : (request('min_discount', []) ?: []);
+                $minDiscounts = is_array(request('min_discount')) ? request('min_discount') : (request('min_discount') ? explode(',', request('min_discount')) : []);
                 @endphp
                 <input type="checkbox" name="min_discount[]" value="{{ $discount }}" {{ in_array((string)$discount, $minDiscounts) ? 'checked' : '' }} tabindex="{{ 24 + $index }}">
                 {{ $discount }}% & above
@@ -626,12 +626,14 @@ $(document).ready(function() {
                 localStorage.setItem('filters_price_range', ui.values[0] + "-" + ui.values[1]);
             },
             stop: function(event, ui) {
-                // Ensure final value is saved when slider interaction stops
+                // Save final value and trigger filter
                 localStorage.setItem('filter_price_range', ui.values[0] + "-" + ui.values[1]);
+                // Trigger form change to apply filters
+                $("#productFilterForm").trigger('change');
             }
         });
 
-        // Explicitly set the UI and hidden input to reflect saved or initial values
+        // Explicitly set the UI and hidden input
         $("#amount").val(currency + price[0] + " - " + currency + price[1]);
         $("#price_range").val(price[0] + "-" + price[1]);
         $("#slider-range").slider("values", 0, price[0]);
