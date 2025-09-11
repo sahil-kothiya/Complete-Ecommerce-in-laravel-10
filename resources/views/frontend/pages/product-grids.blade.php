@@ -312,7 +312,7 @@ $(document).ready(function() {
 
     // Initialize price range slider
     if ($("#slider-range").length > 0) {
-        const maxValue = window.maxPrice || 1000;
+        const maxValue = window.maxPrice || 5000;
         const minValue = 0;
         const currency = $("#slider-range").data('currency') || '$';
         

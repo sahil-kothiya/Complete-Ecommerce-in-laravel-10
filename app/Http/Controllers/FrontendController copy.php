@@ -17,12 +17,14 @@ use App\User;
 use Helper;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Validation\ValidationException;
 use Spatie\Newsletter\Facades\Newsletter;
 
 class FrontendController extends Controller
@@ -66,13 +68,12 @@ class FrontendController extends Controller
         $dynamicCategoryProducts = [];
         $rootCategories = Category::whereNull('parent_id')->where('status', 'active')->get();
 
-        $totalProductLimit = 60; // Exactly 60 products
-        $minProductsPerCategory = 4; // Minimum products per category
-        $minAllProducts = 8; // Minimum products in "All Products" section
-        $maxAllProducts = 12; // Maximum products in "All Products" section
+        $totalProductLimit = 60;
+        $minProductsPerCategory = 4;
+        $minAllProducts = 8;
+        $maxAllProducts = 12;
         $remainingProducts = $totalProductLimit;
 
-        // Step 1: Collect eligible categories with at least 4 products
         $eligibleCategories = [];
         foreach ($rootCategories as $cat) {
             $catProducts = $products->filter(function ($product) use ($cat, &$usedProductIds) {
@@ -86,7 +87,6 @@ class FrontendController extends Controller
             }
         }
 
-        // Step 2: Calculate maximum number of categories with minimum products
         $maxCategories = floor(($totalProductLimit - $minAllProducts) / $minProductsPerCategory);
         $categoryCount = min(count($eligibleCategories), $maxCategories);
 
@@ -324,14 +324,13 @@ class FrontendController extends Controller
         $startTime = microtime(true);
         $ttl = $this->getTtlConfig();
         $cacheKey = $this->generateOptimizedCacheKey($request);
-        $cachedData = RedisHelper::get($cacheKey);
 
+        $cachedData = RedisHelper::get($cacheKey);
         if ($cachedData) {
             if (isset($cachedData['products_data'])) {
                 $cachedData['products'] = $this->restorePaginatorFromCache($cachedData['products_data'], $request);
                 unset($cachedData['products_data']);
             }
-
             $cachedData = $this->hydrateRelationshipsFromCache($cachedData);
             Log::info("Product grids served from cache in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
             return view('frontend.pages.product-grids', $cachedData);
@@ -339,53 +338,84 @@ class FrontendController extends Controller
 
         $data = $this->fetchOptimizedProductGridsData($request, $ttl);
         $this->cacheCompletePageData($cacheKey, $data, $ttl['product_lists']);
-
         Log::info("Product grids served fresh in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
         return view('frontend.pages.product-grids', $data);
     }
-    
 
-    private function generateOptimizedCacheKey(Request $request): string
+
+    private function generateOptimizedCacheKey(Request $request, $slug = ''): string
     {
         $params = [
-            'category' => $request->get('category', ''),
-            'brand' => $request->get('brand', ''),
-            'sortBy' => $request->get('sortBy', ''),
-            'price' => $request->get('price', ''),
-            'min_rating' => $request->get('min_rating', ''),
-            'min_discount' => $request->get('min_discount', ''),
-            'query' => $request->get('query', ''),
-            'show' => $request->get('show', '9'),
-            'page' => $request->get('page', '1')
+            'category_slug' => $slug,
+            'category' => $request->input('category', ''),
+            'brand' => $request->input('brand', ''),
+            'price_range' => $request->input('price_range', ''),
+            'min_rating' => $request->input('min_rating', ''),
+            'min_discount' => $request->input('min_discount', ''),
+            'sortBy' => $request->input('sortBy', 'latest'),
+            'show' => $request->input('show', 12),
+            'page' => $request->input('page', 1),
+            'query' => $request->input('query', ''),
         ];
-
-        $params = array_filter($params, fn($value) => !empty($value));
-        $paramString = http_build_query($params);
-        $hash = md5($paramString);
-
-        return self::PRODUCT_GRIDS_CACHE_PREFIX . 'complete_page:' . $hash;
+        return self::PRODUCT_GRIDS_CACHE_PREFIX . md5(json_encode($params));
     }
 
-    private function fetchOptimizedProductGridsData(Request $request, array $ttl): array
+    private function fetchOptimizedProductGridsData(Request $request, array $ttl)
     {
-        $sidebarCacheKeys = [
-            'recent_products' => self::PRODUCT_GRIDS_CACHE_PREFIX . 'recent_products',
-            'categories' => self::PRODUCT_GRIDS_CACHE_PREFIX . 'sidebar_categories',
-            'brands' => self::PRODUCT_GRIDS_CACHE_PREFIX . 'sidebar_brands',
-            'max_price' => self::PRODUCT_GRIDS_CACHE_PREFIX . 'max_price'
+        $show = $request->input('show', 12);
+        $sortBy = $request->input('sortBy', 'latest');
+        $query = $request->input('query', '');
+        $categories = $request->input('category', []);
+        $brands = $request->input('brand', []);
+        $priceRange = $request->input('price_range', '');
+        $minRatings = $request->input('min_rating', []);
+        $minDiscounts = $request->input('min_discount', []);
+
+        $productsQuery = Product::query()->where('status', 'active');
+        if (!empty($categories)) {
+            $productsQuery->whereIn('cat_id', Category::whereIn('slug', $categories)->pluck('id'));
+        }
+        if (!empty($brands)) {
+            $productsQuery->whereIn('brand_id', Brand::whereIn('slug', $brands)->pluck('id'));
+        }
+        if ($priceRange) {
+            [$minPrice, $maxPrice] = explode('-', $priceRange);
+            $productsQuery->whereBetween('price', [(float)$minPrice, (float)$maxPrice]);
+        }
+        if (!empty($minRatings)) {
+            $productsQuery->whereIn('rating', $minRatings);
+        }
+        if (!empty($minDiscounts)) {
+            $productsQuery->whereIn('discount', $minDiscounts);
+        }
+        if ($query) {
+            $productsQuery->where('title', 'like', "%{$query}%");
+        }
+
+        if ($sortBy === 'price_low_high') {
+            $productsQuery->orderBy('price', 'ASC');
+        } elseif ($sortBy === 'price_high_low') {
+            $productsQuery->orderBy('price', 'DESC');
+        } else {
+            $productsQuery->latest('id');
+        }
+
+        $products = $productsQuery->with(['images', 'cat_info'])->paginate($show);
+        $products->setPath('/product-grids');
+        $products->appends($request->except('page'));
+
+        $recentProducts = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['product_lists']);
+
+        return [
+            'products' => $products,
+            'recent_products' => $recentProducts,
+            'category' => null,
+            'mainCategory' => null,
+            'subCategory' => null,
+            'show' => $show,
+            'sortBy' => $sortBy,
+            'price' => $priceRange,
         ];
-
-        $cachedSidebarData = RedisHelper::mget(array_values($sidebarCacheKeys));
-
-        $sidebarData = [
-            'recent_products' => $cachedSidebarData[$sidebarCacheKeys['recent_products']] ?? $this->getRecentProductsOptimized($ttl['product_lists']),
-            'categories' => $cachedSidebarData[$sidebarCacheKeys['categories']] ?? $this->getSidebarCategoriesOptimized($ttl['categories']),
-            'brands' => $cachedSidebarData[$sidebarCacheKeys['brands']] ?? $this->getSidebarBrandsOptimized($ttl['categories']),
-            'max_price' => $cachedSidebarData[$sidebarCacheKeys['max_price']] ?? $this->getMaxPriceOptimized($ttl['product_lists'])
-        ];
-
-        $products = $this->buildOptimizedProductsQuery($request);
-        return array_merge($sidebarData, ['products' => $products]);
     }
 
     private function buildOptimizedProductsQuery(Request $request)
@@ -432,7 +462,7 @@ class FrontendController extends Controller
                 'brand' => fn($q) => $q->select(['id', 'title', 'slug'])
             ]);
 
-    $perPage = min((int)$request->get('show', 12), 30);
+        $perPage = min((int)$request->get('show', 9), 30);
         return $query->paginate($perPage);
     }
 
@@ -587,99 +617,43 @@ class FrontendController extends Controller
         });
     }
 
-    private function hydrateRelationshipsFromCache(array $cachedData): array
+    private function hydrateRelationshipsFromCache($cachedData)
     {
-        if (isset($cachedData['recent_products']) && is_array($cachedData['recent_products'])) {
-            $cachedData['recent_products'] = collect($cachedData['recent_products'])->map(function ($product) {
-                $productObj = (object) $product;
-                $productObj->images = collect($product['images'] ?? [])->map(function ($image) {
-                    return (object) $image;
-                });
-                return $productObj;
+        if (isset($cachedData['products'])) {
+            $cachedData['products'] = $cachedData['products']->map(function ($product) {
+                if (isset($product['images'])) {
+                    $product['images'] = collect($product['images'])->map(fn($img) => (object) $img);
+                }
+                if (isset($product['cat_info'])) {
+                    $product['cat_info'] = (object) $product['cat_info'];
+                }
+                return (object) $product;
             });
         }
-
-        if (isset($cachedData['categories']) && is_array($cachedData['categories'])) {
-            $cachedData['categories'] = collect($cachedData['categories'])->map(function ($category) {
-                $categoryObj = (object) $category;
-                $categoryObj->children = collect($category['children'] ?? [])->map(function ($child) {
-                    return (object) $child;
-                });
-                return $categoryObj;
-            });
+        if (isset($cachedData['recent_products'])) {
+            $cachedData['recent_products'] = collect($cachedData['recent_products'])->map(fn($item) => (object) $item);
         }
-
-        if (isset($cachedData['brands']) && is_array($cachedData['brands'])) {
-            $cachedData['brands'] = collect($cachedData['brands'])->map(function ($brand) {
-                return (object) $brand;
-            });
-        }
-
         return $cachedData;
     }
 
-    private function cacheCompletePageData(string $key, array $data, int $ttl): void
+    private function cacheCompletePageData(string $cacheKey, array $data, int $ttl)
     {
-        try {
-            $cacheableData = [
-                'recent_products' => $data['recent_products'],
-                'categories' => $data['categories'],
-                'brands' => $data['brands'],
-                'max_price' => $data['max_price'],
-            ];
-
-            if (isset($data['products']) && $data['products'] instanceof LengthAwarePaginator) {
-                $productsWithRelations = $data['products']->getCollection()->map(function ($product) {
-                    return [
-                        'id' => $product->id,
-                        'title' => $product->title,
-                        'slug' => $product->slug,
-                        'price' => $product->price,
-                        'discount' => $product->discount,
-                        'stock' => $product->stock,
-                        'condition' => $product->condition,
-                        'cat_id' => $product->cat_id,
-                        'brand_id' => $product->brand_id,
-                        'size' => $product->size,
-                        'summary' => $product->summary,
-                        'images' => $product->images->map(function ($image) {
-                            return [
-                                'id' => $image->id,
-                                'image_path' => $image->image_path,
-                                'product_id' => $image->product_id,
-                                'is_primary' => $image->is_primary,
-                            ];
-                        })->toArray(),
-                        'cat_info' => $product->cat_info ? [
-                            'id' => $product->cat_info->id,
-                            'title' => $product->cat_info->title,
-                            'slug' => $product->cat_info->slug,
-                        ] : null,
-                        'brand' => $product->brand ? [
-                            'id' => $product->brand->id,
-                            'title' => $product->brand->title,
-                            'slug' => $product->brand->slug,
-                        ] : null,
-                    ];
-                })->toArray();
-
-                $cacheableData['products_data'] = [
-                    'items' => $productsWithRelations,
-                    'total' => $data['products']->total(),
-                    'per_page' => $data['products']->perPage(),
-                    'current_page' => $data['products']->currentPage(),
-                    'last_page' => $data['products']->lastPage(),
-                    'from' => $data['products']->firstItem(),
-                    'to' => $data['products']->lastItem(),
-                    'path' => $data['products']->path(),
-                ];
-            }
-
-            $cacheTtl = min($ttl, 900);
-            RedisHelper::put($key, $cacheableData, $cacheTtl);
-        } catch (\Exception $e) {
-            Log::error("Failed to cache complete page data: " . $e->getMessage());
-        }
+        $cacheData = [
+            'products_data' => [
+                'data' => $data['products']->items(),
+                'total' => $data['products']->total(),
+                'per_page' => $data['products']->perPage(),
+                'current_page' => $data['products']->currentPage(),
+            ],
+            'recent_products' => $data['recent_products'],
+            'category' => $data['category'],
+            'mainCategory' => $data['mainCategory'],
+            'subCategory' => $data['subCategory'],
+            'show' => $data['show'],
+            'sortBy' => $data['sortBy'],
+            'price' => $data['price'],
+        ];
+        RedisHelper::put($cacheKey, $cacheData, $ttl);
     }
 
     public function productFilter(Request $request)
@@ -737,200 +711,139 @@ class FrontendController extends Controller
         return redirect()->route('product-grids', $queryParams);
     }
 
+    /**
+     * Handle AJAX filter requests.
+     */
     public function applyFilters(Request $request)
     {
         try {
-            $filters = $request->only([
-                'show', 'sortBy', 'query', 'category', 'brand', 
-                'price_range', 'min_rating', 'min_discount', 'category_slug'
-            ]);
+            // Get category slug from query params
+            $slugPath = $request->input('category_slug', '');
 
-            $perPage = $filters['show'] ?? 12;
-            $page    = $request->get('page', 1);
+            // Build product query with eager loading
+            $productQuery = Product::with(['images', 'discounts', 'cat_info', 'sub_cat_info'])
+                ->active();
 
-            $service = app(ProductFilterService::class);
-            $products = $service->getProducts($filters, $perPage, $page);
+            if ($slugPath) {
+                // Resolve category using the same logic as productSubCat
+                $segments = explode('/', trim($slugPath, '/'));
+                $currentCategory = Category::whereNull('parent_id')
+                    ->where('status', 'active')
+                    ->where('slug', $segments[0])
+                    ->first();
 
-            // return view('frontend.pages.product-grids', compact('products'));
+                if (!$currentCategory) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Category not found',
+                    ], 404);
+                }
+
+                // Traverse remaining segments
+                array_shift($segments);
+                foreach ($segments as $segment) {
+                    $child = $currentCategory->children()
+                        ->where('slug', $segment)
+                        ->where('status', 'active')
+                        ->first();
+
+                    if (!$child) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Sub-category not found',
+                        ], 404);
+                    }
+
+                    $currentCategory = $child;
+                }
+
+                // Get descendant category IDs
+                $descendantIds = method_exists($currentCategory, 'descendantsAndSelf')
+                    ? $currentCategory->descendantsAndSelf()->pluck('id')->toArray()
+                    : $this->getDescendantIds($currentCategory);
+
+                // FIXED: Use proper OR condition with parentheses
+                $productQuery->where(function ($query) use ($descendantIds) {
+                    $query->whereIn('cat_id', $descendantIds)
+                        ->orWhereIn('child_cat_id', $descendantIds);
+                });
+            }
+
+            // Apply filters using the same method as productSubCat
+            $this->applyFiltersToQuery($productQuery, $request);
+
+            // Paginate
+            $perPage = $request->input('show', 12);
+            $page = $request->input('page', 1);
+            $products = $productQuery->paginate($perPage, ['*'], 'page', $page);
+
+            // Set pagination path correctly
+            $basePath = $slugPath ? "/product-cat/{$slugPath}" : '/product-grids';
+            $products->setPath($basePath);
+            $products->appends($request->except(['page', '_token', 'quant', 'slug', 'category_slug']));
+
+            // Render partial HTML
             $html = view('frontend.pages.product-grid-html', compact('products'))->render();
 
             return response()->json([
                 'success' => true,
-                'html'    => $html,
-                'pagination' => [
-                    'current_page' => $products->currentPage(),
-                    'last_page'    => $products->lastPage(),
-                    'total'        => $products->total(),
-                    'per_page'     => $products->perPage()
-                ],
-                'filters_applied' => $filters
+                'html' => $html,
+                'message' => $products->isEmpty() ? 'No products found matching your criteria' : null,
+                'total' => $products->total(),
+                'current_page' => $products->currentPage(),
+                'last_page' => $products->lastPage(),
             ]);
         } catch (\Exception $e) {
-            Log::error("Filter Error: ".$e->getMessage());
-            return response()->json(['success' => false, 'message' => 'Error applying filters'], 500);
+            \Log::error('Apply Filters Error: ' . $e->getMessage(), [
+                'request' => $request->all(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to apply filters: ' . $e->getMessage(),
+            ], 500);
         }
     }
 
+    /**
+     * Get all descendant category IDs recursively (if not using nested sets).
+     * FIXED: Better performance and null safety
+     */
+    protected function getDescendantIds($category)
+    {
+        $ids = [$category->id];
 
-    // public function applyFilters(Request $request) 
-    // {
-    //     try {
-    //         // Validation
-    //         $validated = $request->validate([
-    //             'show' => 'nullable|integer|min:1',
-    //             'sortBy' => 'string|nullable',
-    //             'query' => 'string|nullable',
-    //             'category' => 'array',
-    //             'category.*' => 'string',
-    //             'brand' => 'array',
-    //             'brand.*' => 'string',
-    //             'price_range' => 'string|nullable',
-    //             'min_rating' => 'array',
-    //             'min_rating.*' => 'string',
-    //             'min_discount' => 'array',
-    //             'min_discount.*' => 'string',
-    //             'page' => 'integer|min:1',
-    //             'category_slug' => 'string|nullable'
-    //         ]);
+        $children = Category::where('parent_id', $category->id)
+            ->where('status', 'active')
+            ->get();
 
-    //         // Base query
-    //         $query = Product::with(['brand', 'category'])
-    //             ->where('status', 'active');
+        foreach ($children as $child) {
+            $ids = array_merge($ids, $this->getDescendantIds($child));
+        }
 
-    //         // Category slug
-    //         if (!empty($validated['category_slug'])) {
-    //             $category = Category::where('slug', $validated['category_slug'])
-    //                 ->where('status', 'active')
-    //                 ->first();
-    //             if ($category) {
-    //                 $query->where('cat_id', $category->id);
-    //             }
-    //         }
+        return array_unique($ids);
+    }
 
-    //         // Brand filter
-    //         if (!empty($validated['brand'])) {
-    //             $query->whereHas('brand', function ($q) use ($validated) {
-    //                 $q->whereIn('slug', $validated['brand'])
-    //                 ->where('status', 'active');
-    //             });
-    //         }
+    /**
+     * Helper to collect descendant IDs recursively.
+     * FIXED: Added depth limit to prevent infinite recursion
+     */
+    protected function collectDescendantIds($category, $descendantIds, $depth = 0)
+    {
+        // Prevent infinite recursion
+        if ($depth > 10) {
+            return;
+        }
 
-    //         // Search query
-    //         if (!empty($validated['query'])) {
-    //             $searchTerm = $validated['query'];
-    //             $query->where(function ($q) use ($searchTerm) {
-    //                 $q->where('title', 'LIKE', "%{$searchTerm}%")
-    //                 ->orWhere('summary', 'LIKE', "%{$searchTerm}%")
-    //                 ->orWhere('description', 'LIKE', "%{$searchTerm}%");
-    //             });
-    //         }
-
-    //         // Price filter
-    //         if (!empty($validated['price_range'])) {
-    //             $priceRange = explode('-', $validated['price_range']);
-    //             if (count($priceRange) == 2) {
-    //                 $minPrice = (float) $priceRange[0];
-    //                 $maxPrice = (float) $priceRange[1];
-    //                 $query->whereBetween('price', [$minPrice, $maxPrice]);
-    //             }
-    //         }
-
-    //         // Rating filter
-    //         if (!empty($validated['min_rating'])) {
-    //             $minRatingValues = array_map('intval', $validated['min_rating']);
-    //             $minRating = min($minRatingValues);
-
-    //             $query->whereExists(function ($q) use ($minRating) {
-    //                 $q->select(DB::raw(1))
-    //                 ->from('product_reviews')
-    //                 ->whereColumn('products.id', 'product_reviews.product_id')
-    //                 ->groupBy('product_id')
-    //                 ->havingRaw('AVG(rate) >= ?', [$minRating]);
-    //             });
-    //         }
-
-    //         // Discount filter
-    //         if (!empty($validated['min_discount'])) {
-    //             $minDiscountValues = array_map('intval', $validated['min_discount']);
-    //             $minDiscount = min($minDiscountValues);
-    //             $query->where('discount', '>=', $minDiscount);
-    //         }
-
-    //         // Sorting
-    //         switch ($validated['sortBy'] ?? '') {
-    //             case 'title':
-    //                 $query->orderBy('title', 'asc');
-    //                 break;
-    //             case 'price':
-    //                 $query->orderBy('price', 'asc');
-    //                 break;
-    //             case 'priceDesc':
-    //                 $query->orderBy('price', 'desc');
-    //                 break;
-    //             case 'date':
-    //                 $query->orderBy('created_at', 'desc');
-    //                 break;
-    //             case 'rating':
-    //                 $query->leftJoin(DB::raw('(
-    //                     SELECT product_id, AVG(rate) as avg_rating
-    //                     FROM product_reviews
-    //                     GROUP BY product_id
-    //                 ) as reviews_avg'), 'products.id', '=', 'reviews_avg.product_id')
-    //                 ->orderByDesc('reviews_avg.avg_rating');
-    //                 break;
-    //             case 'discount':
-    //                 $query->orderBy('discount', 'desc');
-    //                 break;
-    //             default:
-    //                 $query->orderBy('created_at', 'desc');
-    //         }
-
-    //         // Pagination
-    //         $perPage = $validated['show'] ?? 9;
-    //         $currentPage = $validated['page'] ?? 1;
-
-    //         $products = $query->paginate($perPage, ['*'], 'page', $currentPage);
-
-    //         // Render grid view into HTML string
-    //         $html = view('frontend.pages.product-grids', compact('products'))->render();
-
-    //         return response()->json([
-    //             'success' => true,
-    //             'html' => $html,
-    //             'pagination' => [
-    //                 'current_page' => $products->currentPage(),
-    //                 'last_page' => $products->lastPage(),
-    //                 'total' => $products->total(),
-    //                 'per_page' => $products->perPage()
-    //             ],
-    //             'filters_applied' => [
-    //                 'category_slug' => $validated['category_slug'] ?? null,
-    //                 'brand' => $validated['brand'] ?? [],
-    //                 'min_rating' => $validated['min_rating'] ?? [],
-    //                 'min_discount' => $validated['min_discount'] ?? [],
-    //                 'query' => $validated['query'] ?? null,
-    //                 'price_range' => $validated['price_range'] ?? null,
-    //                 'total_products' => $products->total()
-    //             ]
-    //         ]);
-    //     } catch (\Exception $e) {
-    //         Log::error('Filter Error: ' . $e->getMessage(), [
-    //             'request_data' => $request->all(),
-    //             'file' => $e->getFile(),
-    //             'line' => $e->getLine()
-    //         ]);
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'An error occurred while applying filters. Please try again.',
-    //             'debug' => config('app.debug') ? [
-    //                 'error' => $e->getMessage(),
-    //                 'file' => $e->getFile(),
-    //                 'line' => $e->getLine()
-    //             ] : null
-    //         ], 500);
-    //     }
-    // }
-
+        $children = $category->children()->where('status', 'active')->get();
+        foreach ($children as $child) {
+            if (!$descendantIds->contains($child->id)) {
+                $descendantIds->push($child->id);
+                $this->collectDescendantIds($child, $descendantIds, $depth + 1);
+            }
+        }
+    }
 
     private function preWarmFilterCache(Request $request): void
     {
@@ -947,39 +860,18 @@ class FrontendController extends Controller
         }
     }
 
-    private function restorePaginatorFromCache(array $paginationData, Request $request)
+    private function restorePaginatorFromCache($paginatorData, Request $request)
     {
-        $items = collect($paginationData['items'])->map(function ($item) {
-            $product = (object) $item;
-
-            $product->images = collect($item['images'] ?? [])->map(function ($image) {
-                return (object) $image;
-            });
-
-            if (isset($item['cat_info']) && $item['cat_info']) {
-                $product->cat_info = (object) $item['cat_info'];
-            }
-
-            if (isset($item['brand']) && $item['brand']) {
-                $product->brand = (object) $item['brand'];
-            }
-
-            return $product;
-        });
-
-        $paginator = new LengthAwarePaginator(
-            $items,
-            $paginationData['total'],
-            $paginationData['per_page'],
-            $paginationData['current_page'],
+        return new LengthAwarePaginator(
+            collect($paginatorData['data'])->map(fn($item) => (object) $item),
+            $paginatorData['total'],
+            $paginatorData['per_page'],
+            $paginatorData['current_page'],
             [
-                'path' => $request->url(),
-                'pageName' => 'page',
+                'path' => $request->input('category_slug') ? '/product-cat/' . $request->input('category_slug') : '/product-grids',
+                'query' => $request->query(),
             ]
         );
-
-        $paginator->appends($request->except('page'));
-        return $paginator;
     }
 
     public function warmUpCommonFilters(): array
@@ -1189,7 +1081,8 @@ class FrontendController extends Controller
     public function productDetail($slug)
     {
         $product_detail = Product::getProductBySlug($slug);
-        return view('frontend.pages.product_detail')->with('product_detail', $product_detail);
+        $related_products = $product_detail && $product_detail->rel_prods ? $product_detail->rel_prods->where('id', '!=', $product_detail->id) : collect();
+        return view('frontend.pages.product_detail', compact('product_detail', 'related_products'));
     }
 
     public function productLists()
@@ -1252,7 +1145,7 @@ class FrontendController extends Controller
         $perPage = $request->get('show', 12);
         $page    = $request->get('page', 1);
 
-        $service = app(\App\Services\ProductFilterService::class);
+        $service = app(ProductFilterService::class);
         $products = $service->getProducts($filters, $perPage, $page);
 
         return view('frontend.pages.product-grids', [
@@ -1265,131 +1158,654 @@ class FrontendController extends Controller
         ]);
     }
 
-
-    // public function productCat(Request $request)
-    // {
-    //     $startTime = microtime(true);
-    //     $category = Category::where('slug', $request->slug)->firstOrFail();
-    //     $ttl = $this->getTtlConfig();
-
-    //     // Simple cache key generation
-    //     $show = $request->show ?? 12;
-    //     $page = $request->page ?? 1;
-    //     $sortBy = $request->sortBy ?? '';
-    //     $price = $request->price ?? '';
-
-    //     // Create cache key for complete page
-    //     $cacheKey = self::PRODUCT_GRIDS_CACHE_PREFIX . "category_{$category->id}_show_{$show}_page_{$page}_sort_{$sortBy}_price_{$price}";
-
-    //     // Try to get from cache first
-    //     $cachedData = RedisHelper::get($cacheKey);
-
-    //     if ($cachedData && is_array($cachedData)) {
-    //         Log::info("Product category served from cache in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
-    //         return view('frontend.pages.product-grids', $cachedData);
-    //     }
-
-    //     // If not cached, fetch fresh data
-    //     $data = $this->fetchCategoryPageData($category, $show, $page, $sortBy, $price, $ttl);
-    //     // dd($data);
-    //     // Cache the complete page data
-    //     if (!RedisHelper::put($cacheKey, $data, $ttl['product_lists'])) {
-    //         Log::warning("Failed to cache category page data for key: {$cacheKey}");
-    //     }
-
-    //     Log::info("Product category served fresh in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
-    //     return view('frontend.pages.product-grids', $data);
-    // }
-
-    private function fetchCategoryPageData($category, $show, $page, $sortBy, $price, $ttl)
+    public function productSubCat(Request $request, $slugPath)
     {
-        // Get recent products with caching
-        $recentProductsKey = self::RECENT_PRODUCTS_CACHE_PREFIX . 'latest_3';
-        $recentProducts = RedisHelper::get($recentProductsKey);
+        try {
+            // Split the slug path into segments
+            $segments = explode('/', trim($slugPath, '/'));
 
-        if (!$recentProducts) {
-            $recentProducts = $this->getRecentProductsData($recentProductsKey, $ttl['product_lists']);
+            // Start from root categories
+            $currentCategory = Category::whereNull('parent_id')
+                ->where('status', 'active')
+                ->where('slug', $segments[0])
+                ->first();
+
+            if (!$currentCategory) {
+                abort(404, 'Root category not found');
+            }
+
+            // Traverse remaining segments
+            array_shift($segments);
+            foreach ($segments as $segment) {
+                $child = $currentCategory->children()
+                    ->where('slug', $segment)
+                    ->where('status', 'active')
+                    ->first();
+
+                if (!$child) {
+                    abort(404, 'Sub-category not found');
+                }
+
+                $currentCategory = $child;
+            }
+
+            // Build product query with proper relationships
+            $productQuery = Product::with(['reviews', 'discounts', 'brand'])
+                ->where('status', 'active');
+
+            // Get descendant category IDs
+            $descendantIds = $this->getDescendantIds($currentCategory);
+
+            // Apply category filtering
+            $productQuery->where(function ($query) use ($descendantIds) {
+                $query->whereIn('cat_id', $descendantIds)
+                    ->orWhereIn('child_cat_id', $descendantIds);
+            });
+
+            // Apply filters BEFORE pagination
+            $this->applyFiltersToQuery($productQuery, $request);
+
+            // Get total count for debugging
+            $totalProducts = $productQuery->count();
+
+            // Paginate
+            $perPage = $request->input('show', 12);
+            $products = $productQuery->paginate($perPage);
+
+            // Set pagination path and preserve query params
+            $products->setPath("/product-cat/{$slugPath}");
+            $products->appends($request->except(['page', '_token']));
+
+            // Get max price for price slider
+            $maxPrice = Product::where('status', 'active')
+                ->where(function ($query) use ($descendantIds) {
+                    $query->whereIn('cat_id', $descendantIds)
+                        ->orWhereIn('child_cat_id', $descendantIds);
+                })
+                ->max('price') ?? 1000;
+
+            // Get recent products
+            $recentProducts = Product::where('status', 'active')->take(4)->get();
+
+            // Handle AJAX requests
+            if ($request->wantsJson()) {
+                $html = view('frontend.pages.product-grid-html', compact('products'))->render();
+                return response()->json([
+                    'success' => true,
+                    'html' => $html,
+                    'message' => $products->isEmpty() ? 'No products found with current filters' : null,
+                    'total' => $products->total(),
+                    'current_page' => $products->currentPage(),
+                    'last_page' => $products->lastPage(),
+                    'debug_info' => [
+                        'total_before_pagination' => $totalProducts,
+                        'applied_filters' => $request->except(['page', '_token']),
+                    ]
+                ]);
+            }
+
+            // Prepare filter data
+            $appliedFilters = [
+                'brands' => $request->input('brand', []),
+                'price_range' => $request->input('price_range', ''),
+                'min_rating' => $request->input('min_rating', []),
+                'min_discount' => $request->input('min_discount', []),
+                'sortBy' => $request->input('sortBy', 'latest'),
+                'show' => $request->input('show', 12),
+            ];
+
+            return view('frontend.pages.product-grids', [
+                'products' => $products,
+                'mainCategory' => $currentCategory,
+                'max_price' => $maxPrice,
+                'recent_products' => $recentProducts,
+                'applied_filters' => $appliedFilters,
+                'has_filters' => $this->hasFiltersApplied($request),
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Product category filter error: ' . $e->getMessage(), [
+                'slug_path' => $slugPath,
+                'request_data' => $request->all(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to apply filters: ' . $e->getMessage(),
+                ], 500);
+            }
+
+            abort(500, 'Error loading category: ' . $e->getMessage());
+        }
+    }
+    /**
+     * Check if any filters are applied in the request
+     */
+    protected function hasFiltersApplied(Request $request)
+    {
+        $filterKeys = ['brand', 'price_range', 'min_rating', 'min_discount'];
+
+        foreach ($filterKeys as $key) {
+            $value = $request->input($key);
+            if (!empty($value)) {
+                return true;
+            }
         }
 
-        // Build category products query
-        $productsQuery = Product::where('status', 'active')
-            ->where('cat_id', $category->id)
-            ->select([
-                'id',
-                'title',
-                'slug',
-                'price',
-                'discount',
-                'stock',
-                'condition',
-                'cat_id',
-                'size',
-                'summary'
-            ])
+        // Check if sorting or show options are different from defaults
+        if (
+            $request->input('sortBy', 'latest') !== 'latest' ||
+            $request->input('show', 12) != 12
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    protected function applyFiltersToQuery($productQuery, Request $request)
+    {
+        // Brands filter
+        $brands = $request->input('brand', []);
+        if (!empty($brands)) {
+            // Handle both array and comma-separated string inputs
+            if (is_string($brands)) {
+                $brands = array_filter(explode(',', $brands));
+            }
+
+            if (!empty($brands)) {
+                $brandIds = Brand::whereIn('slug', $brands)
+                    ->where('status', 'active')
+                    ->pluck('id')
+                    ->toArray();
+
+                if (!empty($brandIds)) {
+                    $productQuery->whereIn('brand_id', $brandIds);
+                }
+            }
+        }
+
+        // Price range filter
+        $priceRange = $request->input('price_range', '');
+        if ($priceRange && str_contains($priceRange, '-')) {
+            $priceParts = explode('-', $priceRange);
+            if (count($priceParts) == 2) {
+                $minPrice = (float) trim($priceParts[0]);
+                $maxPrice = (float) trim($priceParts[1]);
+
+                if ($minPrice >= 0 && $maxPrice > $minPrice) {
+                    $productQuery->whereBetween('price', [$minPrice, $maxPrice]);
+                }
+            }
+        }
+
+        // Minimum ratings filter
+        $minRatings = $request->input('min_rating', []);
+        if (!empty($minRatings)) {
+            $minRatings = is_array($minRatings) ? $minRatings : array_filter(explode(',', $minRatings));
+            $minRating = min(array_map('intval', $minRatings));
+
+            $productQuery->whereRaw('
+            products.id IN (
+                SELECT product_id 
+                FROM product_reviews 
+                WHERE product_reviews.product_id = products.id 
+                GROUP BY product_id 
+                HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
+            )', [$minRating]);
+        }
+
+        // Minimum discounts filter - Updated with proper column names
+        $minDiscounts = $request->input('min_discount', []);
+        if (!empty($minDiscounts)) {
+            if (is_string($minDiscounts)) {
+                $minDiscounts = array_filter(explode(',', $minDiscounts));
+            }
+
+            if (!empty($minDiscounts)) {
+                $validDiscounts = array_filter(array_map('intval', $minDiscounts), function ($discount) {
+                    return $discount >= 0 && $discount <= 100;
+                });
+
+                if (!empty($validDiscounts)) {
+                    $productQuery->where(function ($query) use ($validDiscounts) {
+                        // Products with direct discount field
+                        foreach ($validDiscounts as $discount) {
+                            $query->orWhere('discount', '>=', $discount);
+                        }
+                        // Products with related discounts
+                        $query->orWhereHas('discounts', function ($subQuery) use ($validDiscounts) {
+                            $subQuery->where('type', 'percentage')
+                                ->where('is_active', true)
+                                ->where('starts_at', '<=', now())
+                                ->where('ends_at', '>=', now())
+                                ->where(function ($q) use ($validDiscounts) {
+                                    foreach ($validDiscounts as $discount) {
+                                        $q->orWhere('value', '>=', $discount);
+                                    }
+                                });
+                        });
+                    });
+                }
+            }
+        }
+
+        // Sorting
+        $sortBy = $request->input('sortBy', 'latest');
+
+        switch ($sortBy) {
+            case 'price_low_high':
+                $productQuery->orderBy('price', 'asc');
+                break;
+            case 'price_high_low':
+                $productQuery->orderBy('price', 'desc');
+                break;
+            case 'rating_high_low':
+                // Order by average rating
+                $productQuery->leftJoin('product_reviews', 'products.id', '=', 'product_reviews.product_id')
+                    ->selectRaw('products.*, AVG(CAST(product_reviews.rate as DECIMAL(3,2))) as avg_rating')
+                    ->groupBy('products.id')
+                    ->orderByDesc('avg_rating');
+                break;
+            case 'name_a_z':
+                $productQuery->orderBy('title', 'asc');
+                break;
+            case 'name_z_a':
+                $productQuery->orderBy('title', 'desc');
+                break;
+            case 'latest':
+            default:
+                $productQuery->orderBy('created_at', 'desc');
+                break;
+        }
+    }
+
+    /**
+     * Resolve category path from URL segments with infinite level support
+     */
+    private function resolveCategoryPath(array $segments)
+    {
+        $mainSlug = $segments[0];
+
+        // Find main category (level 0)
+        $mainCategory = Category::where('slug', $mainSlug)->first();
+        if (!$mainCategory) {
+            return null;
+        }
+
+        $currentCategory = $mainCategory;
+        $categoryPath = [$mainCategory];
+        $maxDepth = 10; // Prevent infinite loops
+        $currentDepth = 0;
+
+        // Traverse remaining segments (level 1, 2, 3, ...)
+        for ($i = 1; $i < count($segments) && $currentDepth < $maxDepth; $i++) {
+            $slug = $segments[$i];
+
+            $childCategory = Category::where('slug', $slug)
+                ->where('parent_id', $currentCategory->id)
+                ->first();
+
+            if (!$childCategory) {
+                // If path breaks, return null to trigger 404
+                return null;
+            }
+
+            $currentCategory = $childCategory;
+            $categoryPath[] = $childCategory;
+            $currentDepth++;
+        }
+
+        return [
+            'target' => $currentCategory,  // Final target category
+            'main' => $mainCategory,       // Root main category
+            'path' => $categoryPath,       // Full path of categories
+            'depth' => $currentDepth       // Current depth level
+        ];
+    }
+
+    /**
+     * Get products with intelligent fallback between main and target categories
+     */
+    private function getProductsWithIntelligentFallback($targetCategory, $mainCategory, array $filters, int $perPage, int $page, int $targetCount)
+    {
+        // First: Try to get products from target category
+        $targetProducts = $this->getProductsFromCategory($targetCategory, $filters, $targetCount + 1, 1);
+
+        // Scenario 1: Target category has 12+ products - show only target category products
+        if ($targetProducts->total() >= $targetCount) {
+            $finalProducts = $this->getProductsFromCategory($targetCategory, $filters, $perPage, $page);
+
+            return [
+                'products' => $finalProducts,
+                'actual_category_used' => $targetCategory->id,
+            ];
+        }
+
+        // Scenario 2: Target category has < 12 products - supplement with main category
+        $targetProductCount = $targetProducts->total();
+        $neededFromMain = $targetCount - $targetProductCount;
+
+        if ($neededFromMain > 0 && $targetCategory->id !== $mainCategory->id) {
+            // Get products from target category (all available)
+            $targetProductsAll = $this->getProductsFromCategory($targetCategory, $filters, $targetProductCount, 1);
+            $targetProductIds = $targetProductsAll->pluck('id')->toArray();
+
+            // Get supplementary products from main category (excluding target category products)
+            $mainProducts = $this->getProductsFromCategoryExcluding(
+                $mainCategory,
+                $filters,
+                $neededFromMain,
+                1,
+                $targetProductIds,
+                [$targetCategory->id] // Exclude target category
+            );
+
+            // Merge products
+            $mergedProducts = $targetProductsAll->merge($mainProducts);
+
+            // Create manual pagination for merged results
+            $finalProducts = $this->createMergedPagination($mergedProducts, $perPage, $page, $targetCount);
+
+            return [
+                'products' => $finalProducts,
+                'actual_category_used' => 'mixed', // Indicates mixed source
+            ];
+        }
+
+        // Scenario 3: Main category fallback (if target same as main or no supplementary needed)
+        if ($targetCategory->id === $mainCategory->id || $targetProductCount === 0) {
+            // Try main category first
+            $mainProducts = $this->getProductsFromCategory($mainCategory, $filters, $targetCount + 1, 1);
+
+            if ($mainProducts->total() >= $targetCount) {
+                $finalProducts = $this->getProductsFromCategory($mainCategory, $filters, $perPage, $page);
+            } else {
+                // Fallback to child categories of main category
+                $finalProducts = $this->getProductsFromCategoryWithChildren($mainCategory, $filters, $perPage, $page, $targetCount);
+            }
+
+            return [
+                'products' => $finalProducts,
+                'actual_category_used' => $mainCategory->id,
+            ];
+        }
+
+        // Fallback: Return whatever we found
+        return [
+            'products' => $targetProducts,
+            'actual_category_used' => $targetCategory->id,
+        ];
+    }
+
+    /**
+     * Get products from specific category with filters
+     */
+    private function getProductsFromCategory($category, array $filters, int $perPage, int $page)
+    {
+        $query = Product::where('cat_id', $category->id)
+            ->where('status', 'active')
             ->with([
                 'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
                 'cat_info' => fn($q) => $q->select(['id', 'title'])
             ]);
 
-        // Apply sorting
-        if ($sortBy) {
-            switch ($sortBy) {
-                case 'title':
-                    $productsQuery->orderBy('title', 'ASC');
-                    break;
-                case 'price':
-                    $productsQuery->orderBy('price', 'ASC');
-                    break;
-                case 'price_desc':
-                    $productsQuery->orderBy('price', 'DESC');
-                    break;
-                default:
-                    $productsQuery->orderBy('id', 'DESC');
-            }
-        } else {
-            $productsQuery->orderBy('id', 'DESC');
-        }
+        $query = $this->applyProductFilters($query, $filters);
+        $query = $this->applyProductSorting($query, $filters['sortBy']);
 
-        // Apply price filter
-        if ($price && str_contains($price, '-')) {
-            $priceRange = explode('-', $price);
-            if (count($priceRange) === 2 && is_numeric($priceRange[0]) && is_numeric($priceRange[1])) {
-                $productsQuery->whereBetween('price', [(float)$priceRange[0], (float)$priceRange[1]]);
-            }
-        }
-
-        // Get paginated products
-        $products = $productsQuery->paginate($show, ['*'], 'page', $page);
-
-        // Transform products to include calculated discount prices and wishlist status
-        $products->getCollection()->transform(function ($product) {
-            // Calculate discounted price
-            if ($product->discount > 0) {
-                $product->discounted_price = $product->price - ($product->price * $product->discount / 100);
-            } else {
-                $product->discounted_price = $product->price;
-            }
-
-            // Check if product is in wishlist (assuming Helper::isProductInWishlist exists)
-            if (class_exists('Helper') && method_exists('Helper', 'isProductInWishlist')) {
-                $product->in_wishlist = Helper::isProductInWishlist($product->slug);
-            } else {
-                $product->in_wishlist = false;
-            }
-
-            return $product;
-        });
-
-        return [
-            'products' => $products,
-            'recent_products' => $recentProducts,
-            'category' => $category, // Add category data for breadcrumbs/page title
-            'show' => $show,
-            'sortBy' => $sortBy,
-            'price' => $price
-        ];
+        return $query->paginate($perPage, ['*'], 'page', $page)
+            ->appends(request()->query());
     }
 
+    /**
+     * Get products from category excluding specific products and categories
+     */
+    private function getProductsFromCategoryExcluding($category, array $filters, int $limit, int $page, array $excludeProductIds = [], array $excludeCategoryIds = [])
+    {
+        $categoryIds = $this->getCategoryWithChildrenIds($category, $excludeCategoryIds);
+
+        $query = Product::whereIn('cat_id', $categoryIds)
+            ->where('status', 'active');
+
+        if (!empty($excludeProductIds)) {
+            $query->whereNotIn('id', $excludeProductIds);
+        }
+
+        $query->with([
+            'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
+            'cat_info' => fn($q) => $q->select(['id', 'title'])
+        ]);
+
+        $query = $this->applyProductFilters($query, $filters);
+        $query = $this->applyProductSorting($query, $filters['sortBy']);
+
+        return $query->limit($limit)->get();
+    }
+
+    /**
+     * Get products from category including all children with fallback logic
+     */
+    private function getProductsFromCategoryWithChildren($category, array $filters, int $perPage, int $page, int $targetCount)
+    {
+        $categoryIds = $this->getCategoryWithChildrenIds($category);
+
+        $query = Product::whereIn('cat_id', $categoryIds)
+            ->where('status', 'active')
+            ->with([
+                'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
+                'cat_info' => fn($q) => $q->select(['id', 'title'])
+            ]);
+
+        $query = $this->applyProductFilters($query, $filters);
+        $query = $this->applyProductSorting($query, $filters['sortBy']);
+
+        // Check total available
+        $totalAvailable = $query->count();
+
+        if ($totalAvailable > $targetCount) {
+            // Limit to target count if more available
+            $actualPerPage = min($perPage, $targetCount);
+        } else {
+            // Show all available
+            $actualPerPage = $perPage;
+        }
+
+        return $query->paginate($actualPerPage, ['*'], 'page', $page)
+            ->appends(request()->query());
+    }
+
+    /**
+     * Create pagination for merged product collections
+     */
+    private function createMergedPagination($mergedProducts, int $perPage, int $page, int $maxTotal)
+    {
+        $total = min($mergedProducts->count(), $maxTotal);
+        $offset = ($page - 1) * $perPage;
+        $items = $mergedProducts->slice($offset, $perPage);
+
+        return new \Illuminate\Pagination\LengthAwarePaginator(
+            $items,
+            $total,
+            $perPage,
+            $page,
+            [
+                'path' => request()->url(),
+                'query' => request()->query()
+            ]
+        );
+    }
+
+    /**
+     * Get category with all its children IDs (with infinite loop protection)
+     */
+    private function getCategoryWithChildrenIds($category, array $excludeIds = [], int $maxDepth = 10, int $currentDepth = 0)
+    {
+        // Prevent infinite loops
+        if ($currentDepth >= $maxDepth) {
+            return [$category->id];
+        }
+
+        $ids = [$category->id];
+
+        // Get direct children (excluding specified categories)
+        $children = Category::where('parent_id', $category->id)
+            ->whereNotIn('id', $excludeIds)
+            ->get();
+
+        foreach ($children as $child) {
+            // Prevent circular references
+            if (!in_array($child->id, $ids)) {
+                $childIds = $this->getCategoryWithChildrenIds($child, $excludeIds, $maxDepth, $currentDepth + 1);
+                $ids = array_merge($ids, $childIds);
+            }
+        }
+
+        return array_unique($ids);
+    }
+
+    /**
+     * Apply product filters to query
+     */
+    private function applyProductFilters($query, array $filters)
+    {
+        // Brand filter
+        if (!empty($filters['brand'])) {
+            $query->whereIn('brand_id', $filters['brand']);
+        }
+
+        // Search query filter
+        if (!empty($filters['query'])) {
+            $searchTerm = $filters['query'];
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('title', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('summary', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('description', 'LIKE', "%{$searchTerm}%");
+            });
+        }
+
+        // Price range filter
+        if (!empty($filters['price_range']) && str_contains($filters['price_range'], '-')) {
+            [$minPrice, $maxPrice] = array_map('floatval', explode('-', $filters['price_range']));
+            if ($minPrice > 0) {
+                $query->where('price', '>=', $minPrice);
+            }
+            if ($maxPrice > 0) {
+                $query->where('price', '<=', $maxPrice);
+            }
+        }
+
+        // Rating filter
+        $minRatings = request('min_rating');
+        if ($minRatings) {
+            $minRatings = is_array($minRatings) ? $minRatings : explode(',', $minRatings);
+            $minRating = min(array_map('intval', $minRatings));  // Use the lowest selected min_rating for ">= filter"
+
+            $query->whereHas('reviews', function ($subQuery) use ($minRating) {
+                $subQuery->groupBy('product_id')
+                    ->havingRaw('AVG(rate) >= ?', [$minRating]);  // Assumes 'rate' column in product_reviews; change to 'rating' if needed
+            });
+        }
+
+        // Discount filter
+        if (!empty($filters['min_discount'])) {
+            $minDiscount = (float) $filters['min_discount'];
+            $query->where('discount', '>=', $minDiscount);
+        }
+
+        return $query;
+    }
+
+    /**
+     * Apply sorting to product query
+     */
+    private function applyProductSorting($query, string $sortBy)
+    {
+        switch ($sortBy) {
+            case 'title':
+                return $query->orderBy('title', 'ASC');
+            case 'price':
+                return $query->orderBy('price', 'ASC');
+            case 'price_desc':
+                return $query->orderBy('price', 'DESC');
+            case 'rating':
+                return $query->orderBy('rating', 'DESC');
+            case 'discount':
+                return $query->orderBy('discount', 'DESC');
+            case 'latest':
+                return $query->orderBy('created_at', 'DESC');
+            case 'oldest':
+                return $query->orderBy('created_at', 'ASC');
+            default:
+                return $query->orderBy('id', 'DESC');
+        }
+    }
+
+    /**
+     * Generate cache key for products
+     */
+    private function generateProductCacheKey($category, array $filters, int $perPage, int $page): string
+    {
+        $keyData = [
+            'cat_id' => $category->id,
+            'page' => $page,
+            'per_page' => $perPage,
+            'filters' => $filters,
+        ];
+
+        return 'products_' . md5(serialize($keyData));
+    }
+
+    /**
+     * Validate cached data structure
+     */
+    private function isCacheDataValid($cachedData): bool
+    {
+        return isset($cachedData['products'], $cachedData['recent_products'])
+            && is_array($cachedData['products'])
+            && is_array($cachedData['recent_products'])
+            && isset($cachedData['timestamp'])
+            && (now()->timestamp - $cachedData['timestamp']) < 7200; // 2 hours validity
+    }
+
+    /**
+     * Build view response from cached data
+     */
+    private function buildViewFromCache($cachedData, $category, $mainCategory, $perPage, $filters)
+    {
+        $paginatorData = $cachedData['products'];
+
+        $paginated = new \Illuminate\Pagination\LengthAwarePaginator(
+            collect($paginatorData['data'])->map(function ($item) {
+                if (isset($item['images'])) {
+                    $item['images'] = collect($item['images'])->map(fn($img) => (object) $img);
+                }
+                return (object) $item;
+            }),
+            $paginatorData['total'],
+            $paginatorData['per_page'],
+            $paginatorData['current_page'],
+            [
+                'path' => request()->url(),
+                'query' => request()->query()
+            ]
+        );
+
+        return view('frontend.pages.product-grids', [
+            'products'        => $paginated,
+            'recent_products' => collect($cachedData['recent_products'])->map(fn($item) => (object) $item),
+            'category'        => $category,
+            'mainCategory'    => $mainCategory,
+            'subCategory'     => $category,
+            'show'            => $perPage,
+            'sortBy'          => $filters['sortBy'],
+            'price'           => $filters['price_range'],
+        ]);
+    }
+
+    /**
+     * Get recent products with caching
+     */
     private function getRecentProductsData(string $key, int $ttl)
     {
         return Cache::remember($key, $ttl, function () use ($key, $ttl) {
@@ -1414,26 +1830,16 @@ class FrontendController extends Controller
                 ->limit(3)
                 ->get();
 
-            // Transform recent products to include calculated prices and wishlist status
             $recentProducts->transform(function ($product) {
-                // Calculate discounted price
-                if ($product->discount > 0) {
-                    $product->discounted_price = $product->price - ($product->price * $product->discount / 100);
-                } else {
-                    $product->discounted_price = $product->price;
-                }
-
-                // Check if product is in wishlist
-                if (class_exists('Helper') && method_exists('Helper', 'isProductInWishlist')) {
-                    $product->in_wishlist = Helper::isProductInWishlist($product->slug);
-                } else {
-                    $product->in_wishlist = false;
-                }
-
+                $product->discounted_price = $product->discount > 0
+                    ? $product->price - ($product->price * $product->discount / 100)
+                    : $product->price;
+                $product->in_wishlist = class_exists('Helper') && method_exists('Helper', 'isProductInWishlist')
+                    ? Helper::isProductInWishlist($product->slug)
+                    : false;
                 return $product;
             });
 
-            // Store in Redis with error handling
             if (!RedisHelper::put($key, $recentProducts, $ttl)) {
                 Log::warning("Failed to store recent products in Redis for key: {$key}");
             }
@@ -1442,86 +1848,118 @@ class FrontendController extends Controller
         });
     }
 
-
-    public function productSubCat(Request $request, $subCategoryId)
+    /**
+     * Get products with fallback logic - searches parent categories if not enough products found
+     * Restricts results to maximum 12 products
+     */
+    private function getProductsWithFallback($startCategory, $minPrice, $maxPrice, $sortBy, $show, $minRequired)
     {
-        $startTime = microtime(true);
+        $currentCategory = $startCategory;
+        $collectedProducts = collect();
+        $fallbackOccurred = false;
+        $maxProducts = 12; // Hard limit of 12 products
 
-        $category = Category::where('slug', $request->slug)->firstOrFail();
+        while ($currentCategory && $collectedProducts->count() < $maxProducts) {
+            // Build the query for current category level
+            $query = $this->buildProductQuery($currentCategory, $minPrice, $maxPrice, $sortBy);
 
-        $subCategory = Category::where('slug', $request->sub_slug)
-            ->where('parent_id', $category->id)
-            ->firstOrFail();
-        $category = $subCategory->parent;
+            // Calculate how many more products we need
+            $remainingNeeded = $maxProducts - $collectedProducts->count();
 
-        $show   = max((int) $request->input('show', 21), 1);
-        $page   = (int) $request->input('page', 1);
-        $sortBy = $request->input('sortBy', 'default');
-        $price  = $request->input('price', '');
+            // Get products from current category (limited to what we still need)
+            $categoryProducts = $query->take($remainingNeeded)->get();
 
-        $minPrice = null;
-        $maxPrice = null;
-        if ($price && str_contains($price, '-')) {
-            [$minPrice, $maxPrice] = explode('-', $price);
-            $minPrice = (float) $minPrice;
-            $maxPrice = (float) $maxPrice;
-        }
+            if ($categoryProducts->isNotEmpty()) {
+                // Remove any products we already have (avoid duplicates)
+                $newProducts = $categoryProducts->whereNotIn('id', $collectedProducts->pluck('id'));
+                $collectedProducts = $collectedProducts->merge($newProducts);
 
-        $cacheKey = "cached_products_cat{$category->id}_childcat{$subCategory->id}_page{$page}_limit{$show}_sort{$sortBy}";
-
-        if ($minPrice && $maxPrice) {
-            $cacheKey .= "_min{$minPrice}_max{$maxPrice}";
-        } else {
-            $cacheKey .= "_min_max";
-        }
-        $ttl = $this->getTtlConfig();
-
-        if (RedisHelper::has($cacheKey)) {
-            $cachedData = RedisHelper::get($cacheKey);
-
-            // Convert cached products array back to paginator
-            if (isset($cachedData['products']) && isset($cachedData['recent_products'])) {
-                $paginatorData = $cachedData['products'];
-
-                // Create paginator from cached data
-                $paginated = new \Illuminate\Pagination\LengthAwarePaginator(
-                    collect($paginatorData['data'])->map(function ($item) {
-                        // Convert images back to objects
-                        if (isset($item['images'])) {
-                            $item['images'] = collect($item['images'])->map(fn($img) => (object) $img);
-                        }
-                        return (object) $item;
-                    }),
-                    $paginatorData['total'],
-                    $paginatorData['per_page'],
-                    $paginatorData['current_page'],
-                    [
-                        'path' => request()->url(),
-                        'query' => request()->query()
-                    ]
-                );
-
-                return view('frontend.pages.product-grids', [
-                    'products'        => $paginated,
-                    'recent_products' => collect($cachedData['recent_products'])->map(fn($item) => (object) $item),
-                    'category'        => $category,
-                    'subCategory'     => $subCategory,
-                    'show'            => $show,
-                    'sortBy'          => $sortBy,
-                    'price'           => $price,
-                ]);
+                // If we have enough products now, break
+                if ($collectedProducts->count() >= $minRequired) {
+                    break;
+                }
             }
+
+            // Move to parent category for next iteration
+            $fallbackOccurred = true;
+            $currentCategory = $currentCategory->parent;
         }
 
-        $query = Product::with(['images', 'discounts', 'cat_info', 'sub_cat_info'])
-            ->active()
-            ->where('cat_id', $category->id)
-            ->where('child_cat_id', $subCategory->id);
+        // If we still don't have any products, try the original category one more time
+        if ($collectedProducts->isEmpty()) {
+            $query = $this->buildProductQuery($startCategory, $minPrice, $maxPrice, $sortBy);
+            $collectedProducts = collect($query->take($maxProducts)->get());
+            $currentCategory = $startCategory;
+        }
 
+        // Ensure we don't exceed 12 products
+        $finalProducts = $collectedProducts->take($maxProducts);
+
+        // Create a manual paginator with exactly 12 products max
+        $products = new \Illuminate\Pagination\LengthAwarePaginator(
+            $finalProducts,
+            min($finalProducts->count(), $maxProducts), // total
+            $maxProducts, // per page
+            1, // current page
+            [
+                'path' => request()->url(),
+                'query' => request()->query()
+            ]
+        );
+
+        return [
+            'products' => $products,
+            'category' => $currentCategory ?: $startCategory,
+            'fallback_occurred' => $fallbackOccurred
+        ];
+    }
+
+    /**
+     * Build product query based on category hierarchy
+     */
+    private function buildProductQuery($category, $minPrice, $maxPrice, $sortBy)
+    {
+        $query = Product::with(['images', 'discounts', 'cat_info', 'sub_cat_info'])
+            ->active();
+
+        // Apply category filters based on the category level
+        $query = $this->applyCategoryFilters($query, $category);
+
+        // Apply price filters
         if ($minPrice && $maxPrice) {
             $query->whereBetween('price', [$minPrice, $maxPrice]);
         }
 
+        // Apply sorting
+        $this->applySorting($query, $sortBy);
+
+        return $query;
+    }
+
+    /**
+     * Apply category filters based on category hierarchy - restricts to current category only
+     */
+    private function applyCategoryFilters($query, $category)
+    {
+        // Only search in the specific category, not descendants
+        // This prevents getting too many results and helps with the 12-product limit
+
+        if ($category->parent_id === null) {
+            // This is a main category
+            $query->where('cat_id', $category->id);
+        } else {
+            // This is a sub/child category
+            $query->where('child_cat_id', $category->id);
+        }
+
+        return $query;
+    }
+
+    /**
+     * Apply sorting to the query
+     */
+    private function applySorting($query, $sortBy)
+    {
         if ($sortBy === 'price') {
             $query->orderBy('price', 'ASC');
         } elseif ($sortBy === 'price_desc') {
@@ -1530,42 +1968,8 @@ class FrontendController extends Controller
             $query->latest();
         }
 
-        $products = $query->paginate($show);
-        $recent_products = Product::with(['images'])->active()->latest()->take(3)->get();
-
-        $cacheData = [
-            'products' => $products->toArray(),
-            'recent_products' => $recent_products->toArray(),
-            'limit' => $show,
-            'sort' => $sortBy,
-            'minPrice' => $minPrice,
-            'maxPrice' => $maxPrice,
-        ];
-
-        RedisHelper::put($cacheKey, $cacheData, $ttl['product_grids']);
-
-        return view('frontend.pages.product-grids', [
-            'products'        => $products,
-            'recent_products' => $recent_products,
-            'category'        => $category,
-            'subCategory'     => $subCategory,
-            'show'            => $show,
-            'sortBy'          => $sortBy,
-            'price'           => $price,
-        ]);
+        return $query;
     }
-
-    // public function productSubCat(Request $request)
-    // {
-    //     dd($request->all());
-    //     $products = Category::getProductBySubCat($request->sub_slug);
-    //     $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
-    //     $view = request()->is('e-shop.loc/product-grids') ? 'product-grids' : 'product-lists';
-
-    //     return view("frontend.pages.{$view}")
-    //         ->with('products', $products->sub_products)
-    //         ->with('recent_products', $recent_products);
-    // }
 
     public function blog()
     {

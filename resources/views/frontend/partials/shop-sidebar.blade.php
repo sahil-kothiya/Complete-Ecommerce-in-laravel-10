@@ -438,7 +438,6 @@
     .label-input.range-input {
         display: flex;
         align-items: center;
-        gap: 8px;
         padding: 8px 12px;
         background: #ffffff;
         border: 1px solid #dee2e6;
@@ -459,7 +458,7 @@
         flex: 1;
         border: none;
         background: transparent;
-        padding: 4px 8px;
+        padding: 4px;
         font-size: 14px;
         font-weight: 600;
         color: #f7941d;
@@ -561,7 +560,6 @@
         .label-input.range-input {
             flex-direction: column;
             text-align: center;
-            gap: 8px;
             padding: 10px;
         }
 
@@ -592,83 +590,4 @@
         box-shadow: 0 0 0 3px rgba(247, 148, 29, 0.1);
     }
 </style>
-@endpush
-
-@push('scripts')
-<script>
-$(document).ready(function() {
-    // Initialize price range slider
-    if ($("#slider-range").length > 0) {
-        const maxValue = parseInt($("#slider-range").data('max')) || 1000;
-        const minValue = parseInt($("#slider-range").data('min')) || 0;
-        const currency = $("#slider-range").data('currency') || '$';
-        let priceRange = minValue + '-' + maxValue;
-
-        // Check localStorage for saved price range
-        const savedPriceRange = localStorage.getItem('filter_price_range');
-        if (savedPriceRange) {
-            priceRange = savedPriceRange;
-        } else if ($("#price_range").val()) {
-            priceRange = $("#price_range").val().trim();
-        }
-
-        const price = priceRange.split('-').map(p => parseInt(p));
-
-        $("#slider-range").slider({
-            range: true,
-            min: minValue,
-            max: maxValue,
-            values: price,
-            slide: function(event, ui) {
-                $("#amount").val(currency + ui.values[0] + " - " + currency + ui.values[1]);
-                $("#price_range").val(ui.values[0] + "-" + ui.values[1]);
-                // Save price range to localStorage
-                localStorage.setItem('filters_price_range', ui.values[0] + "-" + ui.values[1]);
-            },
-            stop: function(event, ui) {
-                // Save final value and trigger filter
-                localStorage.setItem('filter_price_range', ui.values[0] + "-" + ui.values[1]);
-                // Trigger form change to apply filters
-                $("#productFilterForm").trigger('change');
-            }
-        });
-
-        // Explicitly set the UI and hidden input
-        $("#amount").val(currency + price[0] + " - " + currency + price[1]);
-        $("#price_range").val(price[0] + "-" + price[1]);
-        $("#slider-range").slider("values", 0, price[0]);
-        $("#slider-range").slider("values", 1, price[1]);
-    }
-
-    // Handle scrollable recent products
-    const $recentProductsList = $('.recent-products-list');
-    const $prevArrow = $('.prev-arrow');
-    const $nextArrow = $('.next-arrow');
-
-    function updateArrows() {
-        const scrollTop = $recentProductsList.scrollTop();
-        const maxScroll = $recentProductsList[0].scrollHeight - $recentProductsList[0].clientHeight;
-
-        $prevArrow.prop('disabled', scrollTop <= 0);
-        $nextArrow.prop('disabled', scrollTop >= maxScroll - 1);
-    }
-
-    if ($recentProductsList.length > 0) {
-        updateArrows();
-        $recentProductsList.on('scroll', updateArrows);
-
-        $prevArrow.on('click', function() {
-            $recentProductsList.animate({
-                scrollTop: $recentProductsList.scrollTop() - 150
-            }, 300);
-        });
-
-        $nextArrow.on('click', function() {
-            $recentProductsList.animate({
-                scrollTop: $recentProductsList.scrollTop() + 150
-            }, 300);
-        });
-    }
-});
-</script>
 @endpush

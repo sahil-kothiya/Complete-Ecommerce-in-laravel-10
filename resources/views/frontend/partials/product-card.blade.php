@@ -60,7 +60,7 @@
                 </span>
                 <small class="text-muted ml-2"><del>${{ number_format($product->price, 2) }}</del></small>
                 @else
-                <span class="font-weight-bold text-dark">${{ number_format($product->price, 2) }}</span>
+                <span class="font-weight-bold text-primary">${{ number_format($product->price, 2) }}</span>
                 @endif
             </div>
 
