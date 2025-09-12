@@ -1,3 +1,13 @@
+<!-- Active Filters Display -->
+<div id="active-filters-section" class="single-widget active-filters">
+    <h3 class="title">Filters 
+        <button type="button" class="clear-all-filters btn-link" title="Clear All">Clear All</button>
+    </h3>
+    <div id="active-filters-list" class="active-filters-container">
+        <!-- Active filters will be dynamically populated here -->
+    </div>
+</div>
+
 <!-- Price Filter Widget -->
 @if(!isset($mainCategory) || $mainCategory->filters->where('name', 'price')->count())
 <div class="single-widget range">
@@ -23,8 +33,8 @@
     <h3 class="title">Brands</h3>
     @php
     $brands = isset($mainCategory)
-        ? $mainCategory->brands->where('status', 'active')->sortBy('title')
-        : App\Models\Brand::where('status', 'active')->orderBy('title')->get();
+    ? $mainCategory->brands->where('status', 'active')->sortBy('title')
+    : App\Models\Brand::where('status', 'active')->orderBy('title')->get();
     @endphp
     @if($brands->count() > 0)
     <ul class="categor-list">
@@ -34,7 +44,12 @@
                 @php
                 $selectedBrands = is_array(request('brand')) ? request('brand') : (request('brand') ? explode(',', request('brand')) : []);
                 @endphp
-                <input type="checkbox" name="brand[]" value="{{ $brand->slug }}" {{ in_array($brand->slug, $selectedBrands) ? 'checked' : '' }} tabindex="{{ 13 + $index }}">
+                <input type="checkbox" name="brand[]" value="{{ $brand->slug }}"
+                    data-filter-type="brand"
+                    data-filter-label="{{ $brand->title }}"
+                    {{ in_array($brand->slug, $selectedBrands) ? 'checked' : '' }}
+                    tabindex="{{ 13 + $index }}"
+                    class="filter-checkbox">
                 {{ $brand->title }}
             </label>
         </li>
@@ -63,7 +78,12 @@
                 @php
                 $minRatings = is_array(request('min_rating')) ? request('min_rating') : (request('min_rating') ? explode(',', request('min_rating')) : []);
                 @endphp
-                <input type="checkbox" name="min_rating[]" value="{{ $rating }}" {{ in_array((string)$rating, $minRatings) ? 'checked' : '' }} tabindex="{{ 20 + $index }}">
+                <input type="checkbox" name="min_rating[]" value="{{ $rating }}"
+                    data-filter-type="rating"
+                    data-filter-label="{{ $rating }} ★ & above"
+                    {{ in_array((string)$rating, $minRatings) ? 'checked' : '' }}
+                    tabindex="{{ 20 + $index }}"
+                    class="filter-checkbox">
                 {{ $rating }} ★ & above
             </label>
         </li>
@@ -83,7 +103,12 @@
                 @php
                 $minDiscounts = is_array(request('min_discount')) ? request('min_discount') : (request('min_discount') ? explode(',', request('min_discount')) : []);
                 @endphp
-                <input type="checkbox" name="min_discount[]" value="{{ $discount }}" {{ in_array((string)$discount, $minDiscounts) ? 'checked' : '' }} tabindex="{{ 24 + $index }}">
+                <input type="checkbox" name="min_discount[]" value="{{ $discount }}"
+                    data-filter-type="discount"
+                    data-filter-label="{{ $discount }}% & above"
+                    {{ in_array((string)$discount, $minDiscounts) ? 'checked' : '' }}
+                    tabindex="{{ 24 + $index }}"
+                    class="filter-checkbox">
                 {{ $discount }}% & above
             </label>
         </li>
@@ -129,8 +154,8 @@
                     <div class="product-rating">
                         @for($i = 1; $i <= 5; $i++)
                             <i class="fa fa-star{{ $i <= $product['rating'] ? '' : '-o' }}"></i>
-                        @endfor
-                        <span class="rating-text">({{ $product['rating_count'] ?? 0 }})</span>
+                            @endfor
+                            <span class="rating-text">({{ $product['rating_count'] ?? 0 }})</span>
                     </div>
                     @endif
                     <div class="product-actions">
@@ -171,15 +196,128 @@
     @if(isset($recent_products) && $recent_products->count() > 4)
     {{-- <div class="view-all-container">
         <a href="{{ route('recent-products') }}" class="view-all-link" tabindex="36">
-            View All Recent Products <i class="ti-arrow-right"></i>
-        </a>
-    </div> --}}
-    @endif
+    View All Recent Products <i class="ti-arrow-right"></i>
+    </a>
+</div> --}}
+@endif
 </div>
 @endif
 
 @push('styles')
 <style>
+    /* Active Filters Section */
+    .active-filters {
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(247, 148, 29, 0.1);
+}
+
+.active-filters .title {
+    color: #f7941d;
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.clear-all-filters {
+    background: none;
+    border: none;
+    color: #007bff;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0;
+    font-weight: 500;
+    transition: color 0.3s ease;
+    text-decoration: none;
+}
+
+.clear-all-filters:hover {
+    color: #0056b3;
+    text-decoration: underline;
+}
+
+.active-filters-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+    .active-filter-tag {
+        display: inline-flex;
+        align-items: center;
+        background: #e07c1a;
+        color: #ffffff;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1.2;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        border: none;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+
+    .active-filter-tag:hover {
+        background: #e07c1a;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(247, 148, 29, 0.3);
+        text-decoration: line-through;
+    }
+
+    .active-filter-tag i {
+        margin-left: 6px;
+        font-size: 10px;
+        opacity: 0.8;
+    }
+
+    .active-filter-tag.price-filter {
+        background: #e07c1a;
+    }
+
+    .active-filter-tag.price-filter:hover {
+        background: #e07c1a;;
+    }
+
+    .active-filter-tag.rating-filter {
+        background: #e07c1a;
+    }
+
+    .active-filter-tag.rating-filter:hover {
+        background: #e07c1a;
+    }
+
+    .active-filter-tag.discount-filter {
+        background: #e07c1a;
+    }
+
+    .active-filter-tag.discount-filter:hover {
+        background: #e07c1a;
+    }
+
+    /* Filter Animation */
+    .active-filter-tag {
+        animation: slideInFromTop 0.3s ease-out;
+    }
+
+    @keyframes slideInFromTop {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
     /* Recently Viewed Products Scrollable */
     .recent-products-container {
         position: relative;
@@ -515,6 +653,15 @@
 
     /* Responsive Design */
     @media (max-width: 576px) {
+        .active-filters-container {
+            gap: 6px;
+        }
+
+        .active-filter-tag {
+            font-size: 11px;
+            padding: 4px 8px;
+        }
+
         .recent-products-list {
             max-height: 300px;
             gap: 10px;
@@ -580,7 +727,9 @@
 
     /* Accessibility */
     .scroll-arrow:focus,
-    .filter_button:focus {
+    .filter_button:focus,
+    .clear-all-filters:focus,
+    .active-filter-tag:focus {
         outline: 2px solid #f7941d;
         outline-offset: 2px;
     }

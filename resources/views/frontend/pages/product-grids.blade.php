@@ -77,6 +77,8 @@
     /* Checkbox Styling */
     .single-widget.rating input[type="checkbox"],
     .single-widget.discount input[type="checkbox"],
+    .single-widget.mainCategory input[type="checkbox"],
+    .single-widget.rating-filter input[type="checkbox"],
     .single-widget.category input[type="checkbox"] {
         width: 18px;
         height: 18px;
@@ -88,6 +90,7 @@
     /* Label Styling */
     .single-widget.rating label,
     .single-widget.discount label,
+    .single-widget.active-filters label,
     .single-widget.category label {
         font-size: 14px;
         line-height: 1.8;
