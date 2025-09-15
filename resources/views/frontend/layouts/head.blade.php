@@ -3,6 +3,7 @@
 <meta name="description" content="@yield('meta_description', 'Your one-stop shop for quality products')">
 <meta name="keywords" content="@yield('meta_keywords', 'e-commerce, shopping, products')">
 <meta name="author" content="Your Company Name">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <title>@yield('title', 'E-Shop')</title>
 
 <!-- Favicon -->

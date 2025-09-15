@@ -55,7 +55,8 @@
         "files": [
             "app/Http/Helpers.php",
             "app/Http/RedisHelper.php",
-            "app/Http/ImageOptimizer.php"
+            "app/Http/ImageOptimizer.php",
+            "app/Http/UrlEncryptor.php"
         ]
     },
     "scripts": {

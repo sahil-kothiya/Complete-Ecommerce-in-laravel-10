@@ -1,35 +1,33 @@
-{{-- Single file: category-menu.blade.php --}}
 @php
-    // Recursive function to render categories
-    function renderCategory($category, $parentSlug = '', $visited = [], $depth = 0) {
-        if (in_array($category->id, $visited) || $depth >= 10) {
-            return '';
-        }
-        $visited[] = $category->id;
-        $path = $parentSlug ? $parentSlug . '/' . $category->slug : $category->slug;
-        $hasChildren = $category->children && $category->children->count() > 0;
-
-        $output = '<li>';
-        $output .= '<a href="' . route('product-cat', $path) . '">';
-        $output .= e($category->title);
-        if ($hasChildren) {
-            $output .= '<span class="menu-arrow">›</span>';
-        }
-        $output .= '</a>';
-
-        if ($hasChildren) {
-            $output .= '<ul class="dropdown sub-dropdown border-0 shadow">';
-            foreach ($category->children as $child) {
-                $output .= renderCategory($child, $path, $visited, $depth + 1);
-            }
-            $output .= '</ul>';
-        }
-        $output .= '</li>';
-        return $output;
+function renderCategory($category, $parentSlug = '', $visited = [], $depth = 0) {
+    if (in_array($category->id, $visited) || $depth >= 10) {
+        return '';
     }
-    $categories = Helper::getAllCategory();
-@endphp
+    $visited[] = $category->id;
+    $path = $parentSlug ? $parentSlug . '/' . $category->slug : $category->slug;
+    $encryptedPath = \App\Helpers\UrlEncryptor::encodePath($path);
+    $hasChildren = $category->children && $category->children->count() > 0;
 
+    $output = '<li>';
+    $output .= '<a href="' . route('product-cat', $encryptedPath) . '">';
+    $output .= e($category->title);
+    if ($hasChildren) {
+        $output .= '<span class="menu-arrow">›</span>';
+    }
+    $output .= '</a>';
+
+    if ($hasChildren) {
+        $output .= '<ul class="dropdown sub-dropdown border-0 shadow">';
+        foreach ($category->children as $child) {
+            $output .= renderCategory($child, $path, $visited, $depth + 1);
+        }
+        $output .= '</ul>';
+    }
+    $output .= '</li>';
+    return $output;
+}
+$categories = Helper::getAllCategory();
+@endphp
 <li>
     <a class="nav-link dropdown-toggle" href="#" tabindex="11">Category</a>
     <ul class="dropdown border-0 shadow">

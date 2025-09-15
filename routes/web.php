@@ -78,9 +78,19 @@ Route::get('/product-detail/{slug}', [FrontendController::class, 'productDetail'
 Route::match(['get', 'post'], '/search', [FrontendController::class, 'productSearch'])->name('product.search');
 Route::get('/autocomplete', [FrontendController::class, 'autocomplete'])->name('autocomplete');
 
-Route::get('/product-cat/{any}', [FrontendController::class, 'productSubCat'])->where('any', '.*')->name('product-cat');
-Route::get('/apply-filters', [FrontendController::class, 'applyFilters'])->name('apply.filters');
+Route::get('/product-cat/{encryptedPath}', [FrontendController::class, 'productSubCat'])
+    ->middleware('validate.filters')
+    ->where('encryptedPath', '.*')
+    ->name('product-cat');
 
+Route::get('/apply-filters/{encryptedFilters?}', [FrontendController::class, 'applyFilters'])
+    ->middleware('validate.filters')
+    ->name('apply.filters');
+
+Route::post('/encrypt-filters', [FrontendController::class, 'encryptFilters'])
+    ->name('encrypt.filters')
+    ->middleware('throttle:60,1'); // 60 requests per minute
+    
 Route::get('/product-brand/{slug}', [FrontendController::class, 'productBrand'])->name('product-brand');
 Route::get('/product-grids', [FrontendController::class, 'productGrids'])->name('product-grids');
 Route::get('/product-lists', [FrontendController::class, 'productLists'])->name('product-lists');

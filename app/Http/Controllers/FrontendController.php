@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\RedisHelper;
+use App\Helpers\UrlEncryptor;
 use App\Models\Banner;
 use App\Models\Brand;
 use App\Models\Category;
@@ -21,7 +22,6 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\FacadesLog;
 use Illuminate\Support\Facades\Session;
 use Spatie\Newsletter\Facades\Newsletter;
 
@@ -535,12 +535,6 @@ class FrontendController extends Controller
         RedisHelper::put($cacheKey, $cacheData, $ttl);
     }
 
-    /**
-     * Handle product filter requests and redirect with query parameters.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
     public function productFilter(Request $request)
     {
         $startTime = microtime(true);
@@ -594,99 +588,118 @@ class FrontendController extends Controller
         return redirect()->route('product-grids', $queryParams);
     }
 
-    /**
-     * Handle AJAX filter requests for product grids.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function applyFilters(Request $request)
-    {
-        try {
-            $slugPath = $request->input('category_slug', '');
-            $productQuery = Product::with(['images', 'discounts', 'cat_info', 'sub_cat_info'])
-                ->active();
+public function applyFilters(Request $request, $encryptedFilters = null)
+{
+    try {
+        // Decode encrypted filters if provided
+        if ($encryptedFilters) {
+            $decodedFilters = json_decode(UrlEncryptor::decodePath($encryptedFilters), true);
+            $request->merge($decodedFilters);
+        }
 
-            if ($slugPath) {
-                $segments = explode('/', trim($slugPath, '/'));
-                $currentCategory = Category::whereNull('parent_id')
-                    ->where('status', 'active')
-                    ->where('slug', $segments[0])
-                    ->first();
+        $slugPath = $request->input('category_slug', '');
+        if ($slugPath) {
+            try {
+                $slugPath = UrlEncryptor::decodePath($slugPath);
+            } catch (\Exception $e) {
+                // Fallback to raw slugPath if not encrypted
+            }
+        }
 
-                if (!$currentCategory) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Category not found',
-                    ], 404);
-                }
+        $productQuery = Product::with(['images', 'discounts', 'cat_info', 'sub_cat_info'])
+            ->active();
 
-                array_shift($segments);
-                foreach ($segments as $segment) {
-                    $child = $currentCategory->children()
-                        ->where('slug', $segment)
-                        ->where('status', 'active')
-                        ->first();
+        if ($slugPath) {
+            $segments = explode('/', trim($slugPath, '/'));
+            $currentCategory = Category::whereNull('parent_id')
+                ->where('status', 'active')
+                ->where('slug', $segments[0])
+                ->first();
 
-                    if (!$child) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'Sub-category not found',
-                        ], 404);
-                    }
-
-                    $currentCategory = $child;
-                }
-
-                $descendantIds = method_exists($currentCategory, 'descendantsAndSelf')
-                    ? $currentCategory->descendantsAndSelf()->pluck('id')->toArray()
-                    : $this->getDescendantIds($currentCategory);
-
-                $productQuery->where(function ($query) use ($descendantIds) {
-                    $query->whereIn('cat_id', $descendantIds)
-                        ->orWhereIn('child_cat_id', $descendantIds);
-                });
+            if (!$currentCategory) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Category not found',
+                ], 404);
             }
 
-            $this->applyFiltersToQuery($productQuery, $request);
+            array_shift($segments);
+            foreach ($segments as $segment) {
+                $child = $currentCategory->children()
+                    ->where('slug', $segment)
+                    ->where('status', 'active')
+                    ->first();
 
-            $perPage = $request->input('show', 12);
-            $page = $request->input('page', 1);
-            $products = $productQuery->paginate($perPage, ['*'], 'page', $page);
+                if (!$child) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Sub-category not found',
+                    ], 404);
+                }
+                $currentCategory = $child;
+            }
 
-            $basePath = $slugPath ? "/product-cat/{$slugPath}" : '/product-grids';
-            $products->setPath($basePath);
-            $products->appends($request->except(['page', '_token', 'quant', 'slug', 'category_slug']));
+            $descendantIds = method_exists($currentCategory, 'descendantsAndSelf')
+                ? $currentCategory->descendantsAndSelf()->pluck('id')->toArray()
+                : $this->getDescendantIds($currentCategory);
 
-            $html = view('frontend.pages.product-grid-html', compact('products'))->render();
+            $productQuery->where(function ($query) use ($descendantIds) {
+                $query->whereIn('cat_id', $descendantIds)
+                    ->orWhereIn('child_cat_id', $descendantIds);
+            });
+        }
 
+        $this->applyFiltersToQuery($productQuery, $request);
+
+        $perPage = $request->input('show', 12);
+        $page = $request->input('page', 1);
+        $products = $productQuery->paginate($perPage, ['*'], 'page', $page);
+
+        $encodedSlugPath = $slugPath ? UrlEncryptor::encodePath($slugPath) : '';
+        $basePath = $encodedSlugPath ? "/product-cat/{$encodedSlugPath}" : '/product-grids';
+        $products->setPath($basePath);
+        $products->appends($request->except(['page', '_token', 'quant', 'slug', 'category_slug']));
+
+        $html = view('frontend.pages.product-grid-html', compact('products'))->render();
+
+        return response()->json([
+            'success' => true,
+            'html' => $html,
+            'message' => $products->isEmpty() ? 'No products found matching your criteria' : null,
+            'total' => $products->total(),
+            'current_page' => $products->currentPage(),
+            'last_page' => $products->lastPage(),
+        ], 200, ['Content-Type' => 'application/json']);
+    } catch (\Exception $e) {
+        Log::error('Apply Filters Error: ' . $e->getMessage(), [
+            'request' => $request->all(),
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to apply filters: ' . $e->getMessage(),
+        ], 500);
+    }
+}
+    public function encryptFilters(Request $request)
+    {
+        try {
+            $filters = $request->all();
+            $encryptedFilters = UrlEncryptor::encodePath(json_encode($filters));
             return response()->json([
                 'success' => true,
-                'html' => $html,
-                'message' => $products->isEmpty() ? 'No products found matching your criteria' : null,
-                'total' => $products->total(),
-                'current_page' => $products->currentPage(),
-                'last_page' => $products->lastPage(),
+                'encryptedFilters' => $encryptedFilters,
             ]);
         } catch (\Exception $e) {
-            Log::error('Apply Filters Error: ' . $e->getMessage(), [
-                'request' => $request->all(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
+            Log::error('Filter encryption error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to apply filters: ' . $e->getMessage(),
+                'message' => 'Failed to encrypt filters',
             ], 500);
         }
     }
 
-    /**
-     * Get descendant category IDs recursively.
-     *
-     * @param mixed $category
-     * @return array
-     */
     protected function getDescendantIds($category)
     {
         $ids = [$category->id];
@@ -701,13 +714,6 @@ class FrontendController extends Controller
         return array_unique($ids);
     }
 
-    /**
-     * Collect descendant category IDs with depth limit.
-     *
-     * @param mixed $category
-     * @param \Illuminate\Support\Collection $descendantIds
-     * @param int $depth
-     */
     protected function collectDescendantIds($category, $descendantIds, $depth = 0)
     {
         if ($depth > 10) {
@@ -1108,16 +1114,10 @@ class FrontendController extends Controller
         ]);
     }
 
-    /**
-     * Display products by sub-category.
-     *
-     * @param Request $request
-     * @param string $slugPath
-     * @return \Illuminate\View\View|\Illuminate\Http\JsonResponse
-     */
-    public function productSubCat(Request $request, $slugPath)
+    public function productSubCat(Request $request, $encryptedPath)
     {
         try {
+            $slugPath = UrlEncryptor::decodePath($encryptedPath);
             $segments = explode('/', trim($slugPath, '/'));
             $currentCategory = Category::whereNull('parent_id')
                 ->where('status', 'active')
@@ -1138,7 +1138,6 @@ class FrontendController extends Controller
                 if (!$child) {
                     abort(404, 'Sub-category not found');
                 }
-
                 $currentCategory = $child;
             }
 
@@ -1156,7 +1155,7 @@ class FrontendController extends Controller
 
             $perPage = $request->input('show', 12);
             $products = $productQuery->paginate($perPage);
-            $products->setPath("/product-cat/{$slugPath}");
+            $products->setPath("/product-cat/" . $encryptedPath);
             $products->appends($request->except(['page', '_token']));
 
             $maxPrice = Product::where('status', 'active')
@@ -1165,7 +1164,6 @@ class FrontendController extends Controller
                         ->orWhereIn('child_cat_id', $descendantIds);
                 })
                 ->max('price') ?? 1000;
-                // dd($maxPrice);
 
             $recentProducts = Product::where('status', 'active')->take(4)->get();
 
@@ -1193,7 +1191,7 @@ class FrontendController extends Controller
                 'sortBy' => $request->input('sortBy', 'latest'),
                 'show' => $request->input('show', 12),
             ];
-            
+
             return view('frontend.pages.product-grids', [
                 'products' => $products,
                 'mainCategory' => $currentCategory,
@@ -1204,7 +1202,7 @@ class FrontendController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Product category filter error: ' . $e->getMessage(), [
-                'slug_path' => $slugPath,
+                'encrypted_path' => $encryptedPath,
                 'request_data' => $request->all(),
                 'trace' => $e->getTraceAsString()
             ]);

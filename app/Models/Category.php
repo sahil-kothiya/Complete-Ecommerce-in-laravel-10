@@ -160,4 +160,15 @@ class Category extends Model
         }
         return implode('/', $path);
     }
+
+    public function getPath()
+    {
+        $path = [$this->slug];
+        $parent = $this->parent;
+        while ($parent) {
+            array_unshift($path, $parent->slug);
+            $parent = $parent->parent;
+        }
+        return implode('/', $path);
+    }
 }
