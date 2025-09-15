@@ -588,100 +588,100 @@ class FrontendController extends Controller
         return redirect()->route('product-grids', $queryParams);
     }
 
-public function applyFilters(Request $request, $encryptedFilters = null)
-{
-    try {
-        // Decode encrypted filters if provided
-        if ($encryptedFilters) {
-            $decodedFilters = json_decode(UrlEncryptor::decodePath($encryptedFilters), true);
-            $request->merge($decodedFilters);
-        }
-
-        $slugPath = $request->input('category_slug', '');
-        if ($slugPath) {
-            try {
-                $slugPath = UrlEncryptor::decodePath($slugPath);
-            } catch (\Exception $e) {
-                // Fallback to raw slugPath if not encrypted
-            }
-        }
-
-        $productQuery = Product::with(['images', 'discounts', 'cat_info', 'sub_cat_info'])
-            ->active();
-
-        if ($slugPath) {
-            $segments = explode('/', trim($slugPath, '/'));
-            $currentCategory = Category::whereNull('parent_id')
-                ->where('status', 'active')
-                ->where('slug', $segments[0])
-                ->first();
-
-            if (!$currentCategory) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Category not found',
-                ], 404);
+    public function applyFilters(Request $request, $encryptedFilters = null)
+    {
+        try {
+            // Decode encrypted filters if provided
+            if ($encryptedFilters) {
+                $decodedFilters = json_decode(UrlEncryptor::decodePath($encryptedFilters), true);
+                $request->merge($decodedFilters);
             }
 
-            array_shift($segments);
-            foreach ($segments as $segment) {
-                $child = $currentCategory->children()
-                    ->where('slug', $segment)
+            $slugPath = $request->input('category_slug', '');
+            if ($slugPath) {
+                try {
+                    $slugPath = UrlEncryptor::decodePath($slugPath);
+                } catch (\Exception $e) {
+                    // Fallback to raw slugPath if not encrypted
+                }
+            }
+
+            $productQuery = Product::with(['images', 'discounts', 'cat_info', 'sub_cat_info'])
+                ->active();
+
+            if ($slugPath) {
+                $segments = explode('/', trim($slugPath, '/'));
+                $currentCategory = Category::whereNull('parent_id')
                     ->where('status', 'active')
+                    ->where('slug', $segments[0])
                     ->first();
 
-                if (!$child) {
+                if (!$currentCategory) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'Sub-category not found',
+                        'message' => 'Category not found',
                     ], 404);
                 }
-                $currentCategory = $child;
+
+                array_shift($segments);
+                foreach ($segments as $segment) {
+                    $child = $currentCategory->children()
+                        ->where('slug', $segment)
+                        ->where('status', 'active')
+                        ->first();
+
+                    if (!$child) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Sub-category not found',
+                        ], 404);
+                    }
+                    $currentCategory = $child;
+                }
+
+                $descendantIds = method_exists($currentCategory, 'descendantsAndSelf')
+                    ? $currentCategory->descendantsAndSelf()->pluck('id')->toArray()
+                    : $this->getDescendantIds($currentCategory);
+
+                $productQuery->where(function ($query) use ($descendantIds) {
+                    $query->whereIn('cat_id', $descendantIds)
+                        ->orWhereIn('child_cat_id', $descendantIds);
+                });
             }
 
-            $descendantIds = method_exists($currentCategory, 'descendantsAndSelf')
-                ? $currentCategory->descendantsAndSelf()->pluck('id')->toArray()
-                : $this->getDescendantIds($currentCategory);
+            $this->applyFiltersToQuery($productQuery, $request);
 
-            $productQuery->where(function ($query) use ($descendantIds) {
-                $query->whereIn('cat_id', $descendantIds)
-                    ->orWhereIn('child_cat_id', $descendantIds);
-            });
+            $perPage = $request->input('show', 12);
+            $page = $request->input('page', 1);
+            $products = $productQuery->paginate($perPage, ['*'], 'page', $page);
+
+            $encodedSlugPath = $slugPath ? UrlEncryptor::encodePath($slugPath) : '';
+            $basePath = $encodedSlugPath ? "/product-cat/{$encodedSlugPath}" : '/product-grids';
+            $products->setPath($basePath);
+            $products->appends($request->except(['page', '_token', 'quant', 'slug', 'category_slug']));
+
+            $html = view('frontend.pages.product-grid-html', compact('products'))->render();
+
+            return response()->json([
+                'success' => true,
+                'html' => $html,
+                'message' => $products->isEmpty() ? 'No products found matching your criteria' : null,
+                'total' => $products->total(),
+                'current_page' => $products->currentPage(),
+                'last_page' => $products->lastPage(),
+            ], 200, ['Content-Type' => 'application/json']);
+        } catch (\Exception $e) {
+            Log::error('Apply Filters Error: ' . $e->getMessage(), [
+                'request' => $request->all(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to apply filters: ' . $e->getMessage(),
+            ], 500);
         }
-
-        $this->applyFiltersToQuery($productQuery, $request);
-
-        $perPage = $request->input('show', 12);
-        $page = $request->input('page', 1);
-        $products = $productQuery->paginate($perPage, ['*'], 'page', $page);
-
-        $encodedSlugPath = $slugPath ? UrlEncryptor::encodePath($slugPath) : '';
-        $basePath = $encodedSlugPath ? "/product-cat/{$encodedSlugPath}" : '/product-grids';
-        $products->setPath($basePath);
-        $products->appends($request->except(['page', '_token', 'quant', 'slug', 'category_slug']));
-
-        $html = view('frontend.pages.product-grid-html', compact('products'))->render();
-
-        return response()->json([
-            'success' => true,
-            'html' => $html,
-            'message' => $products->isEmpty() ? 'No products found matching your criteria' : null,
-            'total' => $products->total(),
-            'current_page' => $products->currentPage(),
-            'last_page' => $products->lastPage(),
-        ], 200, ['Content-Type' => 'application/json']);
-    } catch (\Exception $e) {
-        Log::error('Apply Filters Error: ' . $e->getMessage(), [
-            'request' => $request->all(),
-            'trace' => $e->getTraceAsString()
-        ]);
-
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to apply filters: ' . $e->getMessage(),
-        ], 500);
     }
-}
     public function encryptFilters(Request $request)
     {
         try {
@@ -1271,6 +1271,7 @@ public function applyFilters(Request $request, $encryptedFilters = null)
             }
         }
 
+        // Updated price range filter to work with discounted price
         $priceRange = $request->input('price_range', '');
         if ($priceRange && str_contains($priceRange, '-')) {
             $priceParts = explode('-', $priceRange);
@@ -1279,7 +1280,15 @@ public function applyFilters(Request $request, $encryptedFilters = null)
                 $maxPrice = (float) trim($priceParts[1]);
 
                 if ($minPrice >= 0 && $maxPrice > $minPrice) {
-                    $productQuery->whereBetween('price', [$minPrice, $maxPrice]);
+                    // Filter based on final price (after discount calculation)
+                    $productQuery->whereRaw('
+                    CASE 
+                        WHEN discount > 0 THEN 
+                            price - (price * discount / 100)
+                        ELSE 
+                            price 
+                    END BETWEEN ? AND ?
+                ', [$minPrice, $maxPrice]);
                 }
             }
         }
@@ -1290,13 +1299,13 @@ public function applyFilters(Request $request, $encryptedFilters = null)
             $minRating = min(array_map('intval', $minRatings));
 
             $productQuery->whereRaw('
-                products.id IN (
-                    SELECT product_id 
-                    FROM product_reviews 
-                    WHERE product_reviews.product_id = products.id 
-                    GROUP BY product_id 
-                    HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
-                )', [$minRating]);
+            products.id IN (
+                SELECT product_id 
+                FROM product_reviews 
+                WHERE product_reviews.product_id = products.id 
+                GROUP BY product_id 
+                HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
+            )', [$minRating]);
         }
 
         $minDiscounts = $request->input('min_discount', []);
@@ -1334,10 +1343,26 @@ public function applyFilters(Request $request, $encryptedFilters = null)
         $sortBy = $request->input('sortBy', 'latest');
         switch ($sortBy) {
             case 'price_low_high':
-                $productQuery->orderBy('price', 'asc');
+                // Sort by final price (after discount)
+                $productQuery->orderByRaw('
+                CASE 
+                    WHEN discount > 0 THEN 
+                        price - (price * discount / 100)
+                    ELSE 
+                        price 
+                END ASC
+            ');
                 break;
             case 'price_high_low':
-                $productQuery->orderBy('price', 'desc');
+                // Sort by final price (after discount)
+                $productQuery->orderByRaw('
+                CASE 
+                    WHEN discount > 0 THEN 
+                        price - (price * discount / 100)
+                    ELSE 
+                        price 
+                END DESC
+            ');
                 break;
             case 'rating_high_low':
                 $productQuery->leftJoin('product_reviews', 'products.id', '=', 'product_reviews.product_id')
