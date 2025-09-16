@@ -77,14 +77,14 @@
             </div>
             @endif
 
-            <div class="mb-2">
+            <div class="mb-2 price-container">
                 @if($product->discount > 0)
-                <span class="text-primary font-weight-bold">
+                <span class="text-primary font-weight-bold current-price">
                     ${{ number_format($product->price - ($product->price * $product->discount / 100), 2) }}
                 </span>
-                <small class="text-muted ml-2"><del>${{ number_format($product->price, 2) }}</del></small>
+                <small class="text-muted ml-2 original-price"><del>${{ number_format($product->price, 2) }}</del></small>
                 @else
-                <span class="font-weight-bold text-primary">${{ number_format($product->price, 2) }}</span>
+                <span class="font-weight-bold text-primary current-price">${{ number_format($product->price, 2) }}</span>
                 @endif
             </div>
 
@@ -117,6 +117,12 @@
 
 @push('styles')
 <style>
+    .price-container {
+        display: flex;
+    }
+    .original-price {
+        font-size: 0.7rem !important;
+    }
     /* Product Listing Layout */
     .product-listing-wrapper {
         display: flex;
