@@ -30,7 +30,6 @@
                     <img
                         src="{{ asset($img->image_path) }}"
                         srcset="{{ $srcsetString }}"
-                        sizes="(max-width: 576px) 280px, (max-width: 768px) 235px, (max-width: 992px) 200px, (max-width: 1200px) 180px, 160px"
                         class="slider-image"
                         alt="{{ $product->title }}"
                         loading="lazy"

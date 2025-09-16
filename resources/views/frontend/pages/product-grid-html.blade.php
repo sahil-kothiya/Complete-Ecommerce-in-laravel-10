@@ -1,29 +1,28 @@
-<!-- Updated product-grid-html.blade.php for better grid structure -->
 <!-- Products Grid -->
 <div class="product-grid-container">
     <div class="product-grid-row">
         @forelse($products as $product)
         @include('frontend.partials.product-card-grid', ['product' => $product])
         @empty
-        <div class="col-12">
-            <div class="no-products-message">
-                <i class="fa fa-search"></i>
-                <h4>No products found.</h4>
-                <p>Try adjusting your filters or search terms.</p>
-                <a href="{{ route('home') }}" class="btn btn-primary">Browse All Products</a>
+            <div class="col-12 text-center py-5">
+                <i class="fa fa-star fa-3x text-warning mb-3"></i> <!-- Rating-themed icon -->
+                <h4>No products match your rating filter.</h4>
+                <p>Try a broader rating range or clear filters.</p>
+                <button type="button" class="btn btn-outline-primary" onclick="clearFilter('rating')">Clear Rating Filter</button>
             </div>
-        </div>
         @endforelse
     </div>
 </div>
 
-<!-- Pagination -->
-@if($products->hasPages())
+<!-- Always render pagination wrapper -->
 <div class="row mt-4">
     <div class="col-12 d-flex justify-content-center">
         <div class="pagination-wrapper">
-            {{ $products->appends(request()->query())->links('vendor.pagination.bootstrap-4') }}
+            @if($products->hasPages())
+                {{ $products->appends(request()->query())->links('vendor.pagination.bootstrap-4') }}
+            @else
+                <p class="text-muted text-center">End of results.</p>
+            @endif
         </div>
     </div>
 </div>
-@endif

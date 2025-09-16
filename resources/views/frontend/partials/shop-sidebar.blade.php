@@ -1,8 +1,11 @@
 <!-- Active Filters Display -->
 <div id="active-filters-section" class="single-widget active-filters">
-    <h3 class="title">Filters
-        <button type="button" class="clear-all-filters btn-link" title="Clear All">Clear All</button>
-    </h3>
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h3 class="title mb-0">Filters</h3>
+        <button id="clear-all-filters" class="btn btn-sm btn-outline-secondary clear-all-btn" style="display: none;">
+            <i class="fa fa-times-circle mr-1"></i> Clear All
+        </button>
+    </div>
     <div id="active-filters-list" class="active-filters-container">
         <!-- Active filters will be dynamically populated here -->
     </div>
@@ -21,7 +24,6 @@
                     <input type="text" id="amount" class="price-range-display" readonly tabindex="11" />
                     <input type="hidden" name="price_range" id="price_range" value="{{ request('price_range') }}" />
                 </div>
-                <!-- <button type="button" class="filter_button" tabindex="12">Apply Filter</button> -->
             </div>
         </div>
     </div>
@@ -91,7 +93,6 @@
     </ul>
 </div>
 @endif
-
 <!-- Discounts Widget -->
 @if(!isset($mainCategory) || $mainCategory->filters->where('name', 'discount')->count())
 <div class="single-widget discount">
@@ -193,13 +194,6 @@
         </div>
         @endif
     </div>
-    @if(isset($recent_products) && $recent_products->count() > 4)
-    {{-- <div class="view-all-container">
-        <a href="{{ route('recent-products') }}" class="view-all-link" tabindex="36">
-    View All Recent Products <i class="ti-arrow-right"></i>
-    </a>
-</div> --}}
-@endif
 </div>
 @endif
 
@@ -219,26 +213,6 @@
         font-size: 16px;
         font-weight: 600;
         margin-bottom: 15px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .clear-all-filters {
-        background: none;
-        border: none;
-        color: #007bff;
-        font-size: 12px;
-        cursor: pointer;
-        padding: 0;
-        font-weight: 500;
-        transition: color 0.3s ease;
-        text-decoration: none;
-    }
-
-    .clear-all-filters:hover {
-        color: #0056b3;
-        text-decoration: underline;
     }
 
     .active-filters-container {
@@ -265,10 +239,11 @@
     }
 
     .active-filter-tag:hover {
-        background: #e07c1a;
+        background: #d4691a;
         transform: translateY(-1px);
         box-shadow: 0 2px 4px rgba(247, 148, 29, 0.3);
-        text-decoration: line-through;
+        color: #ffffff;
+        text-decoration: none;
     }
 
     .active-filter-tag i {
@@ -282,8 +257,7 @@
     }
 
     .active-filter-tag.price-filter:hover {
-        background: #e07c1a;
-        ;
+        background: #d4691a;
     }
 
     .active-filter-tag.rating-filter {
@@ -291,7 +265,7 @@
     }
 
     .active-filter-tag.rating-filter:hover {
-        background: #e07c1a;
+        background: #d4691a;
     }
 
     .active-filter-tag.discount-filter {
@@ -299,7 +273,24 @@
     }
 
     .active-filter-tag.discount-filter:hover {
+        background: #d4691a;
+    }
+
+    /* Clear All Button */
+    .clear-all-btn {
+        border: 1px solid #e07c1a;
+        color: #e07c1a;
+        background: transparent;
+        padding: 4px 8px;
+        font-size: 11px;
+        border-radius: 4px;
+        transition: all 0.3s ease;
+    }
+
+    .clear-all-btn:hover {
         background: #e07c1a;
+        color: #ffffff;
+        border-color: #e07c1a;
     }
 
     /* Filter Animation */
@@ -316,6 +307,18 @@
         to {
             opacity: 1;
             transform: translateY(0);
+        }
+    }
+
+    /* Fade out animation for removal */
+    .active-filter-tag.removing {
+        animation: fadeOutAndSlide 0.3s ease-out forwards;
+    }
+
+    @keyframes fadeOutAndSlide {
+        to {
+            opacity: 0;
+            transform: translateX(-20px) scale(0.8);
         }
     }
 
@@ -663,6 +666,11 @@
             padding: 4px 8px;
         }
 
+        .clear-all-btn {
+            font-size: 10px;
+            padding: 3px 6px;
+        }
+
         .recent-products-list {
             max-height: 300px;
             gap: 10px;
@@ -729,8 +737,8 @@
     /* Accessibility */
     .scroll-arrow:focus,
     .filter_button:focus,
-    .clear-all-filters:focus,
-    .active-filter-tag:focus {
+    .active-filter-tag:focus,
+    .clear-all-btn:focus {
         outline: 2px solid #f7941d;
         outline-offset: 2px;
     }
@@ -743,859 +751,6 @@
 @endpush
 
 @push('scripts')
-<script>
-    // Use IIFE (Immediately Invoked Function Expression) to avoid global scope pollution
-    (function() {
-        'use strict';
-
-        // Check if already initialized to prevent duplicate execution
-        if (window.productCardSystemInitialized) {
-            console.log('Product card system already initialized, skipping...');
-            return;
-        }
-
-        document.addEventListener("DOMContentLoaded", function() {
-            // Product Image Slider Functionality
-            document.querySelectorAll("[data-slider]").forEach(wrapper => {
-                // Skip if already initialized
-                if (wrapper.hasAttribute('data-slider-initialized')) {
-                    return;
-                }
-                wrapper.setAttribute('data-slider-initialized', 'true');
-
-                const track = wrapper.querySelector('.slider-track');
-                const images = wrapper.querySelectorAll('.slider-image');
-                const total = images.length;
-
-                if (total <= 1) return;
-
-                let index = 0;
-                let interval;
-
-                const slide = () => {
-                    track.style.transform = `translateX(-${index * 100}%)`;
-                };
-
-                wrapper.addEventListener("mouseenter", () => {
-                    index = 0;
-                    interval = setInterval(() => {
-                        index = (index + 1) % total;
-                        slide();
-                    }, 1000);
-                });
-
-                wrapper.addEventListener("mouseleave", () => {
-                    clearInterval(interval);
-                    index = 0;
-                    slide();
-                });
-            });
-
-            // Modal accessibility handling
-            document.querySelectorAll('[id^="productModal"]').forEach(modal => {
-                if (modal && !modal.hasAttribute('data-modal-initialized')) {
-                    modal.setAttribute('data-modal-initialized', 'true');
-
-                    modal.addEventListener('hidden.bs.modal', function() {
-                        this.setAttribute('inert', '');
-                    });
-
-                    modal.addEventListener('show.bs.modal', function() {
-                        this.removeAttribute('inert');
-                    });
-                }
-            });
-
-            // Lazy loading enhancement
-            if ('IntersectionObserver' in window && !window.productImageObserverInitialized) {
-                window.productImageObserverInitialized = true;
-                const imageObserver = new IntersectionObserver((entries, observer) => {
-                    entries.forEach(entry => {
-                        if (entry.isIntersecting) {
-                            const img = entry.target;
-                            img.classList.remove('lazy');
-                            observer.unobserve(img);
-                        }
-                    });
-                });
-
-                document.querySelectorAll('.slider-image.lazy').forEach(img => {
-                    imageObserver.observe(img);
-                });
-            }
-
-            // Add to Cart with Loading State
-            document.querySelectorAll('.btn-dark:not(.disabled):not([data-cart-initialized])').forEach(button => {
-                button.setAttribute('data-cart-initialized', 'true');
-
-                button.addEventListener('click', function(e) {
-                    if (this.href.includes('add-to-cart')) {
-                        const originalText = this.innerHTML;
-                        const originalHref = this.href;
-
-                        // Show loading state
-                        this.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i> Adding...';
-                        this.classList.add('disabled');
-                        this.href = 'javascript:void(0)';
-
-                        // Simulate adding to cart (replace with actual AJAX call)
-                        setTimeout(() => {
-                            this.innerHTML = '<i class="fa fa-check mr-1"></i> Added!';
-                            this.classList.add('btn-success');
-                            this.classList.remove('btn-dark');
-
-                            setTimeout(() => {
-                                this.innerHTML = originalText;
-                                this.href = originalHref;
-                                this.classList.remove('disabled', 'btn-success');
-                                this.classList.add('btn-dark');
-                            }, 1500);
-                        }, 800);
-                    }
-                });
-            });
-
-            // Quick View Modal Enhancement
-            document.querySelectorAll('[onclick*="productModal"]:not([data-quickview-initialized])').forEach(link => {
-                link.setAttribute('data-quickview-initialized', 'true');
-
-                link.addEventListener('click', function(e) {
-                    e.preventDefault();
-
-                    // Extract modal ID from onclick attribute
-                    const onclickAttr = this.getAttribute('onclick');
-                    const modalId = onclickAttr.match(/#([^']*)/)?.[1];
-
-                    if (modalId) {
-                        const modal = document.getElementById(modalId);
-                        if (modal) {
-                            // Use Bootstrap modal if available, otherwise fallback
-                            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                                const bsModal = new bootstrap.Modal(modal);
-                                bsModal.show();
-                            } else if (typeof $ !== 'undefined' && $.fn.modal) {
-                                $(modal).modal('show');
-                            }
-                        }
-                    }
-                });
-            });
-
-            // Enhanced Wishlist Functionality
-            document.querySelectorAll('[href*="add-to-wishlist"]:not([data-wishlist-initialized])').forEach(link => {
-                link.setAttribute('data-wishlist-initialized', 'true');
-
-                link.addEventListener('click', function(e) {
-                    e.preventDefault();
-
-                    const heartIcon = this.querySelector('i');
-                    const originalColor = heartIcon.style.color;
-
-                    // Animate heart
-                    heartIcon.style.transform = 'scale(1.3)';
-                    heartIcon.style.color = 'red';
-
-                    setTimeout(() => {
-                        heartIcon.style.transform = 'scale(1)';
-                    }, 200);
-
-                    // Here you would typically make an AJAX call to add/remove from wishlist
-                    console.log('Wishlist action for:', this.href);
-                });
-            });
-        });
-
-        // Filter Integration Functions - Use namespace to avoid conflicts
-        if (!window.productCardHelpers) {
-            window.productCardHelpers = {
-                // Filter products based on active filters
-                filterProducts: function(filters) {
-                    const productCards = document.querySelectorAll('.product-card-container');
-                    let visibleCount = 0;
-
-                    productCards.forEach(card => {
-                        let shouldShow = true;
-
-                        // Check brand filter
-                        if (filters.brand && Object.keys(filters.brand).length > 0) {
-                            const productBrand = card.dataset.productBrand;
-                            if (!Object.keys(filters.brand).includes(productBrand)) {
-                                shouldShow = false;
-                            }
-                        }
-
-                        // Check price filter
-                        if (filters.price && Object.keys(filters.price).length > 0) {
-                            const priceRange = Object.keys(filters.price)[0];
-                            const [minPrice, maxPrice] = priceRange.split('-').map(Number);
-                            const productPrice = parseFloat(card.dataset.productPrice);
-                            const productDiscount = parseFloat(card.dataset.productDiscount) || 0;
-                            const finalPrice = productPrice - (productPrice * productDiscount / 100);
-
-                            if (finalPrice < minPrice || finalPrice > maxPrice) {
-                                shouldShow = false;
-                            }
-                        }
-
-                        // Check rating filter
-                        if (filters.rating && Object.keys(filters.rating).length > 0) {
-                            const productRating = parseFloat(card.dataset.productRating) || 0;
-                            const minRatings = Object.keys(filters.rating).map(Number);
-                            const passesRating = minRatings.some(minRating => productRating >= minRating);
-
-                            if (!passesRating) {
-                                shouldShow = false;
-                            }
-                        }
-
-                        // Check discount filter
-                        if (filters.discount && Object.keys(filters.discount).length > 0) {
-                            const productDiscount = parseFloat(card.dataset.productDiscount) || 0;
-                            const minDiscounts = Object.keys(filters.discount).map(Number);
-                            const passesDiscount = minDiscounts.some(minDiscount => productDiscount >= minDiscount);
-
-                            if (!passesDiscount) {
-                                shouldShow = false;
-                            }
-                        }
-
-                        // Apply visibility
-                        if (shouldShow) {
-                            card.style.display = 'block';
-                            card.classList.remove('fade-out');
-                            card.classList.add('fade-in');
-                            visibleCount++;
-                        } else {
-                            card.classList.remove('fade-in');
-                            card.classList.add('fade-out');
-                            setTimeout(() => {
-                                if (card.classList.contains('fade-out')) {
-                                    card.style.display = 'none';
-                                }
-                            }, 300);
-                        }
-                    });
-
-                    // Show/hide no results message
-                    this.toggleNoResultsMessage(visibleCount);
-                    return visibleCount;
-                },
-
-                // Toggle no Results message
-                toggleNoResultsMessage: function(visibleCount) {
-                    let noResultsMessage = document.querySelector('.no-products-message');
-
-                    if (visibleCount === 0) {
-                        if (!noResultsMessage) {
-                            noResultsMessage = this.createNoResultsMessage();
-                            const productListing = document.querySelector('.product-listing-wrapper, .products-grid, .row');
-                            if (productListing) {
-                                productListing.appendChild(noResultsMessage);
-                            }
-                        }
-                        noResultsMessage.style.display = 'block';
-                    } else {
-                        if (noResultsMessage) {
-                            noResultsMessage.style.display = 'none';
-                        }
-                    }
-                },
-
-                // Create no results message element
-                createNoResultsMessage: function() {
-                    const messageDiv = document.createElement('div');
-                    messageDiv.className = 'no-products-message col-12';
-                    messageDiv.innerHTML = `
-                        <i class="fa fa-search"></i>
-                        <h4>No Products Found</h4>
-                        <p>We couldn't find any products matching your current filters.</p>
-                        <button type="button" class="btn btn-primary" onclick="window.shopFilterSystem?.clearAllFilters()">
-                            <i class="fa fa-refresh mr-1"></i> Clear All Filters
-                        </button>
-                    `;
-                    return messageDiv;
-                },
-
-                // Reset all product visibility
-                resetProductVisibility: function() {
-                    const productCards = document.querySelectorAll('.product-card-container');
-                    productCards.forEach(card => {
-                        card.style.display = 'block';
-                        card.classList.remove('fade-out', 'fade-in');
-                    });
-
-                    this.toggleNoResultsMessage(productCards.length);
-                },
-
-                // Get product count
-                getVisibleProductCount: function() {
-                    return document.querySelectorAll('.product-card-container:not([style*="display: none"])').length;
-                },
-
-                // Animate product cards on filter change
-                animateFilterChange: function() {
-                    const productCards = document.querySelectorAll('.product-card-container');
-                    productCards.forEach((card, index) => {
-                        card.classList.add('filtering');
-                        setTimeout(() => {
-                            card.classList.remove('filtering');
-                        }, 300 + (index * 50)); // Stagger animation
-                    });
-                }
-            };
-        }
-
-        // Shop Filter System - Only create if it doesn't exist
-        if (!window.ShopFilterSystem && !window.shopFilterSystem) {
-            class ShopFilterSystem {
-                constructor() {
-                    this.activeFilters = {};
-                    this.init();
-                }
-
-                init() {
-                    this.bindEvents();
-                    this.loadInitialFilters();
-                    this.updateActiveFiltersDisplay();
-                }
-
-                bindEvents() {
-                    // Filter checkbox change events
-                    document.addEventListener('change', (e) => {
-                        if (e.target.classList.contains('filter-checkbox')) {
-                            this.handleFilterChange(e.target);
-                        }
-                    });
-
-                    // Price range slider events
-                    const priceSlider = document.getElementById('slider-range');
-                    if (priceSlider && typeof $ !== 'undefined' && $.fn.slider) {
-                        $(priceSlider).on('slidechange', (event, ui) => {
-                            this.handlePriceRangeChange(ui.values);
-                        });
-                    }
-
-                    // Clear all filters
-                    document.addEventListener('click', (e) => {
-                        if (e.target.classList.contains('clear-all-filters')) {
-                            this.clearAllFilters();
-                        }
-
-                        // Remove individual active filter
-                        if (e.target.classList.contains('active-filter-tag') || e.target.closest('.active-filter-tag')) {
-                            const filterTag = e.target.classList.contains('active-filter-tag') ?
-                                e.target :
-                                e.target.closest('.active-filter-tag');
-                            this.removeActiveFilter(filterTag);
-                        }
-                    });
-
-                    // Debounce filter application
-                    this.debouncedApplyFilters = this.debounce(() => {
-                        // this.applyFilters();
-                    }, 300);
-                }
-
-                loadInitialFilters() {
-                    // Load filters from URL parameters
-                    const urlParams = new URLSearchParams(window.location.search);
-
-                    // Brand filters
-                    const brands = urlParams.get('brand');
-                    if (brands) {
-                        const brandArray = brands.split(',');
-                        brandArray.forEach(brand => {
-                            const checkbox = document.querySelector(`input[name="brand[]"][value="${brand}"]`);
-                            if (checkbox) {
-                                this.addToActiveFilters('brand', brand, checkbox.dataset.filterLabel);
-                            }
-                        });
-                    }
-
-                    // Rating filters
-                    const ratings = urlParams.get('min_rating');
-                    if (ratings) {
-                        const ratingArray = ratings.split(',');
-                        ratingArray.forEach(rating => {
-                            const checkbox = document.querySelector(`input[name="min_rating[]"][value="${rating}"]`);
-                            if (checkbox) {
-                                this.addToActiveFilters('rating', rating, checkbox.dataset.filterLabel);
-                            }
-                        });
-                    }
-
-                    // Discount filters
-                    const discounts = urlParams.get('min_discount');
-                    if (discounts) {
-                        const discountArray = discounts.split(',');
-                        discountArray.forEach(discount => {
-                            const checkbox = document.querySelector(`input[name="min_discount[]"][value="${discount}"]`);
-                            if (checkbox) {
-                                this.addToActiveFilters('discount', discount, checkbox.dataset.filterLabel);
-                            }
-                        });
-                    }
-
-                    // Price range
-                    const priceRange = urlParams.get('price_range');
-                    if (priceRange) {
-                        const [min, max] = priceRange.split('-');
-                        this.addToActiveFilters('price', priceRange, `$${min} - $${max}`);
-                    }
-                }
-
-                handleFilterChange(checkbox) {
-                    const filterType = checkbox.dataset.filterType;
-                    const filterValue = checkbox.value;
-                    const filterLabel = checkbox.dataset.filterLabel;
-
-                    if (checkbox.checked) {
-                        this.addToActiveFilters(filterType, filterValue, filterLabel);
-                    } else {
-                        this.removeFromActiveFilters(filterType, filterValue);
-                    }
-
-                    this.updateActiveFiltersDisplay();
-                    this.debouncedApplyFilters();
-                }
-
-                handlePriceRangeChange(values) {
-                    const [min, max] = values;
-                    const priceRange = `${min}-${max}`;
-                    const priceLabel = `$${min} - $${max}`;
-
-                    // Remove existing price filter
-                    this.removeFromActiveFilters('price');
-
-                    // Add new price filter if not default range
-                    const sliderElement = document.getElementById('slider-range');
-                    const minDefault = parseInt(sliderElement.dataset.min) || 0;
-                    const maxDefault = parseInt(sliderElement.dataset.max) || 1000;
-
-                    if (min !== minDefault || max !== maxDefault) {
-                        this.addToActiveFilters('price', priceRange, priceLabel);
-                    }
-
-                    // Update hidden input
-                    document.getElementById('price_range').value = priceRange;
-
-                    this.updateActiveFiltersDisplay();
-                    this.debouncedApplyFilters();
-                }
-
-                addToActiveFilters(type, value, label) {
-                    if (!this.activeFilters[type]) {
-                        this.activeFilters[type] = {};
-                    }
-                    this.activeFilters[type][value] = label;
-                }
-
-                removeFromActiveFilters(type, value = null) {
-                    if (value === null) {
-                        delete this.activeFilters[type];
-                    } else {
-                        if (this.activeFilters[type]) {
-                            delete this.activeFilters[type][value];
-                            if (Object.keys(this.activeFilters[type]).length === 0) {
-                                delete this.activeFilters[type];
-                            }
-                        }
-                    }
-                }
-
-                removeActiveFilter(filterTag) {
-                    const filterType = filterTag.dataset.filterType;
-                    const filterValue = filterTag.dataset.filterValue;
-
-                    // Uncheck corresponding checkbox
-                    const checkbox = document.querySelector(`input[name="${filterType}[]"][value="${filterValue}"], input[name="${filterType}"][value="${filterValue}"]`);
-                    if (checkbox) {
-                        checkbox.checked = false;
-                    }
-
-                    // Handle price range reset
-                    if (filterType === 'price') {
-                        this.resetPriceRange();
-                    }
-
-                    // Remove from active filters
-                    this.removeFromActiveFilters(filterType, filterValue);
-                    this.updateActiveFiltersDisplay();
-                    // Use client-side filtering instead of server-side
-                    this.applyFiltersClientSide();
-                }
-
-                clearAllFilters() {
-                    // Uncheck all filter checkboxes
-                    document.querySelectorAll('.filter-checkbox').forEach(checkbox => {
-                        checkbox.checked = false;
-                    });
-
-                    // Reset price range
-                    this.resetPriceRange();
-
-                    // Clear active filters
-                    this.activeFilters = {};
-                    this.updateActiveFiltersDisplay();
-
-                    // Reset product visibility on client-side
-                    window.productCardHelpers.resetProductVisibility();
-
-                    // Get the base category path or fallback to /product-grids
-                    const categorySlug = document.querySelector('meta[name="category-slug"]')?.content || '';
-                    const basePath = categorySlug ? `/product-cat/${categorySlug}` : '/product-grids';
-
-                    // Update URL without filter parameters
-                    window.location.href = basePath;
-                }
-
-                resetPriceRange() {
-                    const sliderElement = document.getElementById('slider-range');
-                    const priceRangeInput = document.getElementById('price_range');
-                    const amountDisplay = document.getElementById('amount');
-
-                    if (sliderElement && typeof $ !== 'undefined' && $.fn.slider) {
-                        const minDefault = parseInt(sliderElement.dataset.min) || 0;
-                        const maxDefault = parseInt(sliderElement.dataset.max) || 1000;
-
-                        $(sliderElement).slider('values', [minDefault, maxDefault]);
-
-                        if (priceRangeInput) {
-                            priceRangeInput.value = '';
-                        }
-
-                        if (amountDisplay) {
-                            amountDisplay.value = `$${minDefault} - $${maxDefault}`;
-                        }
-                    }
-                }
-
-                updateActiveFiltersDisplay() {
-                    const activeFiltersSection = document.getElementById('active-filters-section');
-                    const activeFiltersList = document.getElementById('active-filters-list');
-                    const clearAllButton = activeFiltersSection.querySelector('.clear-all-filters');
-
-                    if (!activeFiltersSection || !activeFiltersList || !clearAllButton) return;
-
-                    // Always show the section
-                    activeFiltersSection.style.display = 'block';
-
-                    // Check if we have any active filters
-                    const hasActiveFilters = Object.keys(this.activeFilters).length > 0;
-
-                    if (hasActiveFilters) {
-                        clearAllButton.style.display = 'inline-block';
-                        activeFiltersList.style.display = 'flex';
-                        activeFiltersList.innerHTML = this.generateActiveFiltersHTML();
-                    } else {
-                        clearAllButton.style.display = 'none';
-                        activeFiltersList.style.display = 'none';
-                        activeFiltersList.innerHTML = '';
-                    }
-                }
-
-                generateActiveFiltersHTML() {
-                    let html = '';
-
-                    Object.entries(this.activeFilters).forEach(([type, values]) => {
-                        Object.entries(values).forEach(([value, label]) => {
-                            const cssClass = `${type}-filter`;
-                            // Ensure price filter label always shows with $
-                            let displayLabel = label;
-                            if (type === 'price') {
-                                const [min, max] = value.split('-');
-                                displayLabel = `$${min} - $${max}`;
-                            }
-                            html += `
-                                <button class="active-filter-tag ${cssClass}" 
-                                        data-filter-type="${type}" 
-                                        data-filter-value="${value}"
-                                        title="Remove ${displayLabel} filter">
-                                    ${displayLabel} <i class="fa fa-times"></i>
-                                </button>
-                            `;
-                        });
-                    });
-
-                    return html;
-                }
-
-                applyFilters() {
-    this.showLoadingState();
-
-    const params = new URLSearchParams();
-    Object.entries(this.activeFilters).forEach(([type, values]) => {
-        const valueArray = Object.keys(values);
-        if (type === 'brand') {
-            params.set('brand', valueArray.join(','));
-        } else if (type === 'rating') {
-            params.set('min_rating', valueArray.join(','));
-        } else if (type === 'discount') {
-            params.set('min_discount', valueArray.join(','));
-        } else if (type === 'price') {
-            params.set('price_range', valueArray[0]);
-        }
-    });
-
-    // Include category_slug
-    const categorySlug = document.querySelector('meta[name="category-slug"]')?.content || '';
-    if (categorySlug) {
-        params.set('category_slug', categorySlug);
-    }
-
-    // Send filters to backend for encryption
-    fetch('/encrypt-filters', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-            'Accept': 'application/json',
-        },
-        body: JSON.stringify(Object.fromEntries(params)),
-    })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.success && data.encryptedFilters) {
-                // Fetch filtered products
-                fetch(`/apply-filters/${data.encryptedFilters}`, {
-                    headers: {
-                        'Accept': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                    }
-                })
-                    .then(response => response.json())
-                    .then(filterData => {
-                        if (filterData.success) {
-                            // Update product grid
-                            const productGrid = document.querySelector('.product-grid-container');
-                            if (productGrid) {
-                                productGrid.innerHTML = filterData.html;
-                            }
-                            // Update URL without reloading
-                            const newUrl = categorySlug ? `/product-cat/${categorySlug}?${params.toString()}` : `/product-grids?${params.toString()}`;
-                            window.history.pushState({}, '', newUrl);
-                            // Update product count
-                            window.productCardHelpers.toggleNoResultsMessage(filterData.total);
-                        } else {
-                            console.error('Filter application failed:', filterData.message);
-                            window.productCardHelpers.toggleNoResultsMessage(0);
-                        }
-                        this.hideLoadingState();
-                    })
-                    .catch(error => {
-                        console.error('Error fetching filtered products:', error);
-                        this.hideLoadingState();
-                    });
-            } else {
-                console.error('Encryption failed:', data.message);
-                this.hideLoadingState();
-            }
-        })
-        .catch(error => {
-            console.error('Error encrypting filters:', error);
-            this.hideLoadingState();
-        });
-}
-
-// Add hideLoadingState method if not present
-hideLoadingState() {
-    const loadingOverlay = document.querySelector('.filter-loading-overlay');
-    if (loadingOverlay) {
-        loadingOverlay.remove();
-    }
-    document.querySelectorAll('.filter-checkbox').forEach(checkbox => {
-        checkbox.disabled = false;
-    });
-}
-
-                showLoadingState() {
-                    // Add loading overlay to product listing
-                    const productListing = document.querySelector('.product-listing-wrapper, .products-grid');
-                    if (productListing && !productListing.querySelector('.filter-loading-overlay')) {
-                        const loadingOverlay = document.createElement('div');
-                        loadingOverlay.className = 'filter-loading-overlay';
-                        loadingOverlay.innerHTML = `
-                            <div class="loading-spinner">
-                                <div class="spinner"></div>
-                                <p>Filtering products...</p>
-                            </div>
-                        `;
-                        productListing.style.position = 'relative';
-                        productListing.appendChild(loadingOverlay);
-                    }
-
-                    // Disable filter controls
-                    document.querySelectorAll('.filter-checkbox').forEach(checkbox => {
-                        checkbox.disabled = true;
-                    });
-                }
-
-                debounce(func, wait) {
-                    let timeout;
-                    return function executedFunction(...args) {
-                        const later = () => {
-                            clearTimeout(timeout);
-                            func(...args);
-                        };
-                        clearTimeout(timeout);
-                        timeout = setTimeout(later, wait);
-                    };
-                }
-
-                // Public methods for external access
-                getActiveFilters() {
-                    return this.activeFilters;
-                }
-
-                hasActiveFilters() {
-                    return Object.keys(this.activeFilters).length > 0;
-                }
-
-                getActiveFilterCount() {
-                    let count = 0;
-                    Object.values(this.activeFilters).forEach(filterValues => {
-                        count += Object.keys(filterValues).length;
-                    });
-                    return count;
-                }
-            }
-
-            // Initialize the filter system
-            window.addEventListener('load', function() {
-                if (!window.shopFilterSystem) {
-                    window.shopFilterSystem = new ShopFilterSystem();
-
-                    // Initialize price range slider if jQuery UI is available
-                    if (typeof $ !== 'undefined' && $.fn.slider) {
-                        const sliderRange = document.getElementById('slider-range');
-                        if (sliderRange) {
-                            const minPrice = parseInt(sliderRange.dataset.min) || 0;
-                            const maxPrice = parseInt(sliderRange.dataset.max) || 5000;
-                            const currentRange = document.getElementById('price_range')?.value;
-
-                            let currentMin = minPrice;
-                            let currentMax = maxPrice;
-
-                            if (currentRange) {
-                                [currentMin, currentMax] = currentRange.split('-').map(Number);
-                            }
-
-                            $(sliderRange).slider({
-                                range: true,
-                                min: minPrice,
-                                max: maxPrice,
-                                values: [currentMin, currentMax],
-                                slide: function(event, ui) {
-                                    document.getElementById('amount').value = `$${ui.values[0]} - $${ui.values[1]}`;
-                                },
-                                change: function(event, ui) {
-                                    document.getElementById('amount').value = `$${ui.values[0]} - $${ui.values[1]}`;
-                                }
-                            });
-
-                            // Set initial display value
-                            document.getElementById('amount').value = `$${currentMin} - $${currentMax}`;
-                        }
-                    }
-
-                    // Integration with filter system
-                    if (window.productCardHelpers) {
-                        window.shopFilterSystem.applyFiltersClientSide = function() {
-                            const activeFilters = this.getActiveFilters();
-                            window.productCardHelpers.animateFilterChange();
-
-                            setTimeout(() => {
-                                const visibleCount = window.productCardHelpers.filterProducts(activeFilters);
-                                console.log(`Filtered products: ${visibleCount} visible`);
-                            }, 100);
-                        };
-                    }
-
-                    // Update product count in filter section
-                    const updateFilterCount = () => {
-                        const visibleCount = window.productCardHelpers.getVisibleProductCount();
-                        const filterCountElement = document.querySelector('.filter-results-count');
-
-                        if (filterCountElement) {
-                            filterCountElement.textContent = `${visibleCount} products found`;
-                        }
-                    };
-
-                    // Call on page load
-                    updateFilterCount();
-                }
-            });
-        }
-
-        // Mark as initialized
-        window.productCardSystemInitialized = true;
-        console.log('Product card system initialized successfully');
-
-    })(); // End of IIFE
-
-    // Inject additional styles only once
-    if (!document.getElementById('product-card-additional-styles')) {
-        const additionalStyles = `
-            .filter-loading-overlay {
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: rgba(255, 255, 255, 0.9);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                z-index: 1000;
-                backdrop-filter: blur(2px);
-            }
-
-            .loading-spinner {
-                text-align: center;
-                color: #f7941d;
-            }
-
-            .spinner {
-                width: 40px;
-                height: 40px;
-                border: 4px solid #e9ecef;
-                border-top: 4px solid #f7941d;
-                border-radius: 50%;
-                animation: spin 1s linear infinite;
-                margin: 0 auto 10px;
-            }
-
-            @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-            }
-
-            .loading-spinner p {
-                margin: 0;
-                font-weight: 500;
-                color: #666;
-            }
-
-            .filter-checkbox:disabled {
-                opacity: 0.6;
-                cursor: not-allowed;
-            }
-
-            .filter-checkbox:disabled + label {
-                opacity: 0.6;
-                cursor: not-allowed;
-            }
-        `;
-
-        const styleSheet = document.createElement('style');
-        styleSheet.id = 'product-card-additional-styles';
-        styleSheet.textContent = additionalStyles;
-        document.head.appendChild(styleSheet);
-    }
-</script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="{{ asset('js/shop-system.js') }}"></script>
 @endpush
