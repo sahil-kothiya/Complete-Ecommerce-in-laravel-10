@@ -145,9 +145,6 @@
         transition: transform 0.3s ease;
     }
 
-    .slider-wrapper:hover .slider-image {
-        transform: scale(1.05);
-    }
 
     /* Product grid container */
     .product-grid-row {

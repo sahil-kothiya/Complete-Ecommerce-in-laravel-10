@@ -20,6 +20,7 @@ use App\Http\Controllers\{
     DiscountController,
     FilterController,
     FrontendController,
+    HighPerformanceFilterController,
     HomeController,
     MessageController,
     MollieController,
@@ -78,6 +79,12 @@ Route::get('/product-detail/{slug}', [FrontendController::class, 'productDetail'
 Route::match(['get', 'post'], '/search', [FrontendController::class, 'productSearch'])->name('product.search');
 Route::get('/autocomplete', [FrontendController::class, 'autocomplete'])->name('autocomplete');
 
+// API Route for JSON Filters (high-perf endpoint)
+Route::get('/api/filters/{path?}', [HighPerformanceFilterController::class, 'getFilterData'])
+    ->name('api.filters')
+    ->where('path', '.*'); // Allow category paths like /product-cat/slug/subslug
+
+// Existing routes delegate to API for AJAX
 Route::get('/product-cat/{encryptedPath}', [FrontendController::class, 'productSubCat'])
     ->middleware('validate.filters')
     ->where('encryptedPath', '.*')

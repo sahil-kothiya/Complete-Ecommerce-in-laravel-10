@@ -682,139 +682,6 @@ class FrontendController extends Controller
             ], 500);
         }
     }
-
-    protected function applyFiltersToQuery($productQuery, Request $request)
-    {
-        $brands = $request->input('brand', []);
-        if (!empty($brands)) {
-            if (is_string($brands)) {
-                $brands = array_filter(explode(',', $brands));
-            }
-
-            if (!empty($brands)) {
-                $brandIds = Brand::whereIn('slug', $brands)
-                    ->where('status', 'active')
-                    ->pluck('id')
-                    ->toArray();
-
-                if (!empty($brandIds)) {
-                    $productQuery->whereIn('brand_id', $brandIds);
-                }
-            }
-        }
-
-        // Updated price range filter to work with discounted price
-        $priceRange = $request->input('price_range', '');
-        if ($priceRange && str_contains($priceRange, '-')) {
-            $priceParts = explode('-', $priceRange);
-            if (count($priceParts) == 2) {
-                $minPrice = (float) trim($priceParts[0]);
-                $maxPrice = (float) trim($priceParts[1]);
-
-                if ($minPrice >= 0 && $maxPrice > $minPrice) {
-                    // Filter based on final price (after discount calculation)
-                    $productQuery->whereRaw('
-                    CASE 
-                        WHEN discount > 0 THEN 
-                            price - (price * discount / 100)
-                        ELSE 
-                            price 
-                    END BETWEEN ? AND ?
-                ', [$minPrice, $maxPrice]);
-                }
-            }
-        }
-
-        $minRatings = $request->input('min_rating', []);
-        if (!empty($minRatings)) {
-            $minRatings = is_array($minRatings) ? $minRatings : array_filter(explode(',', $minRatings));
-            $minRating = min(array_map('intval', $minRatings));
-
-            $productQuery->whereRaw('
-            products.id IN (
-                SELECT product_id 
-                FROM product_reviews 
-                WHERE product_reviews.product_id = products.id 
-                GROUP BY product_id 
-                HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
-            )', [$minRating]);
-        }
-
-        $minDiscounts = $request->input('min_discount', []);
-        if (!empty($minDiscounts)) {
-            if (is_string($minDiscounts)) {
-                $minDiscounts = array_filter(explode(',', $minDiscounts));
-            }
-
-            if (!empty($minDiscounts)) {
-                $validDiscounts = array_filter(array_map('intval', $minDiscounts), function ($discount) {
-                    return $discount >= 0 && $discount <= 100;
-                });
-
-                if (!empty($validDiscounts)) {
-                    $productQuery->where(function ($query) use ($validDiscounts) {
-                        foreach ($validDiscounts as $discount) {
-                            $query->orWhere('discount', '>=', $discount);
-                        }
-                        $query->orWhereHas('discounts', function ($subQuery) use ($validDiscounts) {
-                            $subQuery->where('type', 'percentage')
-                                ->where('is_active', true)
-                                ->where('starts_at', '<=', now())
-                                ->where('ends_at', '>=', now())
-                                ->where(function ($q) use ($validDiscounts) {
-                                    foreach ($validDiscounts as $discount) {
-                                        $q->orWhere('value', '>=', $discount);
-                                    }
-                                });
-                        });
-                    });
-                }
-            }
-        }
-
-        $sortBy = $request->input('sortBy', 'latest');
-        switch ($sortBy) {
-            case 'price_low_high':
-                // Sort by final price (after discount)
-                $productQuery->orderByRaw('
-                CASE 
-                    WHEN discount > 0 THEN 
-                        price - (price * discount / 100)
-                    ELSE 
-                        price 
-                END ASC
-            ');
-                break;
-            case 'price_high_low':
-                // Sort by final price (after discount)
-                $productQuery->orderByRaw('
-                CASE 
-                    WHEN discount > 0 THEN 
-                        price - (price * discount / 100)
-                    ELSE 
-                        price 
-                END DESC
-            ');
-                break;
-            case 'rating_high_low':
-                $productQuery->leftJoin('product_reviews', 'products.id', '=', 'product_reviews.product_id')
-                    ->selectRaw('products.*, AVG(CAST(product_reviews.rate as DECIMAL(3,2))) as avg_rating')
-                    ->groupBy('products.id')
-                    ->orderByDesc('avg_rating');
-                break;
-            case 'name_a_z':
-                $productQuery->orderBy('title', 'asc');
-                break;
-            case 'name_z_a':
-                $productQuery->orderBy('title', 'desc');
-                break;
-            case 'latest':
-            default:
-                $productQuery->orderBy('created_at', 'desc');
-                break;
-        }
-    }
-
     public function encryptFilters(Request $request)
     {
         try {
@@ -1376,6 +1243,144 @@ class FrontendController extends Controller
         }
 
         return false;
+    }
+
+    /**
+     * Apply filters to product query.
+     *
+     * @param mixed $productQuery
+     * @param Request $request
+     */
+    protected function applyFiltersToQuery($productQuery, Request $request)
+    {
+        $brands = $request->input('brand', []);
+        if (!empty($brands)) {
+            if (is_string($brands)) {
+                $brands = array_filter(explode(',', $brands));
+            }
+
+            if (!empty($brands)) {
+                $brandIds = Brand::whereIn('slug', $brands)
+                    ->where('status', 'active')
+                    ->pluck('id')
+                    ->toArray();
+
+                if (!empty($brandIds)) {
+                    $productQuery->whereIn('brand_id', $brandIds);
+                }
+            }
+        }
+
+        // Updated price range filter to work with discounted price
+        $priceRange = $request->input('price_range', '');
+        if ($priceRange && str_contains($priceRange, '-')) {
+            $priceParts = explode('-', $priceRange);
+            if (count($priceParts) == 2) {
+                $minPrice = (float) trim($priceParts[0]);
+                $maxPrice = (float) trim($priceParts[1]);
+
+                if ($minPrice >= 0 && $maxPrice > $minPrice) {
+                    // Filter based on final price (after discount calculation)
+                    $productQuery->whereRaw('
+                    CASE 
+                        WHEN discount > 0 THEN 
+                            price - (price * discount / 100)
+                        ELSE 
+                            price 
+                    END BETWEEN ? AND ?
+                ', [$minPrice, $maxPrice]);
+                }
+            }
+        }
+
+        $minRatings = $request->input('min_rating', []);
+        if (!empty($minRatings)) {
+            $minRatings = is_array($minRatings) ? $minRatings : array_filter(explode(',', $minRatings));
+            $minRating = min(array_map('intval', $minRatings));
+
+            $productQuery->whereRaw('
+            products.id IN (
+                SELECT product_id 
+                FROM product_reviews 
+                WHERE product_reviews.product_id = products.id 
+                GROUP BY product_id 
+                HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
+            )', [$minRating]);
+        }
+
+        $minDiscounts = $request->input('min_discount', []);
+        if (!empty($minDiscounts)) {
+            if (is_string($minDiscounts)) {
+                $minDiscounts = array_filter(explode(',', $minDiscounts));
+            }
+
+            if (!empty($minDiscounts)) {
+                $validDiscounts = array_filter(array_map('intval', $minDiscounts), function ($discount) {
+                    return $discount >= 0 && $discount <= 100;
+                });
+
+                if (!empty($validDiscounts)) {
+                    $productQuery->where(function ($query) use ($validDiscounts) {
+                        foreach ($validDiscounts as $discount) {
+                            $query->orWhere('discount', '>=', $discount);
+                        }
+                        $query->orWhereHas('discounts', function ($subQuery) use ($validDiscounts) {
+                            $subQuery->where('type', 'percentage')
+                                ->where('is_active', true)
+                                ->where('starts_at', '<=', now())
+                                ->where('ends_at', '>=', now())
+                                ->where(function ($q) use ($validDiscounts) {
+                                    foreach ($validDiscounts as $discount) {
+                                        $q->orWhere('value', '>=', $discount);
+                                    }
+                                });
+                        });
+                    });
+                }
+            }
+        }
+
+        $sortBy = $request->input('sortBy', 'latest');
+        switch ($sortBy) {
+            case 'price_low_high':
+                // Sort by final price (after discount)
+                $productQuery->orderByRaw('
+                CASE 
+                    WHEN discount > 0 THEN 
+                        price - (price * discount / 100)
+                    ELSE 
+                        price 
+                END ASC
+            ');
+                break;
+            case 'price_high_low':
+                // Sort by final price (after discount)
+                $productQuery->orderByRaw('
+                CASE 
+                    WHEN discount > 0 THEN 
+                        price - (price * discount / 100)
+                    ELSE 
+                        price 
+                END DESC
+            ');
+                break;
+            case 'rating_high_low':
+                $productQuery->leftJoin('product_reviews', 'products.id', '=', 'product_reviews.product_id')
+                    ->selectRaw('products.*, AVG(CAST(product_reviews.rate as DECIMAL(3,2))) as avg_rating')
+                    ->groupBy('products.id')
+                    ->orderByDesc('avg_rating');
+                break;
+            case 'name_a_z':
+                $productQuery->orderBy('title', 'asc');
+                break;
+            case 'name_z_a':
+                $productQuery->orderBy('title', 'desc');
+                break;
+            case 'latest':
+            default:
+                $productQuery->orderBy('created_at', 'desc');
+                break;
+        }
     }
 
     /**

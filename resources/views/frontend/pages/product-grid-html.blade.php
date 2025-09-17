@@ -1,16 +1,9 @@
 <!-- Products Grid -->
 <div class="product-grid-container">
     <div class="product-grid-row">
-        @forelse($products as $product)
+        @foreach($products as $product)
         @include('frontend.partials.product-card-grid', ['product' => $product])
-        @empty
-            <div class="col-12 text-center py-5">
-                <i class="fa fa-star fa-3x text-warning mb-3"></i> <!-- Rating-themed icon -->
-                <h4>No products match your rating filter.</h4>
-                <p>Try a broader rating range or clear filters.</p>
-                <button type="button" class="btn btn-outline-primary" onclick="clearFilter('rating')">Clear Rating Filter</button>
-            </div>
-        @endforelse
+        @endforeach
     </div>
 </div>
 
