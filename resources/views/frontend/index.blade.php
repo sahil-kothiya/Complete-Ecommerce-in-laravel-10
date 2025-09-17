@@ -434,11 +434,6 @@
             margin-bottom: 5px;
         }
 
-        [tabindex]:focus {
-            outline: 2px solid #F7941D;
-            outline-offset: 2px;
-        }
-
         .carousel-indicators li:focus {
             outline: 2px solid #F7941D;
             outline-offset: 2px;
