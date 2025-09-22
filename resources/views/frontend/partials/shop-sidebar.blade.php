@@ -120,7 +120,7 @@
 
 <!-- Recently Viewed Products Widget -->
 @if(!isset($mainCategory) || $mainCategory->filters->where('name', 'recently-viewed')->count())
-<div class="single-widget recent-products-widget">
+<!-- <div class="single-widget recent-products-widget">
     <h3 class="title">Recently Viewed</h3>
     <div class="recent-products-container">
         @if(isset($recent_products) && $recent_products->count() > 0)
@@ -194,7 +194,7 @@
         </div>
         @endif
     </div>
-</div>
+</div> -->
 @endif
 
 @push('styles')

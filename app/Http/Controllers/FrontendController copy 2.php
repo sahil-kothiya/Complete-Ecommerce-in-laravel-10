@@ -1552,7 +1552,8 @@ class FrontendController extends Controller
      * @return \Illuminate\View\View
      */
     public function login()
-    {
+    {   
+        dd('asdgas');
         return view('frontend.pages.login');
     }
 

@@ -72,6 +72,9 @@
     <!-- Hidden inputs for initial state -->
     <input type="hidden" id="category-path" value="{{ $category_path ?? '' }}">
 </form>
+
+@include('frontend.partials.recently-viewed-section')
+
 @endsection
 
 @push('styles')

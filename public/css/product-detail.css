@@ -358,11 +358,12 @@
     position: absolute;
     top: 8px;
     left: 8px;
-    background: #2874f0;
+    right: 110px;
+    background: #f7941d;
     color: #fff;
-    font-size: 0.8rem;
+    font-size: 0.6rem;
     font-weight: 600;
-    padding: 3px 10px;
+    padding: 0px 6px;
     border-radius: 12px;
     z-index: 2;
     box-shadow: 0 2px 8px rgba(255, 97, 97, 0.13);

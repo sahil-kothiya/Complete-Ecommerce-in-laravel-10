@@ -1151,10 +1151,11 @@ class FrontendController extends Controller
      * @return \Illuminate\View\View
      */
     public function productDetail($slug)
-    {
+    {   
         $product_detail = Product::getProductBySlug($slug);
         $related_products = $product_detail && $product_detail->rel_prods ? $product_detail->rel_prods->where('id', '!=', $product_detail->id) : collect();
-        return view('frontend.pages.product_detail', compact('product_detail', 'related_products'));
+        $recent_products = $this->recentProductService->getRecentProducts();
+        return view('frontend.pages.product_detail', compact('product_detail', 'related_products', 'recent_products'));
     }
 
     /**
@@ -1298,7 +1299,7 @@ class FrontendController extends Controller
                 })
                 ->max('price') ?? 1000;
 
-            $recentProducts = Product::where('status', 'active')->take(4)->get();
+            $recentProducts = $this->recentProductService->getRecentProducts();
 
             if ($request->wantsJson()) {
                 $html = view('frontend.pages.product-grid-html', compact('products'))->render();
@@ -1558,7 +1559,7 @@ class FrontendController extends Controller
      * @return \Illuminate\Http\RedirectResponse
      */
     public function loginSubmit(Request $request)
-    {
+    {   
         $data = $request->all();
         if (Auth::attempt(['email' => $data['email'], 'password' => $data['password'], 'status' => 'active'])) {
             Session::put('user', $data['email']);
