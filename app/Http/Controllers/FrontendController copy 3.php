@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\RedisHelper;
+use App\Helpers\UrlEncryptor;
 use App\Models\Banner;
 use App\Models\Brand;
 use App\Models\Category;
@@ -17,37 +18,55 @@ use App\User;
 use Helper;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
-use Illuminate\Validation\ValidationException;
 use Spatie\Newsletter\Facades\Newsletter;
 
+/**
+ * FrontendController handles the frontend logic for the e-commerce application.
+ * It manages the homepage, product grids, filtering, search, and user authentication.
+ */
 class FrontendController extends Controller
 {
     private const RECENT_PRODUCTS_CACHE_PREFIX = 'cache:recent_products:';
     private const HOMEPAGE_CACHE_PREFIX = 'cache:homepage:';
     private const PRODUCT_GRIDS_CACHE_PREFIX = 'cache:product_grids:';
     private static ?array $ttlConfig = null;
-    protected $recentProductService;
 
+    protected $recentProductService;
     private ProductSearchService $searchService;
 
+    /**
+     * Constructor to initialize services.
+     *
+     * @param ProductSearchService $searchService
+     * @param RecentProductService $recentProductService
+     */
     public function __construct(ProductSearchService $searchService, RecentProductService $recentProductService)
     {
         $this->searchService = $searchService;
         $this->recentProductService = $recentProductService;
     }
 
+    /**
+     * Redirect authenticated users to their role-based route.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function index(Request $request)
     {
         return redirect()->route($request->user()->role);
     }
 
+    /**
+     * Display the homepage with cached data for categories, banners, and products.
+     *
+     * @return \Illuminate\View\View
+     */
     public function home()
     {
         $ttl = $this->getTtlConfig();
@@ -60,9 +79,7 @@ class FrontendController extends Controller
         ];
 
         $cachedData = RedisHelper::mget(array_values($cacheKeys));
-
-        $products = $cachedData[$cacheKeys['products']]
-            ?? $this->getHomepageProductsData($cacheKeys['products'], $ttl['product_lists']);
+        $products = $cachedData[$cacheKeys['products']] ?? $this->getHomepageProductsData($cacheKeys['products'], $ttl['product_lists']);
 
         $usedProductIds = [];
         $dynamicCategoryProducts = [];
@@ -90,18 +107,14 @@ class FrontendController extends Controller
         $maxCategories = floor(($totalProductLimit - $minAllProducts) / $minProductsPerCategory);
         $categoryCount = min(count($eligibleCategories), $maxCategories);
 
-        // Step 3: Allocate products in multiples of 4 (4, 8, 12, 16, ...)
         $categoryAssignments = [];
         $totalCategoryProducts = 0;
         if ($categoryCount > 0) {
-            // Start with minimum products per category
             $productsPerCategory = array_fill(0, $categoryCount, $minProductsPerCategory);
             $totalCategoryProducts = $categoryCount * $minProductsPerCategory;
             $allProductsCount = $totalProductLimit - $totalCategoryProducts;
 
-            // Adjust if "All Products" is out of range
             while ($allProductsCount > $maxAllProducts && $categoryCount > 0) {
-                // Find category to increase products (in multiples of 4)
                 for ($i = 0; $i < $categoryCount; $i++) {
                     $productsPerCategory[$i] += 4;
                     $totalCategoryProducts += 4;
@@ -110,7 +123,6 @@ class FrontendController extends Controller
                         break;
                     }
                 }
-                // If still exceeding, reduce category count
                 if ($allProductsCount > $maxAllProducts) {
                     $categoryCount--;
                     $productsPerCategory = array_slice($productsPerCategory, 0, $categoryCount);
@@ -119,7 +131,6 @@ class FrontendController extends Controller
                 }
             }
 
-            // Ensure "All Products" meets minimum
             if ($allProductsCount < $minAllProducts && $categoryCount > 0) {
                 $categoryCount--;
                 $productsPerCategory = array_slice($productsPerCategory, 0, $categoryCount);
@@ -127,7 +138,6 @@ class FrontendController extends Controller
                 $allProductsCount = $totalProductLimit - $totalCategoryProducts;
             }
 
-            // Fill remaining products if needed
             while ($allProductsCount < $maxAllProducts && $totalCategoryProducts > 0) {
                 for ($i = 0; $i < $categoryCount; $i++) {
                     $productsPerCategory[$i] += 4;
@@ -139,7 +149,6 @@ class FrontendController extends Controller
                 }
             }
 
-            // Assign categories
             for ($i = 0; $i < $categoryCount; $i++) {
                 $cat = $eligibleCategories[$i];
                 $catProducts = $products->filter(function ($product) use ($cat, &$usedProductIds) {
@@ -158,50 +167,55 @@ class FrontendController extends Controller
                 }
             }
         } else {
-            // No categories qualify, allocate all to "All Products"
             $allProductsCount = $totalProductLimit;
         }
 
-        // Step 4: Assign remaining products to "All Products" section
         $allProducts = $products->filter(function ($product) use ($usedProductIds) {
             return $product->is_featured && !in_array($product->id, $usedProductIds);
         })->take($remainingProducts);
 
         $data = [
-            'categories' => $cachedData[$cacheKeys['categories']]
-                ?? $this->getCategoriesData($cacheKeys['categories'], $ttl['categories']),
-            'banners' => $cachedData[$cacheKeys['banners']]
-                ?? $this->getBannersData($cacheKeys['banners'], $ttl['banners']),
+            'categories' => $cachedData[$cacheKeys['categories']] ?? $this->getCategoriesData($cacheKeys['categories'], $ttl['categories']),
+            'banners' => $cachedData[$cacheKeys['banners']] ?? $this->getBannersData($cacheKeys['banners'], $ttl['banners']),
             'product_lists' => $allProducts,
-            'categoryBanners' => $cachedData[$cacheKeys['categoryBanners']]
-                ?? $this->getCategoryBannersData($cacheKeys['categoryBanners'], $cachedData[$cacheKeys['categories']] ?? null, $ttl['categories']),
-            'featuredCategories' => $cachedData[$cacheKeys['featuredCategories']]
-                ?? $this->getFeaturedCategoriesData($cacheKeys['featuredCategories'], $ttl['categories']),
+            'categoryBanners' => $cachedData[$cacheKeys['categoryBanners']] ?? $this->getCategoryBannersData($cacheKeys['categoryBanners'], $cachedData[$cacheKeys['categories']] ?? null, $ttl['categories']),
+            'featuredCategories' => $cachedData[$cacheKeys['featuredCategories']] ?? $this->getFeaturedCategoriesData($cacheKeys['featuredCategories'], $ttl['categories']),
             'dynamicCategoryProducts' => $dynamicCategoryProducts
         ];
 
         return view('frontend.index', $data);
     }
 
+    /**
+     * Fetch featured categories with their products.
+     *
+     * @param string $key Cache key
+     * @param int $ttl Time to live
+     * @return \Illuminate\Support\Collection
+     */
     protected function getFeaturedCategoriesData(string $key, int $ttl)
     {
         $featuredCategories = Category::whereNull('parent_id')
             ->where('is_featured', true)
             ->where('status', 'active')
             ->orderBy('sort_order')
-            ->limit(3) // Change this number to adjust how many featured categories to show
+            ->limit(3)
             ->with(['products' => function ($query) {
                 $query->where('status', 'active')
                     ->orderBy('id', 'DESC')
-                    ->take(12); // Products per category (adjustable)
+                    ->take(12);
             }])
             ->get();
 
         RedisHelper::put($key, $featuredCategories, $ttl);
-
         return $featuredCategories;
     }
 
+    /**
+     * Clear homepage cache.
+     *
+     * @return bool
+     */
     public function clearHomepageCache(): bool
     {
         $keys = [
@@ -221,6 +235,11 @@ class FrontendController extends Controller
         }
     }
 
+    /**
+     * Get TTL configuration from cache settings.
+     *
+     * @return array
+     */
     private function getTtlConfig(): array
     {
         if (self::$ttlConfig === null) {
@@ -229,6 +248,13 @@ class FrontendController extends Controller
         return self::$ttlConfig;
     }
 
+    /**
+     * Fetch categories data with caching.
+     *
+     * @param string $key Cache key
+     * @param int $ttl Time to live
+     * @return \Illuminate\Support\Collection
+     */
     private function getCategoriesData(string $key, int $ttl)
     {
         $redisData = RedisHelper::get($key);
@@ -250,6 +276,13 @@ class FrontendController extends Controller
         return $categories;
     }
 
+    /**
+     * Fetch banners data with caching.
+     *
+     * @param string $key Cache key
+     * @param int $ttl Time to live
+     * @return \Illuminate\Support\Collection
+     */
     private function getBannersData(string $key, int $ttl)
     {
         $redisData = RedisHelper::get($key);
@@ -267,6 +300,13 @@ class FrontendController extends Controller
         return $banners;
     }
 
+    /**
+     * Fetch homepage products data with caching.
+     *
+     * @param string $key Cache key
+     * @param int $ttl Time to live
+     * @return \Illuminate\Support\Collection
+     */
     private function getHomepageProductsData(string $key, int $ttl)
     {
         $redisData = RedisHelper::get($key);
@@ -301,6 +341,14 @@ class FrontendController extends Controller
         return $products;
     }
 
+    /**
+     * Fetch category banners data with caching.
+     *
+     * @param string $key Cache key
+     * @param mixed $categories Categories data
+     * @param int $ttl Time to live
+     * @return \Illuminate\Support\Collection
+     */
     private function getCategoryBannersData(string $key, $categories, int $ttl)
     {
         if (!$categories) {
@@ -317,8 +365,12 @@ class FrontendController extends Controller
         return $categoryBanners;
     }
 
-    // Product Grids Related Functions
-
+    /**
+     * Display product grids with filtering and caching.
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
     public function productGrids(Request $request)
     {
         $startTime = microtime(true);
@@ -342,7 +394,13 @@ class FrontendController extends Controller
         return view('frontend.pages.product-grids', $data);
     }
 
-
+    /**
+     * Generate optimized cache key for product grids.
+     *
+     * @param Request $request
+     * @param string $slug
+     * @return string
+     */
     private function generateOptimizedCacheKey(Request $request, $slug = ''): string
     {
         $params = [
@@ -360,6 +418,13 @@ class FrontendController extends Controller
         return self::PRODUCT_GRIDS_CACHE_PREFIX . md5(json_encode($params));
     }
 
+    /**
+     * Fetch optimized product grids data.
+     *
+     * @param Request $request
+     * @param array $ttl
+     * @return array
+     */
     private function fetchOptimizedProductGridsData(Request $request, array $ttl)
     {
         $show = $request->input('show', 12);
@@ -418,205 +483,12 @@ class FrontendController extends Controller
         ];
     }
 
-    private function buildOptimizedProductsQuery(Request $request)
-    {
-        $query = Product::query();
-        $query->select([
-            'products.id',
-            'products.title',
-            'products.slug',
-            'products.price',
-            'products.discount',
-            'products.stock',
-            'products.condition',
-            'products.cat_id',
-            'products.brand_id',
-            'products.size',
-            'products.summary'
-        ]);
-
-        if ($categorySlug = $request->get('category')) {
-            $categoryIds = $this->getCategoryIdsOptimized($categorySlug);
-            if (!empty($categoryIds)) {
-                $query->whereIn('products.cat_id', $categoryIds);
-            }
-        }
-
-        if ($brandSlug = $request->get('brand')) {
-            $brandIds = $this->getBrandIdsOptimized($brandSlug);
-            if (!empty($brandIds)) {
-                $query->whereIn('products.brand_id', $brandIds);
-            }
-        }
-
-        $this->applySortingOptimized($query, $request->get('sortBy'));
-
-        if ($priceRange = $request->get('price')) {
-            $this->applyPriceFilter($query, $priceRange);
-        }
-
-        $query->where('products.status', 'active')
-            ->with([
-                'images' => fn($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->orderBy('is_primary', 'desc'),
-                'cat_info' => fn($q) => $q->select(['id', 'title', 'slug']),
-                'brand' => fn($q) => $q->select(['id', 'title', 'slug'])
-            ]);
-
-        $perPage = min((int)$request->get('show', 9), 30);
-        return $query->paginate($perPage);
-    }
-
-    private function applySortingOptimized($query, $sortBy)
-    {
-        switch ($sortBy) {
-            case 'title':
-                $query->orderBy('products.title', 'ASC');
-                break;
-            case 'price':
-                $query->orderBy('products.price', 'ASC');
-                break;
-            case 'category':
-                $query->join('categories', 'products.cat_id', '=', 'categories.id')
-                    ->orderBy('categories.title', 'ASC')
-                    ->addSelect('categories.title as category_title');
-                break;
-            case 'brand':
-                $query->join('brands', 'products.brand_id', '=', 'brands.id')
-                    ->orderBy('brands.title', 'ASC')
-                    ->addSelect('brands.title as brand_title');
-                break;
-            default:
-                $query->orderBy('products.id', 'DESC');
-        }
-    }
-
-    private function applyPriceFilter($query, $priceRange)
-    {
-        $prices = explode('-', $priceRange);
-        if (count($prices) === 2 && is_numeric($prices[0]) && is_numeric($prices[1])) {
-            $query->whereBetween('products.price', [(float)$prices[0], (float)$prices[1]]);
-        }
-    }
-
-    private function getCategoryIdsOptimized(string $categoryParam): array
-    {
-        $slugs = explode(',', $categoryParam);
-        $cacheKey = self::PRODUCT_GRIDS_CACHE_PREFIX . 'cat_ids:' . md5(implode(',', $slugs));
-
-        return RedisHelper::remember($cacheKey, 3600, function () use ($slugs) {
-            return Category::whereIn('slug', $slugs)->pluck('id')->toArray();
-        });
-    }
-
-    private function getBrandIdsOptimized(string $brandParam): array
-    {
-        $slugs = explode(',', $brandParam);
-        $cacheKey = self::PRODUCT_GRIDS_CACHE_PREFIX . 'brand_ids:' . md5(implode(',', $slugs));
-
-        return RedisHelper::remember($cacheKey, 3600, function () use ($slugs) {
-            return Brand::whereIn('slug', $slugs)->pluck('id')->toArray();
-        });
-    }
-
-    private function getRecentProductsOptimized(int $ttl)
-    {
-        $cacheKey = self::PRODUCT_GRIDS_CACHE_PREFIX . 'recent_products';
-
-        return RedisHelper::remember($cacheKey, $ttl, function () {
-            $products = Product::where('status', 'active')
-                ->with(['images' => function ($q) {
-                    $q->select(['id', 'image_path', 'product_id', 'is_primary'])
-                        ->orderBy('is_primary', 'desc');
-                }])
-                ->select(['id', 'title', 'slug', 'price', 'discount'])
-                ->orderBy('id', 'DESC')
-                ->limit(3)
-                ->get();
-
-            return $products->map(function ($product) {
-                return [
-                    'id' => $product->id,
-                    'title' => $product->title,
-                    'slug' => $product->slug,
-                    'price' => $product->price,
-                    'discount' => $product->discount,
-                    'images' => $product->images->map(function ($image) {
-                        return [
-                            'id' => $image->id,
-                            'image_path' => $image->image_path,
-                            'product_id' => $image->product_id,
-                            'is_primary' => $image->is_primary,
-                        ];
-                    })->toArray()
-                ];
-            })->toArray();
-        });
-    }
-
-    private function getSidebarCategoriesOptimized(int $ttl)
-    {
-        $cacheKey = self::PRODUCT_GRIDS_CACHE_PREFIX . 'sidebar_categories';
-
-        return RedisHelper::remember($cacheKey, $ttl, function () {
-            $categories = Category::select(['id', 'title', 'slug', 'parent_id'])
-                ->active()
-                ->with([
-                    'children' => function ($q) {
-                        $q->active()
-                            ->select(['id', 'title', 'slug', 'parent_id'])
-                            ->orderBy('title');
-                    }
-                ])
-                ->orderBy('title')
-                ->get();
-
-            return $categories->map(function ($category) {
-                return [
-                    'id' => $category->id,
-                    'title' => $category->title,
-                    'slug' => $category->slug,
-                    'parent_id' => $category->parent_id,
-                    'children' => $category->children->map(function ($child) {
-                        return [
-                            'id' => $child->id,
-                            'title' => $child->title,
-                            'slug' => $child->slug,
-                            'parent_id' => $child->parent_id,
-                        ];
-                    })->toArray()
-                ];
-            })->toArray();
-        });
-    }
-
-    private function getSidebarBrandsOptimized(int $ttl)
-    {
-        $cacheKey = self::PRODUCT_GRIDS_CACHE_PREFIX . 'sidebar_brands';
-
-        return RedisHelper::remember($cacheKey, $ttl, function () {
-            return Brand::select(['id', 'title', 'slug'])
-                ->where('status', 'active')
-                ->orderBy('title', 'ASC')
-                ->get()
-                ->map(function ($brand) {
-                    return [
-                        'id' => $brand->id,
-                        'title' => $brand->title,
-                        'slug' => $brand->slug,
-                    ];
-                })->toArray();
-        });
-    }
-
-    private function getMaxPriceOptimized(int $ttl)
-    {
-        $cacheKey = self::PRODUCT_GRIDS_CACHE_PREFIX . 'max_price';
-
-        return RedisHelper::remember($cacheKey, $ttl, function () {
-            return Product::where('status', 'active')->max('price') ?? 1000;
-        });
-    }
-
+    /**
+     * Hydrate relationships from cached data.
+     *
+     * @param array $cachedData
+     * @return array
+     */
     private function hydrateRelationshipsFromCache($cachedData)
     {
         if (isset($cachedData['products'])) {
@@ -636,6 +508,13 @@ class FrontendController extends Controller
         return $cachedData;
     }
 
+    /**
+     * Cache complete page data for product grids.
+     *
+     * @param string $cacheKey
+     * @param array $data
+     * @param int $ttl
+     */
     private function cacheCompletePageData(string $cacheKey, array $data, int $ttl)
     {
         $cacheData = [
@@ -659,7 +538,6 @@ class FrontendController extends Controller
     public function productFilter(Request $request)
     {
         $startTime = microtime(true);
-
         $data = $request->all();
         $queryParams = [];
 
@@ -707,25 +585,31 @@ class FrontendController extends Controller
         }
 
         Log::info("Filter processed in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
-
         return redirect()->route('product-grids', $queryParams);
     }
 
-    /**
-     * Handle AJAX filter requests.
-     */
-    public function applyFilters(Request $request)
+    public function applyFilters(Request $request, $encryptedFilters = null)
     {
         try {
-            // Get category slug from query params
-            $slugPath = $request->input('category_slug', '');
+            // Decode encrypted filters if provided
+            if ($encryptedFilters) {
+                $decodedFilters = json_decode(UrlEncryptor::decodePath($encryptedFilters), true);
+                $request->merge($decodedFilters);
+            }
 
-            // Build product query with eager loading
+            $slugPath = $request->input('category_slug', '');
+            if ($slugPath) {
+                try {
+                    $slugPath = UrlEncryptor::decodePath($slugPath);
+                } catch (\Exception $e) {
+                    // Fallback to raw slugPath if not encrypted
+                }
+            }
+
             $productQuery = Product::with(['images', 'discounts', 'cat_info', 'sub_cat_info'])
                 ->active();
 
             if ($slugPath) {
-                // Resolve category using the same logic as productSubCat
                 $segments = explode('/', trim($slugPath, '/'));
                 $currentCategory = Category::whereNull('parent_id')
                     ->where('status', 'active')
@@ -739,7 +623,6 @@ class FrontendController extends Controller
                     ], 404);
                 }
 
-                // Traverse remaining segments
                 array_shift($segments);
                 foreach ($segments as $segment) {
                     $child = $currentCategory->children()
@@ -753,36 +636,30 @@ class FrontendController extends Controller
                             'message' => 'Sub-category not found',
                         ], 404);
                     }
-
                     $currentCategory = $child;
                 }
 
-                // Get descendant category IDs
                 $descendantIds = method_exists($currentCategory, 'descendantsAndSelf')
                     ? $currentCategory->descendantsAndSelf()->pluck('id')->toArray()
                     : $this->getDescendantIds($currentCategory);
 
-                // FIXED: Use proper OR condition with parentheses
                 $productQuery->where(function ($query) use ($descendantIds) {
                     $query->whereIn('cat_id', $descendantIds)
                         ->orWhereIn('child_cat_id', $descendantIds);
                 });
             }
 
-            // Apply filters using the same method as productSubCat
             $this->applyFiltersToQuery($productQuery, $request);
 
-            // Paginate
             $perPage = $request->input('show', 12);
             $page = $request->input('page', 1);
             $products = $productQuery->paginate($perPage, ['*'], 'page', $page);
 
-            // Set pagination path correctly
-            $basePath = $slugPath ? "/product-cat/{$slugPath}" : '/product-grids';
+            $encodedSlugPath = $slugPath ? UrlEncryptor::encodePath($slugPath) : '';
+            $basePath = $encodedSlugPath ? "/product-cat/{$encodedSlugPath}" : '/product-grids';
             $products->setPath($basePath);
             $products->appends($request->except(['page', '_token', 'quant', 'slug', 'category_slug']));
 
-            // Render partial HTML
             $html = view('frontend.pages.product-grid-html', compact('products'))->render();
 
             return response()->json([
@@ -792,9 +669,9 @@ class FrontendController extends Controller
                 'total' => $products->total(),
                 'current_page' => $products->currentPage(),
                 'last_page' => $products->lastPage(),
-            ]);
+            ], 200, ['Content-Type' => 'application/json']);
         } catch (\Exception $e) {
-            \Log::error('Apply Filters Error: ' . $e->getMessage(), [
+            Log::error('Apply Filters Error: ' . $e->getMessage(), [
                 'request' => $request->all(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -806,14 +683,159 @@ class FrontendController extends Controller
         }
     }
 
-    /**
-     * Get all descendant category IDs recursively (if not using nested sets).
-     * FIXED: Better performance and null safety
-     */
+    protected function applyFiltersToQuery($productQuery, Request $request)
+    {
+        $brands = $request->input('brand', []);
+        if (!empty($brands)) {
+            if (is_string($brands)) {
+                $brands = array_filter(explode(',', $brands));
+            }
+
+            if (!empty($brands)) {
+                $brandIds = Brand::whereIn('slug', $brands)
+                    ->where('status', 'active')
+                    ->pluck('id')
+                    ->toArray();
+
+                if (!empty($brandIds)) {
+                    $productQuery->whereIn('brand_id', $brandIds);
+                }
+            }
+        }
+
+        // Updated price range filter to work with discounted price
+        $priceRange = $request->input('price_range', '');
+        if ($priceRange && str_contains($priceRange, '-')) {
+            $priceParts = explode('-', $priceRange);
+            if (count($priceParts) == 2) {
+                $minPrice = (float) trim($priceParts[0]);
+                $maxPrice = (float) trim($priceParts[1]);
+
+                if ($minPrice >= 0 && $maxPrice > $minPrice) {
+                    // Filter based on final price (after discount calculation)
+                    $productQuery->whereRaw('
+                    CASE 
+                        WHEN discount > 0 THEN 
+                            price - (price * discount / 100)
+                        ELSE 
+                            price 
+                    END BETWEEN ? AND ?
+                ', [$minPrice, $maxPrice]);
+                }
+            }
+        }
+
+        $minRatings = $request->input('min_rating', []);
+        if (!empty($minRatings)) {
+            $minRatings = is_array($minRatings) ? $minRatings : array_filter(explode(',', $minRatings));
+            $minRating = min(array_map('intval', $minRatings));
+
+            $productQuery->whereRaw('
+            products.id IN (
+                SELECT product_id 
+                FROM product_reviews 
+                WHERE product_reviews.product_id = products.id 
+                GROUP BY product_id 
+                HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
+            )', [$minRating]);
+        }
+
+        $minDiscounts = $request->input('min_discount', []);
+        if (!empty($minDiscounts)) {
+            if (is_string($minDiscounts)) {
+                $minDiscounts = array_filter(explode(',', $minDiscounts));
+            }
+
+            if (!empty($minDiscounts)) {
+                $validDiscounts = array_filter(array_map('intval', $minDiscounts), function ($discount) {
+                    return $discount >= 0 && $discount <= 100;
+                });
+
+                if (!empty($validDiscounts)) {
+                    $productQuery->where(function ($query) use ($validDiscounts) {
+                        foreach ($validDiscounts as $discount) {
+                            $query->orWhere('discount', '>=', $discount);
+                        }
+                        $query->orWhereHas('discounts', function ($subQuery) use ($validDiscounts) {
+                            $subQuery->where('type', 'percentage')
+                                ->where('is_active', true)
+                                ->where('starts_at', '<=', now())
+                                ->where('ends_at', '>=', now())
+                                ->where(function ($q) use ($validDiscounts) {
+                                    foreach ($validDiscounts as $discount) {
+                                        $q->orWhere('value', '>=', $discount);
+                                    }
+                                });
+                        });
+                    });
+                }
+            }
+        }
+
+        $sortBy = $request->input('sortBy', 'latest');
+        switch ($sortBy) {
+            case 'price_low_high':
+                // Sort by final price (after discount)
+                $productQuery->orderByRaw('
+                CASE 
+                    WHEN discount > 0 THEN 
+                        price - (price * discount / 100)
+                    ELSE 
+                        price 
+                END ASC
+            ');
+                break;
+            case 'price_high_low':
+                // Sort by final price (after discount)
+                $productQuery->orderByRaw('
+                CASE 
+                    WHEN discount > 0 THEN 
+                        price - (price * discount / 100)
+                    ELSE 
+                        price 
+                END DESC
+            ');
+                break;
+            case 'rating_high_low':
+                $productQuery->leftJoin('product_reviews', 'products.id', '=', 'product_reviews.product_id')
+                    ->selectRaw('products.*, AVG(CAST(product_reviews.rate as DECIMAL(3,2))) as avg_rating')
+                    ->groupBy('products.id')
+                    ->orderByDesc('avg_rating');
+                break;
+            case 'name_a_z':
+                $productQuery->orderBy('title', 'asc');
+                break;
+            case 'name_z_a':
+                $productQuery->orderBy('title', 'desc');
+                break;
+            case 'latest':
+            default:
+                $productQuery->orderBy('created_at', 'desc');
+                break;
+        }
+    }
+
+    public function encryptFilters(Request $request)
+    {
+        try {
+            $filters = $request->all();
+            $encryptedFilters = UrlEncryptor::encodePath(json_encode($filters));
+            return response()->json([
+                'success' => true,
+                'encryptedFilters' => $encryptedFilters,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Filter encryption error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to encrypt filters',
+            ], 500);
+        }
+    }
+
     protected function getDescendantIds($category)
     {
         $ids = [$category->id];
-
         $children = Category::where('parent_id', $category->id)
             ->where('status', 'active')
             ->get();
@@ -825,13 +847,8 @@ class FrontendController extends Controller
         return array_unique($ids);
     }
 
-    /**
-     * Helper to collect descendant IDs recursively.
-     * FIXED: Added depth limit to prevent infinite recursion
-     */
     protected function collectDescendantIds($category, $descendantIds, $depth = 0)
     {
-        // Prevent infinite recursion
         if ($depth > 10) {
             return;
         }
@@ -845,6 +862,11 @@ class FrontendController extends Controller
         }
     }
 
+    /**
+     * Pre-warm cache for product filters.
+     *
+     * @param Request $request
+     */
     private function preWarmFilterCache(Request $request): void
     {
         try {
@@ -860,6 +882,13 @@ class FrontendController extends Controller
         }
     }
 
+    /**
+     * Restore paginator from cached data.
+     *
+     * @param array $paginatorData
+     * @param Request $request
+     * @return LengthAwarePaginator
+     */
     private function restorePaginatorFromCache($paginatorData, Request $request)
     {
         return new LengthAwarePaginator(
@@ -874,6 +903,11 @@ class FrontendController extends Controller
         );
     }
 
+    /**
+     * Warm up cache for common filter combinations.
+     *
+     * @return array
+     */
     public function warmUpCommonFilters(): array
     {
         $results = [];
@@ -916,6 +950,11 @@ class FrontendController extends Controller
         return $results;
     }
 
+    /**
+     * Clear optimized cache for product grids.
+     *
+     * @return bool
+     */
     public function clearOptimizedCache(): bool
     {
         try {
@@ -945,12 +984,18 @@ class FrontendController extends Controller
         }
     }
 
+    /**
+     * Handle product search functionality.
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
     public function productSearch(Request $request)
     {
         $query = $request->input('search', '');
         $perPage = 9;
         $ttl = $this->getTtlConfig();
-        $recent_products = $this->getRecentProducts($ttl['product_lists']);
+        $recent_products = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['product_lists']);
 
         if (empty($query)) {
             $products = Product::where('status', 'active')
@@ -991,6 +1036,12 @@ class FrontendController extends Controller
             ->with('search_query', $query);
     }
 
+    /**
+     * Provide autocomplete suggestions for search.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function autocomplete(Request $request)
     {
         $query = $request->input('q', '');
@@ -1027,6 +1078,11 @@ class FrontendController extends Controller
         }
     }
 
+    /**
+     * Check cache health for homepage and product grids.
+     *
+     * @return array
+     */
     public function getCacheHealth(): array
     {
         $homepageKeys = [
@@ -1068,23 +1124,45 @@ class FrontendController extends Controller
         return $health;
     }
 
+    /**
+     * Display the about us page.
+     *
+     * @return \Illuminate\View\View
+     */
     public function aboutUs()
     {
         return view('frontend.pages.about-us');
     }
 
+    /**
+     * Display the contact page.
+     *
+     * @return \Illuminate\View\View
+     */
     public function contact()
     {
         return view('frontend.pages.contact');
     }
 
+    /**
+     * Display product details by slug.
+     *
+     * @param string $slug
+     * @return \Illuminate\View\View
+     */
     public function productDetail($slug)
-    {
+    {   
         $product_detail = Product::getProductBySlug($slug);
         $related_products = $product_detail && $product_detail->rel_prods ? $product_detail->rel_prods->where('id', '!=', $product_detail->id) : collect();
-        return view('frontend.pages.product_detail', compact('product_detail', 'related_products'));
+        $recent_products = $this->recentProductService->getRecentProducts();
+        return view('frontend.pages.product_detail', compact('product_detail', 'related_products', 'recent_products'));
     }
 
+    /**
+     * Display product lists with filtering.
+     *
+     * @return \Illuminate\View\View
+     */
     public function productLists()
     {
         $products = Product::query();
@@ -1124,26 +1202,38 @@ class FrontendController extends Controller
             ->with('recent_products', $recent_products);
     }
 
+    /**
+     * Display products by brand.
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
     public function productBrand(Request $request)
     {
         $products = Brand::getProductByBrand($request->slug);
         return view('frontend.pages.product-grids', compact('products'));
     }
 
+    /**
+     * Display products by category.
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
     public function productCat(Request $request)
     {
         $filters = [
             'category_slug' => $request->slug,
-            'brand'         => $request->get('brand', []),
-            'query'         => $request->get('query'),
-            'price_range'   => $request->get('price'),
-            'min_rating'    => $request->get('min_rating', []),
-            'min_discount'  => $request->get('min_discount', []),
-            'sortBy'        => $request->get('sortBy', ''),
+            'brand' => $request->get('brand', []),
+            'query' => $request->get('query'),
+            'price_range' => $request->get('price'),
+            'min_rating' => $request->get('min_rating', []),
+            'min_discount' => $request->get('min_discount', []),
+            'sortBy' => $request->get('sortBy', ''),
         ];
 
         $perPage = $request->get('show', 12);
-        $page    = $request->get('page', 1);
+        $page = $request->get('page', 1);
 
         $service = app(ProductFilterService::class);
         $products = $service->getProducts($filters, $perPage, $page);
@@ -1151,20 +1241,18 @@ class FrontendController extends Controller
         return view('frontend.pages.product-grids', [
             'products' => $products,
             'category' => Category::where('slug', $request->slug)->firstOrFail(),
-            'show'     => $perPage,
-            'sortBy'   => $filters['sortBy'],
-            'price'    => $filters['price_range'],
+            'show' => $perPage,
+            'sortBy' => $filters['sortBy'],
+            'price' => $filters['price_range'],
             'recent_products' => $this->getRecentProductsData('recent_latest', 3600),
         ]);
     }
 
-    public function productSubCat(Request $request, $slugPath)
+    public function productSubCat(Request $request, $encryptedPath)
     {
         try {
-            // Split the slug path into segments
+            $slugPath = UrlEncryptor::decodePath($encryptedPath);
             $segments = explode('/', trim($slugPath, '/'));
-
-            // Start from root categories
             $currentCategory = Category::whereNull('parent_id')
                 ->where('status', 'active')
                 ->where('slug', $segments[0])
@@ -1174,7 +1262,6 @@ class FrontendController extends Controller
                 abort(404, 'Root category not found');
             }
 
-            // Traverse remaining segments
             array_shift($segments);
             foreach ($segments as $segment) {
                 $child = $currentCategory->children()
@@ -1185,38 +1272,26 @@ class FrontendController extends Controller
                 if (!$child) {
                     abort(404, 'Sub-category not found');
                 }
-
                 $currentCategory = $child;
             }
 
-            // Build product query with proper relationships
             $productQuery = Product::with(['reviews', 'discounts', 'brand'])
                 ->where('status', 'active');
 
-            // Get descendant category IDs
             $descendantIds = $this->getDescendantIds($currentCategory);
-
-            // Apply category filtering
             $productQuery->where(function ($query) use ($descendantIds) {
                 $query->whereIn('cat_id', $descendantIds)
                     ->orWhereIn('child_cat_id', $descendantIds);
             });
 
-            // Apply filters BEFORE pagination
             $this->applyFiltersToQuery($productQuery, $request);
-
-            // Get total count for debugging
             $totalProducts = $productQuery->count();
 
-            // Paginate
             $perPage = $request->input('show', 12);
             $products = $productQuery->paginate($perPage);
-
-            // Set pagination path and preserve query params
-            $products->setPath("/product-cat/{$slugPath}");
+            $products->setPath("/product-cat/" . $encryptedPath);
             $products->appends($request->except(['page', '_token']));
 
-            // Get max price for price slider
             $maxPrice = Product::where('status', 'active')
                 ->where(function ($query) use ($descendantIds) {
                     $query->whereIn('cat_id', $descendantIds)
@@ -1224,10 +1299,8 @@ class FrontendController extends Controller
                 })
                 ->max('price') ?? 1000;
 
-            // Get recent products
-            $recentProducts = Product::where('status', 'active')->take(4)->get();
+            $recentProducts = $this->recentProductService->getRecentProducts();
 
-            // Handle AJAX requests
             if ($request->wantsJson()) {
                 $html = view('frontend.pages.product-grid-html', compact('products'))->render();
                 return response()->json([
@@ -1244,7 +1317,6 @@ class FrontendController extends Controller
                 ]);
             }
 
-            // Prepare filter data
             $appliedFilters = [
                 'brands' => $request->input('brand', []),
                 'price_range' => $request->input('price_range', ''),
@@ -1263,8 +1335,8 @@ class FrontendController extends Controller
                 'has_filters' => $this->hasFiltersApplied($request),
             ]);
         } catch (\Exception $e) {
-            \Log::error('Product category filter error: ' . $e->getMessage(), [
-                'slug_path' => $slugPath,
+            Log::error('Product category filter error: ' . $e->getMessage(), [
+                'encrypted_path' => $encryptedPath,
                 'request_data' => $request->all(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -1279,8 +1351,12 @@ class FrontendController extends Controller
             abort(500, 'Error loading category: ' . $e->getMessage());
         }
     }
+
     /**
-     * Check if any filters are applied in the request
+     * Check if any filters are applied in the request.
+     *
+     * @param Request $request
+     * @return bool
      */
     protected function hasFiltersApplied(Request $request)
     {
@@ -1293,7 +1369,6 @@ class FrontendController extends Controller
             }
         }
 
-        // Check if sorting or show options are different from defaults
         if (
             $request->input('sortBy', 'latest') !== 'latest' ||
             $request->input('show', 12) != 12
@@ -1304,507 +1379,12 @@ class FrontendController extends Controller
         return false;
     }
 
-    protected function applyFiltersToQuery($productQuery, Request $request)
-    {
-        // Brands filter
-        $brands = $request->input('brand', []);
-        if (!empty($brands)) {
-            // Handle both array and comma-separated string inputs
-            if (is_string($brands)) {
-                $brands = array_filter(explode(',', $brands));
-            }
-
-            if (!empty($brands)) {
-                $brandIds = Brand::whereIn('slug', $brands)
-                    ->where('status', 'active')
-                    ->pluck('id')
-                    ->toArray();
-
-                if (!empty($brandIds)) {
-                    $productQuery->whereIn('brand_id', $brandIds);
-                }
-            }
-        }
-
-        // Price range filter
-        $priceRange = $request->input('price_range', '');
-        if ($priceRange && str_contains($priceRange, '-')) {
-            $priceParts = explode('-', $priceRange);
-            if (count($priceParts) == 2) {
-                $minPrice = (float) trim($priceParts[0]);
-                $maxPrice = (float) trim($priceParts[1]);
-
-                if ($minPrice >= 0 && $maxPrice > $minPrice) {
-                    $productQuery->whereBetween('price', [$minPrice, $maxPrice]);
-                }
-            }
-        }
-
-        // Minimum ratings filter
-        $minRatings = $request->input('min_rating', []);
-        if (!empty($minRatings)) {
-            $minRatings = is_array($minRatings) ? $minRatings : array_filter(explode(',', $minRatings));
-            $minRating = min(array_map('intval', $minRatings));
-
-            $productQuery->whereRaw('
-            products.id IN (
-                SELECT product_id 
-                FROM product_reviews 
-                WHERE product_reviews.product_id = products.id 
-                GROUP BY product_id 
-                HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
-            )', [$minRating]);
-        }
-
-        // Minimum discounts filter - Updated with proper column names
-        $minDiscounts = $request->input('min_discount', []);
-        if (!empty($minDiscounts)) {
-            if (is_string($minDiscounts)) {
-                $minDiscounts = array_filter(explode(',', $minDiscounts));
-            }
-
-            if (!empty($minDiscounts)) {
-                $validDiscounts = array_filter(array_map('intval', $minDiscounts), function ($discount) {
-                    return $discount >= 0 && $discount <= 100;
-                });
-
-                if (!empty($validDiscounts)) {
-                    $productQuery->where(function ($query) use ($validDiscounts) {
-                        // Products with direct discount field
-                        foreach ($validDiscounts as $discount) {
-                            $query->orWhere('discount', '>=', $discount);
-                        }
-                        // Products with related discounts
-                        $query->orWhereHas('discounts', function ($subQuery) use ($validDiscounts) {
-                            $subQuery->where('type', 'percentage')
-                                ->where('is_active', true)
-                                ->where('starts_at', '<=', now())
-                                ->where('ends_at', '>=', now())
-                                ->where(function ($q) use ($validDiscounts) {
-                                    foreach ($validDiscounts as $discount) {
-                                        $q->orWhere('value', '>=', $discount);
-                                    }
-                                });
-                        });
-                    });
-                }
-            }
-        }
-
-        // Sorting
-        $sortBy = $request->input('sortBy', 'latest');
-
-        switch ($sortBy) {
-            case 'price_low_high':
-                $productQuery->orderBy('price', 'asc');
-                break;
-            case 'price_high_low':
-                $productQuery->orderBy('price', 'desc');
-                break;
-            case 'rating_high_low':
-                // Order by average rating
-                $productQuery->leftJoin('product_reviews', 'products.id', '=', 'product_reviews.product_id')
-                    ->selectRaw('products.*, AVG(CAST(product_reviews.rate as DECIMAL(3,2))) as avg_rating')
-                    ->groupBy('products.id')
-                    ->orderByDesc('avg_rating');
-                break;
-            case 'name_a_z':
-                $productQuery->orderBy('title', 'asc');
-                break;
-            case 'name_z_a':
-                $productQuery->orderBy('title', 'desc');
-                break;
-            case 'latest':
-            default:
-                $productQuery->orderBy('created_at', 'desc');
-                break;
-        }
-    }
-
     /**
-     * Resolve category path from URL segments with infinite level support
-     */
-    private function resolveCategoryPath(array $segments)
-    {
-        $mainSlug = $segments[0];
-
-        // Find main category (level 0)
-        $mainCategory = Category::where('slug', $mainSlug)->first();
-        if (!$mainCategory) {
-            return null;
-        }
-
-        $currentCategory = $mainCategory;
-        $categoryPath = [$mainCategory];
-        $maxDepth = 10; // Prevent infinite loops
-        $currentDepth = 0;
-
-        // Traverse remaining segments (level 1, 2, 3, ...)
-        for ($i = 1; $i < count($segments) && $currentDepth < $maxDepth; $i++) {
-            $slug = $segments[$i];
-
-            $childCategory = Category::where('slug', $slug)
-                ->where('parent_id', $currentCategory->id)
-                ->first();
-
-            if (!$childCategory) {
-                // If path breaks, return null to trigger 404
-                return null;
-            }
-
-            $currentCategory = $childCategory;
-            $categoryPath[] = $childCategory;
-            $currentDepth++;
-        }
-
-        return [
-            'target' => $currentCategory,  // Final target category
-            'main' => $mainCategory,       // Root main category
-            'path' => $categoryPath,       // Full path of categories
-            'depth' => $currentDepth       // Current depth level
-        ];
-    }
-
-    /**
-     * Get products with intelligent fallback between main and target categories
-     */
-    private function getProductsWithIntelligentFallback($targetCategory, $mainCategory, array $filters, int $perPage, int $page, int $targetCount)
-    {
-        // First: Try to get products from target category
-        $targetProducts = $this->getProductsFromCategory($targetCategory, $filters, $targetCount + 1, 1);
-
-        // Scenario 1: Target category has 12+ products - show only target category products
-        if ($targetProducts->total() >= $targetCount) {
-            $finalProducts = $this->getProductsFromCategory($targetCategory, $filters, $perPage, $page);
-
-            return [
-                'products' => $finalProducts,
-                'actual_category_used' => $targetCategory->id,
-            ];
-        }
-
-        // Scenario 2: Target category has < 12 products - supplement with main category
-        $targetProductCount = $targetProducts->total();
-        $neededFromMain = $targetCount - $targetProductCount;
-
-        if ($neededFromMain > 0 && $targetCategory->id !== $mainCategory->id) {
-            // Get products from target category (all available)
-            $targetProductsAll = $this->getProductsFromCategory($targetCategory, $filters, $targetProductCount, 1);
-            $targetProductIds = $targetProductsAll->pluck('id')->toArray();
-
-            // Get supplementary products from main category (excluding target category products)
-            $mainProducts = $this->getProductsFromCategoryExcluding(
-                $mainCategory,
-                $filters,
-                $neededFromMain,
-                1,
-                $targetProductIds,
-                [$targetCategory->id] // Exclude target category
-            );
-
-            // Merge products
-            $mergedProducts = $targetProductsAll->merge($mainProducts);
-
-            // Create manual pagination for merged results
-            $finalProducts = $this->createMergedPagination($mergedProducts, $perPage, $page, $targetCount);
-
-            return [
-                'products' => $finalProducts,
-                'actual_category_used' => 'mixed', // Indicates mixed source
-            ];
-        }
-
-        // Scenario 3: Main category fallback (if target same as main or no supplementary needed)
-        if ($targetCategory->id === $mainCategory->id || $targetProductCount === 0) {
-            // Try main category first
-            $mainProducts = $this->getProductsFromCategory($mainCategory, $filters, $targetCount + 1, 1);
-
-            if ($mainProducts->total() >= $targetCount) {
-                $finalProducts = $this->getProductsFromCategory($mainCategory, $filters, $perPage, $page);
-            } else {
-                // Fallback to child categories of main category
-                $finalProducts = $this->getProductsFromCategoryWithChildren($mainCategory, $filters, $perPage, $page, $targetCount);
-            }
-
-            return [
-                'products' => $finalProducts,
-                'actual_category_used' => $mainCategory->id,
-            ];
-        }
-
-        // Fallback: Return whatever we found
-        return [
-            'products' => $targetProducts,
-            'actual_category_used' => $targetCategory->id,
-        ];
-    }
-
-    /**
-     * Get products from specific category with filters
-     */
-    private function getProductsFromCategory($category, array $filters, int $perPage, int $page)
-    {
-        $query = Product::where('cat_id', $category->id)
-            ->where('status', 'active')
-            ->with([
-                'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
-                'cat_info' => fn($q) => $q->select(['id', 'title'])
-            ]);
-
-        $query = $this->applyProductFilters($query, $filters);
-        $query = $this->applyProductSorting($query, $filters['sortBy']);
-
-        return $query->paginate($perPage, ['*'], 'page', $page)
-            ->appends(request()->query());
-    }
-
-    /**
-     * Get products from category excluding specific products and categories
-     */
-    private function getProductsFromCategoryExcluding($category, array $filters, int $limit, int $page, array $excludeProductIds = [], array $excludeCategoryIds = [])
-    {
-        $categoryIds = $this->getCategoryWithChildrenIds($category, $excludeCategoryIds);
-
-        $query = Product::whereIn('cat_id', $categoryIds)
-            ->where('status', 'active');
-
-        if (!empty($excludeProductIds)) {
-            $query->whereNotIn('id', $excludeProductIds);
-        }
-
-        $query->with([
-            'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
-            'cat_info' => fn($q) => $q->select(['id', 'title'])
-        ]);
-
-        $query = $this->applyProductFilters($query, $filters);
-        $query = $this->applyProductSorting($query, $filters['sortBy']);
-
-        return $query->limit($limit)->get();
-    }
-
-    /**
-     * Get products from category including all children with fallback logic
-     */
-    private function getProductsFromCategoryWithChildren($category, array $filters, int $perPage, int $page, int $targetCount)
-    {
-        $categoryIds = $this->getCategoryWithChildrenIds($category);
-
-        $query = Product::whereIn('cat_id', $categoryIds)
-            ->where('status', 'active')
-            ->with([
-                'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
-                'cat_info' => fn($q) => $q->select(['id', 'title'])
-            ]);
-
-        $query = $this->applyProductFilters($query, $filters);
-        $query = $this->applyProductSorting($query, $filters['sortBy']);
-
-        // Check total available
-        $totalAvailable = $query->count();
-
-        if ($totalAvailable > $targetCount) {
-            // Limit to target count if more available
-            $actualPerPage = min($perPage, $targetCount);
-        } else {
-            // Show all available
-            $actualPerPage = $perPage;
-        }
-
-        return $query->paginate($actualPerPage, ['*'], 'page', $page)
-            ->appends(request()->query());
-    }
-
-    /**
-     * Create pagination for merged product collections
-     */
-    private function createMergedPagination($mergedProducts, int $perPage, int $page, int $maxTotal)
-    {
-        $total = min($mergedProducts->count(), $maxTotal);
-        $offset = ($page - 1) * $perPage;
-        $items = $mergedProducts->slice($offset, $perPage);
-
-        return new \Illuminate\Pagination\LengthAwarePaginator(
-            $items,
-            $total,
-            $perPage,
-            $page,
-            [
-                'path' => request()->url(),
-                'query' => request()->query()
-            ]
-        );
-    }
-
-    /**
-     * Get category with all its children IDs (with infinite loop protection)
-     */
-    private function getCategoryWithChildrenIds($category, array $excludeIds = [], int $maxDepth = 10, int $currentDepth = 0)
-    {
-        // Prevent infinite loops
-        if ($currentDepth >= $maxDepth) {
-            return [$category->id];
-        }
-
-        $ids = [$category->id];
-
-        // Get direct children (excluding specified categories)
-        $children = Category::where('parent_id', $category->id)
-            ->whereNotIn('id', $excludeIds)
-            ->get();
-
-        foreach ($children as $child) {
-            // Prevent circular references
-            if (!in_array($child->id, $ids)) {
-                $childIds = $this->getCategoryWithChildrenIds($child, $excludeIds, $maxDepth, $currentDepth + 1);
-                $ids = array_merge($ids, $childIds);
-            }
-        }
-
-        return array_unique($ids);
-    }
-
-    /**
-     * Apply product filters to query
-     */
-    private function applyProductFilters($query, array $filters)
-    {
-        // Brand filter
-        if (!empty($filters['brand'])) {
-            $query->whereIn('brand_id', $filters['brand']);
-        }
-
-        // Search query filter
-        if (!empty($filters['query'])) {
-            $searchTerm = $filters['query'];
-            $query->where(function ($q) use ($searchTerm) {
-                $q->where('title', 'LIKE', "%{$searchTerm}%")
-                    ->orWhere('summary', 'LIKE', "%{$searchTerm}%")
-                    ->orWhere('description', 'LIKE', "%{$searchTerm}%");
-            });
-        }
-
-        // Price range filter
-        if (!empty($filters['price_range']) && str_contains($filters['price_range'], '-')) {
-            [$minPrice, $maxPrice] = array_map('floatval', explode('-', $filters['price_range']));
-            if ($minPrice > 0) {
-                $query->where('price', '>=', $minPrice);
-            }
-            if ($maxPrice > 0) {
-                $query->where('price', '<=', $maxPrice);
-            }
-        }
-
-        // Rating filter
-        $minRatings = request('min_rating');
-        if ($minRatings) {
-            $minRatings = is_array($minRatings) ? $minRatings : explode(',', $minRatings);
-            $minRating = min(array_map('intval', $minRatings));  // Use the lowest selected min_rating for ">= filter"
-
-            $query->whereHas('reviews', function ($subQuery) use ($minRating) {
-                $subQuery->groupBy('product_id')
-                    ->havingRaw('AVG(rate) >= ?', [$minRating]);  // Assumes 'rate' column in product_reviews; change to 'rating' if needed
-            });
-        }
-
-        // Discount filter
-        if (!empty($filters['min_discount'])) {
-            $minDiscount = (float) $filters['min_discount'];
-            $query->where('discount', '>=', $minDiscount);
-        }
-
-        return $query;
-    }
-
-    /**
-     * Apply sorting to product query
-     */
-    private function applyProductSorting($query, string $sortBy)
-    {
-        switch ($sortBy) {
-            case 'title':
-                return $query->orderBy('title', 'ASC');
-            case 'price':
-                return $query->orderBy('price', 'ASC');
-            case 'price_desc':
-                return $query->orderBy('price', 'DESC');
-            case 'rating':
-                return $query->orderBy('rating', 'DESC');
-            case 'discount':
-                return $query->orderBy('discount', 'DESC');
-            case 'latest':
-                return $query->orderBy('created_at', 'DESC');
-            case 'oldest':
-                return $query->orderBy('created_at', 'ASC');
-            default:
-                return $query->orderBy('id', 'DESC');
-        }
-    }
-
-    /**
-     * Generate cache key for products
-     */
-    private function generateProductCacheKey($category, array $filters, int $perPage, int $page): string
-    {
-        $keyData = [
-            'cat_id' => $category->id,
-            'page' => $page,
-            'per_page' => $perPage,
-            'filters' => $filters,
-        ];
-
-        return 'products_' . md5(serialize($keyData));
-    }
-
-    /**
-     * Validate cached data structure
-     */
-    private function isCacheDataValid($cachedData): bool
-    {
-        return isset($cachedData['products'], $cachedData['recent_products'])
-            && is_array($cachedData['products'])
-            && is_array($cachedData['recent_products'])
-            && isset($cachedData['timestamp'])
-            && (now()->timestamp - $cachedData['timestamp']) < 7200; // 2 hours validity
-    }
-
-    /**
-     * Build view response from cached data
-     */
-    private function buildViewFromCache($cachedData, $category, $mainCategory, $perPage, $filters)
-    {
-        $paginatorData = $cachedData['products'];
-
-        $paginated = new \Illuminate\Pagination\LengthAwarePaginator(
-            collect($paginatorData['data'])->map(function ($item) {
-                if (isset($item['images'])) {
-                    $item['images'] = collect($item['images'])->map(fn($img) => (object) $img);
-                }
-                return (object) $item;
-            }),
-            $paginatorData['total'],
-            $paginatorData['per_page'],
-            $paginatorData['current_page'],
-            [
-                'path' => request()->url(),
-                'query' => request()->query()
-            ]
-        );
-
-        return view('frontend.pages.product-grids', [
-            'products'        => $paginated,
-            'recent_products' => collect($cachedData['recent_products'])->map(fn($item) => (object) $item),
-            'category'        => $category,
-            'mainCategory'    => $mainCategory,
-            'subCategory'     => $category,
-            'show'            => $perPage,
-            'sortBy'          => $filters['sortBy'],
-            'price'           => $filters['price_range'],
-        ]);
-    }
-
-    /**
-     * Get recent products with caching
+     * Fetch recent products with caching.
+     *
+     * @param string $key Cache key
+     * @param int $ttl Time to live
+     * @return \Illuminate\Support\Collection
      */
     private function getRecentProductsData(string $key, int $ttl)
     {
@@ -1849,128 +1429,10 @@ class FrontendController extends Controller
     }
 
     /**
-     * Get products with fallback logic - searches parent categories if not enough products found
-     * Restricts results to maximum 12 products
+     * Display blog page with filtering.
+     *
+     * @return \Illuminate\View\View
      */
-    private function getProductsWithFallback($startCategory, $minPrice, $maxPrice, $sortBy, $show, $minRequired)
-    {
-        $currentCategory = $startCategory;
-        $collectedProducts = collect();
-        $fallbackOccurred = false;
-        $maxProducts = 12; // Hard limit of 12 products
-
-        while ($currentCategory && $collectedProducts->count() < $maxProducts) {
-            // Build the query for current category level
-            $query = $this->buildProductQuery($currentCategory, $minPrice, $maxPrice, $sortBy);
-
-            // Calculate how many more products we need
-            $remainingNeeded = $maxProducts - $collectedProducts->count();
-
-            // Get products from current category (limited to what we still need)
-            $categoryProducts = $query->take($remainingNeeded)->get();
-
-            if ($categoryProducts->isNotEmpty()) {
-                // Remove any products we already have (avoid duplicates)
-                $newProducts = $categoryProducts->whereNotIn('id', $collectedProducts->pluck('id'));
-                $collectedProducts = $collectedProducts->merge($newProducts);
-
-                // If we have enough products now, break
-                if ($collectedProducts->count() >= $minRequired) {
-                    break;
-                }
-            }
-
-            // Move to parent category for next iteration
-            $fallbackOccurred = true;
-            $currentCategory = $currentCategory->parent;
-        }
-
-        // If we still don't have any products, try the original category one more time
-        if ($collectedProducts->isEmpty()) {
-            $query = $this->buildProductQuery($startCategory, $minPrice, $maxPrice, $sortBy);
-            $collectedProducts = collect($query->take($maxProducts)->get());
-            $currentCategory = $startCategory;
-        }
-
-        // Ensure we don't exceed 12 products
-        $finalProducts = $collectedProducts->take($maxProducts);
-
-        // Create a manual paginator with exactly 12 products max
-        $products = new \Illuminate\Pagination\LengthAwarePaginator(
-            $finalProducts,
-            min($finalProducts->count(), $maxProducts), // total
-            $maxProducts, // per page
-            1, // current page
-            [
-                'path' => request()->url(),
-                'query' => request()->query()
-            ]
-        );
-
-        return [
-            'products' => $products,
-            'category' => $currentCategory ?: $startCategory,
-            'fallback_occurred' => $fallbackOccurred
-        ];
-    }
-
-    /**
-     * Build product query based on category hierarchy
-     */
-    private function buildProductQuery($category, $minPrice, $maxPrice, $sortBy)
-    {
-        $query = Product::with(['images', 'discounts', 'cat_info', 'sub_cat_info'])
-            ->active();
-
-        // Apply category filters based on the category level
-        $query = $this->applyCategoryFilters($query, $category);
-
-        // Apply price filters
-        if ($minPrice && $maxPrice) {
-            $query->whereBetween('price', [$minPrice, $maxPrice]);
-        }
-
-        // Apply sorting
-        $this->applySorting($query, $sortBy);
-
-        return $query;
-    }
-
-    /**
-     * Apply category filters based on category hierarchy - restricts to current category only
-     */
-    private function applyCategoryFilters($query, $category)
-    {
-        // Only search in the specific category, not descendants
-        // This prevents getting too many results and helps with the 12-product limit
-
-        if ($category->parent_id === null) {
-            // This is a main category
-            $query->where('cat_id', $category->id);
-        } else {
-            // This is a sub/child category
-            $query->where('child_cat_id', $category->id);
-        }
-
-        return $query;
-    }
-
-    /**
-     * Apply sorting to the query
-     */
-    private function applySorting($query, $sortBy)
-    {
-        if ($sortBy === 'price') {
-            $query->orderBy('price', 'ASC');
-        } elseif ($sortBy === 'price_desc') {
-            $query->orderBy('price', 'DESC');
-        } else {
-            $query->latest();
-        }
-
-        return $query;
-    }
-
     public function blog()
     {
         $post = Post::query();
@@ -1995,6 +1457,12 @@ class FrontendController extends Controller
             ->with('recent_posts', $rcnt_post);
     }
 
+    /**
+     * Display blog post details by slug.
+     *
+     * @param string $slug
+     * @return \Illuminate\View\View
+     */
     public function blogDetail($slug)
     {
         $post = Post::getPostBySlug($slug);
@@ -2005,6 +1473,12 @@ class FrontendController extends Controller
             ->with('recent_posts', $rcnt_post);
     }
 
+    /**
+     * Handle blog search functionality.
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
     public function blogSearch(Request $request)
     {
         $rcnt_post = Post::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
@@ -2021,6 +1495,12 @@ class FrontendController extends Controller
             ->with('recent_posts', $rcnt_post);
     }
 
+    /**
+     * Handle blog filter requests.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function blogFilter(Request $request)
     {
         $data = $request->all();
@@ -2030,6 +1510,12 @@ class FrontendController extends Controller
         return redirect()->route('blog', $catURL . $tagURL);
     }
 
+    /**
+     * Display blog posts by category.
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
     public function blogByCategory(Request $request)
     {
         $post = PostCategory::getBlogByCategory($request->slug);
@@ -2040,6 +1526,12 @@ class FrontendController extends Controller
             ->with('recent_posts', $rcnt_post);
     }
 
+    /**
+     * Display blog posts by tag.
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
     public function blogByTag(Request $request)
     {
         $post = Post::getBlogByTag($request->slug);
@@ -2050,13 +1542,24 @@ class FrontendController extends Controller
             ->with('recent_posts', $rcnt_post);
     }
 
+    /**
+     * Display login page.
+     *
+     * @return \Illuminate\View\View
+     */
     public function login()
     {
         return view('frontend.pages.login');
     }
 
+    /**
+     * Handle login submission.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function loginSubmit(Request $request)
-    {
+    {   
         $data = $request->all();
         if (Auth::attempt(['email' => $data['email'], 'password' => $data['password'], 'status' => 'active'])) {
             Session::put('user', $data['email']);
@@ -2068,6 +1571,11 @@ class FrontendController extends Controller
         return redirect()->back();
     }
 
+    /**
+     * Handle logout.
+     *
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function logout()
     {
         Session::forget('user');
@@ -2076,11 +1584,22 @@ class FrontendController extends Controller
         return back();
     }
 
+    /**
+     * Display registration page.
+     *
+     * @return \Illuminate\View\View
+     */
     public function register()
     {
         return view('frontend.pages.register');
     }
 
+    /**
+     * Handle registration submission.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function registerSubmit(Request $request)
     {
         $this->validate($request, [
@@ -2102,6 +1621,12 @@ class FrontendController extends Controller
         return back();
     }
 
+    /**
+     * Create a new user.
+     *
+     * @param array $data
+     * @return \App\User
+     */
     public function create(array $data)
     {
         return User::create([
@@ -2112,11 +1637,22 @@ class FrontendController extends Controller
         ]);
     }
 
+    /**
+     * Display password reset form.
+     *
+     * @return \Illuminate\View\View
+     */
     public function showResetForm()
     {
         return view('auth.passwords.old-reset');
     }
 
+    /**
+     * Handle newsletter subscription.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function subscribe(Request $request)
     {
         if (!Newsletter::isSubscribed($request->email)) {
@@ -2134,6 +1670,12 @@ class FrontendController extends Controller
         return back();
     }
 
+    /**
+     * Display cart page.
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
     public function cart(Request $request)
     {
         if (!$request->session()->has('coupon_set')) {
