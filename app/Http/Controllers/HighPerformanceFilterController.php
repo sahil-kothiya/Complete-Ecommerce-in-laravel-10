@@ -42,7 +42,7 @@ class HighPerformanceFilterController extends Controller
             });
 
             // Get filtered products (separate for pagination)
-            $productData = $this->getFilteredProducts($baseQuery, $currentFilters, $request);
+            $productData = $this->getFilteredProducts($baseQuery, $currentFilters, $request, $categoryContext);
 
             $response = [
                 'success' => true,
@@ -351,20 +351,75 @@ class HighPerformanceFilterController extends Controller
     /**
      * Get filtered products with pagination
      */
-    private function getFilteredProducts($baseQuery, array $currentFilters, Request $request)
+    private function getFilteredProducts($baseQuery, array $currentFilters, Request $request, ?Category $category)
     {
         $query = clone $baseQuery;
         $this->applyCurrentFilters($query, $currentFilters);
-        $this->applySorting($query, $currentFilters['sortBy'] ?? 'latest');
+        $this->applySorting($query, $currentFilters['sortBy'] ?? 'latest', $category);
 
         $perPage = $currentFilters['show'] ?? 12;
         $page = $request->input('page', 1);
+
+        // Primary filtered products
         $products = $query->with(['brand', 'images'])->paginate($perPage, ['*'], 'page', $page);
+        $productList = collect($products->items());
+
+        // Fallback logic if less than 12 products on the current page
+        if ($productList->count() < 12) {
+            // 1. Category fallback (ignore filters except category), sorted A to Z
+            $categoryOnlyQuery = clone $baseQuery;
+            $categoryOnlyQuery->with(['brand', 'images']);
+            $categoryOnlyQuery->orderBy('title', 'asc');
+            $categoryProducts = $categoryOnlyQuery->whereNotIn('id', $productList->pluck('id'))->limit(12 - $productList->count())->get();
+            $productList = $productList->concat($categoryProducts);
+
+            // 2. Related categories fallback (siblings/related under same parent or top-level, infinite sub-levels)
+            if ($productList->count() < 12 && $category) {
+                // Get sibling categories (related under same parent)
+                $parentId = $category->parent_id;
+                $similarCategories = Category::where('parent_id', $parentId)
+                    ->where('id', '!=', $category->id)
+                    ->where('status', 'active')
+                    ->get();
+
+                $similarDescendantIds = [];
+                foreach ($similarCategories as $simCat) {
+                    $similarDescendantIds = array_merge($similarDescendantIds, $this->getDescendantIds($simCat));
+                }
+                $similarDescendantIds = array_unique($similarDescendantIds);
+
+                if (!empty($similarDescendantIds)) {
+                    $similarQuery = Product::query()
+                        ->where('status', 'active')
+                        ->where(function ($q) use ($similarDescendantIds) {
+                            $q->whereIn('cat_id', $similarDescendantIds)
+                              ->orWhereIn('child_cat_id', $similarDescendantIds);
+                        })
+                        ->whereNotIn('id', $productList->pluck('id'))
+                        ->with(['brand', 'images'])
+                        ->orderBy('title', 'asc')
+                        ->limit(12 - $productList->count());
+                    $similarProducts = $similarQuery->get();
+                    $productList = $productList->concat($similarProducts);
+                }
+            }
+
+            // 3. Final guarantee: always at least 12 products (fill with any active products, sorted A to Z)
+            if ($productList->count() < 12) {
+                $fillQuery = Product::query()
+                    ->where('status', 'active')
+                    ->whereNotIn('id', $productList->pluck('id'))
+                    ->with(['brand', 'images'])
+                    ->orderBy('title', 'asc')
+                    ->limit(12 - $productList->count());
+                $fillProducts = $fillQuery->get();
+                $productList = $productList->concat($fillProducts);
+            }
+        }
 
         // Transform products for JSON
-        $productList = $products->map(function ($product) {
+        $productList = $productList->map(function ($product) {
             $rating = $this->getProductRating($product->id);
-            // Ensure price is numeric, fallback to 0 if invalid
             $originalPrice = is_numeric($product->price) ? (float) $product->price : 0.0;
             $discount = is_numeric($product->discount) ? (int) $product->discount : 0;
             $finalPrice = $discount > 0 ? $originalPrice - ($originalPrice * $discount / 100) : $originalPrice;
@@ -393,15 +448,15 @@ class HighPerformanceFilterController extends Controller
         });
 
         return [
-            'products' => $productList->values()->toArray(),
+            'products' => $productList->take(12)->values()->toArray(),
             'pagination' => [
-                'current_page' => $products->currentPage(),
-                'last_page' => $products->lastPage(),
-                'total' => $products->total(),
-                'per_page' => $products->perPage(),
-                'links' => $products->linkCollection()->toArray()
+                'current_page' => $page,
+                'last_page' => ceil($productList->count() / $perPage),
+                'total' => $productList->count(),
+                'per_page' => $perPage,
+                'links' => [] // Custom pagination if needed
             ],
-            'total' => $products->total()
+            'total' => $productList->count()
         ];
     }
 
@@ -466,10 +521,14 @@ class HighPerformanceFilterController extends Controller
     }
 
     /**
-     * Apply sorting to query
+     * Apply sorting to query with priority for main and child categories
      */
-    private function applySorting($query, string $sortBy)
+    private function applySorting($query, string $sortBy, ?Category $category)
     {
+        $catId = $category ? $category->id : null;
+        $priorityRaw = $catId ? "CASE WHEN cat_id = ? THEN 0 WHEN child_cat_id = ? THEN 1 ELSE 2 END" : null;
+        $priorityBindings = $catId ? [$catId, $catId] : [];
+
         switch ($sortBy) {
             case 'price_low_high':
                 return $query->orderByRaw('
@@ -480,6 +539,7 @@ class HighPerformanceFilterController extends Controller
                             price 
                     END ASC
                 ');
+                break;
 
             case 'price_high_low':
                 return $query->orderByRaw('
@@ -490,23 +550,47 @@ class HighPerformanceFilterController extends Controller
                             price 
                     END DESC
                 ');
+                break;
 
             case 'rating_high_low':
-                return $query->leftJoin('product_reviews', 'products.id', '=', 'product_reviews.product_id')
-                    ->selectRaw('products.*, AVG(CAST(product_reviews.rate AS DECIMAL(3,2))) as avg_rating')
-                    ->groupBy('products.id')
-                    ->orderByDesc('avg_rating');
+                $selectRaw = 'products.*, AVG(CAST(product_reviews.rate AS DECIMAL(3,2))) as avg_rating';
+                if ($priorityRaw) {
+                    $selectRaw .= ", {$priorityRaw} as priority";
+                    $query->addBinding($priorityBindings, 'select');
+                }
+                $query->leftJoin('product_reviews', 'products.id', '=', 'product_reviews.product_id')
+                    ->selectRaw($selectRaw)
+                    ->groupBy('products.id');
+                if ($priorityRaw) {
+                    $query->orderBy('priority', 'asc');
+                }
+                $query->orderByDesc('avg_rating');
+                break;
 
             case 'name_a_z':
-                return $query->orderBy('title', 'asc');
+                if ($priorityRaw) {
+                    $query->orderByRaw("{$priorityRaw} ASC", $priorityBindings);
+                }
+                $query->orderBy('title', 'asc');
+                break;
 
             case 'name_z_a':
-                return $query->orderBy('title', 'desc');
+                if ($priorityRaw) {
+                    $query->orderByRaw("{$priorityRaw} ASC", $priorityBindings);
+                }
+                $query->orderBy('title', 'desc');
+                break;
 
             case 'latest':
             default:
-                return $query->orderBy('created_at', 'desc');
+                if ($priorityRaw) {
+                    $query->orderByRaw("{$priorityRaw} ASC", $priorityBindings);
+                }
+                $query->orderBy('created_at', 'desc');
+                break;
         }
+
+        return $query;
     }
 
     /**
