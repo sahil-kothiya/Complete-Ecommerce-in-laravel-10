@@ -76,6 +76,23 @@ return [
             'prefix_indexes' => true,
             'schema' => 'public',
             'sslmode' => 'prefer',
+            'options' => [
+                PDO::ATTR_TIMEOUT => 45,
+                PDO::ATTR_EMULATE_PREPARES => false,
+                PDO::ATTR_STRINGIFY_FETCHES => false,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_OBJ,
+            ],
+            'pool' => [
+                'min_connections' => 5,
+                'max_connections' => 30,
+                'connect_timeout' => 10,
+                'wait_timeout' => 3,
+                'heartbeat' => -1,
+                'max_idle_time' => 60,
+            ],
+            // Query optimization
+            'strict' => false,
+            'engine' => null,
         ],
 
         'sqlsrv' => [
@@ -132,6 +149,12 @@ return [
             'password' => env('REDIS_PASSWORD', null),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_DB', '0'),
+             'read_write_timeout' => 60,
+            'context' => [
+                'tcp' => [
+                    'nodelay' => true,
+                ],
+            ],
         ],
 
         'cache' => [
@@ -141,7 +164,13 @@ return [
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_CACHE_DB', '1'),
         ],
-
+        'session' => [
+            'url' => env('REDIS_URL'),
+            'host' => env('REDIS_HOST', '127.0.0.1'),
+            'password' => env('REDIS_PASSWORD', null),
+            'port' => env('REDIS_PORT', '6379'),
+            'database' => env('REDIS_SESSION_DB', '2'),
+        ],
     ],
 
 ];

@@ -5,10 +5,19 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Cart;
 use App\Services\DiscountService;
+use Illuminate\Support\Facades\Cache;
 
 class Product extends Model
 {
     protected $fillable = ['title', 'slug', 'summary', 'description', 'cat_id', 'child_cat_id', 'price', 'brand_id', 'discount', 'status', 'photo', 'size', 'stock', 'is_featured', 'condition', 'sku'];
+
+    protected $casts = [
+        'price' => 'decimal:2',
+        'discount' => 'integer',
+        'stock' => 'integer',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+    ];
 
     /**
      * Get the indexable data array for the model.
@@ -124,5 +133,76 @@ class Product extends Model
     public function categories()
     {
         return $this->belongsToMany(Category::class, 'category_product');
+    }
+
+    public function scopeInStock(Builder $query)
+    {
+        return $query->where('stock', '>', 0);
+    }
+
+    public function scopeWithDiscount(Builder $query)
+    {
+        return $query->where('discount', '>', 0);
+    }
+
+    public function scopeByCategory(Builder $query, $categoryIds)
+    {
+        if (!is_array($categoryIds)) {
+            $categoryIds = [$categoryIds];
+        }
+        
+        return $query->where(function($q) use ($categoryIds) {
+            $q->whereIn('cat_id', $categoryIds)
+              ->orWhereIn('child_cat_id', $categoryIds);
+        });
+    }
+
+    public function scopePriceRange(Builder $query, $minPrice, $maxPrice)
+    {
+        return $query->whereRaw('
+            CASE 
+                WHEN discount > 0 THEN 
+                    price * (1 - discount::decimal / 100)
+                ELSE 
+                    price 
+            END BETWEEN ? AND ?
+        ', [$minPrice, $maxPrice]);
+    }
+
+    // Computed attributes
+    public function getFinalPriceAttribute()
+    {
+        if ($this->discount > 0) {
+            return $this->price * (1 - $this->discount / 100);
+        }
+        return $this->price;
+    }
+
+    public function getIsInStockAttribute()
+    {
+        return $this->stock > 0;
+    }
+
+    // Cache rating for performance
+    public function getRatingAttribute()
+    {
+        return Cache::remember(
+            "product_rating_{$this->id}",
+            3600,
+            function () {
+                $rating = $this->reviews()
+                    ->selectRaw('AVG(CAST(rate AS DECIMAL(3,2))) as avg_rating, COUNT(*) as total')
+                    ->first();
+
+                if (!$rating || !$rating->avg_rating) {
+                    return ['average' => 0, 'total' => 0];
+                }
+
+                return [
+                    'average' => round($rating->avg_rating, 1),
+                    'total' => (int) $rating->total
+                ];
+            }
+        );
     }
 }
