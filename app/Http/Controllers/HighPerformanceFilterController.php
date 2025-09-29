@@ -17,7 +17,7 @@ class HighPerformanceFilterController extends Controller
     private const PRODUCTS_CACHE_TTL = 300; // 5 minutes for product lists
     private const MAX_PRICE_DEFAULT = 10000;
     private const BATCH_SIZE = 50;
-    private const MAX_EXECUTION_TIME = 45;
+    private const MAX_EXECUTION_TIME = 10000;
 
     /**
      * Get filter data with aggressive caching and query optimization
@@ -155,7 +155,7 @@ class HighPerformanceFilterController extends Controller
         if ($category) {
             if ($category->parent_id === null) {
                 $subcategoryIds = $this->getSubcategoryIds($category->id);
-                $query->where(function($q) use ($category, $subcategoryIds) {
+                $query->where(function ($q) use ($category, $subcategoryIds) {
                     $q->where('cat_id', $category->id);
                     if (!empty($subcategoryIds)) {
                         $q->orWhereIn('child_cat_id', $subcategoryIds);
@@ -279,8 +279,17 @@ class HighPerformanceFilterController extends Controller
 
         $query = DB::table('products')
             ->select([
-                'id', 'title', 'slug', 'price', 'discount', 'stock', 'condition',
-                'cat_id', 'child_cat_id', 'brand_id', 'created_at'
+                'id',
+                'title',
+                'slug',
+                'price',
+                'discount',
+                'stock',
+                'condition',
+                'cat_id',
+                'child_cat_id',
+                'brand_id',
+                'created_at'
             ])
             ->where('status', 'active')
             ->whereNotIn('id', $existingIds);
@@ -288,7 +297,7 @@ class HighPerformanceFilterController extends Controller
         if ($category) {
             if ($category->parent_id === null) {
                 $subcategoryIds = $this->getSubcategoryIds($category->id);
-                $query->where(function($q) use ($category, $subcategoryIds) {
+                $query->where(function ($q) use ($category, $subcategoryIds) {
                     $q->where('cat_id', $category->id);
                     if (!empty($subcategoryIds)) {
                         $q->orWhereIn('child_cat_id', $subcategoryIds);
@@ -305,11 +314,11 @@ class HighPerformanceFilterController extends Controller
             $minPrice = (float) trim($minPrice);
             $maxPrice = (float) trim($maxPrice);
             $query->whereRaw('
-                CASE 
-                    WHEN discount > 0 THEN price * (1 - discount / 100.0)
-                    ELSE price 
-                END BETWEEN ? AND ?
-            ', [$minPrice, $maxPrice]);
+            CASE 
+                WHEN discount > 0 THEN price * (1 - discount / 100.0)
+                ELSE price 
+            END BETWEEN ? AND ?
+        ', [$minPrice, $maxPrice]);
             Log::debug('Price Filter Applied to Fallback Products', [
                 'min_price' => $minPrice,
                 'max_price' => $maxPrice,
@@ -319,7 +328,7 @@ class HighPerformanceFilterController extends Controller
         }
 
         $products = $query->orderBy('created_at', 'desc')
-            ->limit($needed)
+            ->take($needed)
             ->get()
             ->toArray();
 
@@ -350,7 +359,7 @@ class HighPerformanceFilterController extends Controller
         if ($category) {
             if ($category->parent_id === null) {
                 $subcategoryIds = $this->getSubcategoryIds($category->id);
-                $priceQuery->where(function($q) use ($category, $subcategoryIds) {
+                $priceQuery->where(function ($q) use ($category, $subcategoryIds) {
                     $q->where('cat_id', $category->id);
                     if (!empty($subcategoryIds)) {
                         $q->orWhereIn('child_cat_id', $subcategoryIds);
@@ -387,7 +396,7 @@ class HighPerformanceFilterController extends Controller
             if ($category) {
                 if ($category->parent_id === null) {
                     $subcategoryIds = $this->getSubcategoryIds($category->id);
-                    $ratingQuery->where(function($q) use ($category, $subcategoryIds) {
+                    $ratingQuery->where(function ($q) use ($category, $subcategoryIds) {
                         $q->where('products.cat_id', $category->id);
                         if (!empty($subcategoryIds)) {
                             $q->orWhereIn('products.child_cat_id', $subcategoryIds);
@@ -436,7 +445,7 @@ class HighPerformanceFilterController extends Controller
         if ($category) {
             if ($category->parent_id === null) {
                 $subcategoryIds = $this->getSubcategoryIds($category->id);
-                $discountQuery->where(function($q) use ($category, $subcategoryIds) {
+                $discountQuery->where(function ($q) use ($category, $subcategoryIds) {
                     $q->where('cat_id', $category->id);
                     if (!empty($subcategoryIds)) {
                         $q->orWhereIn('child_cat_id', $subcategoryIds);
@@ -476,7 +485,7 @@ class HighPerformanceFilterController extends Controller
         if ($category) {
             if ($category->parent_id === null) {
                 $subcategoryIds = $this->getSubcategoryIds($category->id);
-                $availQuery->where(function($q) use ($category, $subcategoryIds) {
+                $availQuery->where(function ($q) use ($category, $subcategoryIds) {
                     $q->where('cat_id', $category->id);
                     if (!empty($subcategoryIds)) {
                         $q->orWhereIn('child_cat_id', $subcategoryIds);
@@ -572,7 +581,7 @@ class HighPerformanceFilterController extends Controller
         if ($category) {
             if ($category->parent_id === null) {
                 $subcategoryIds = $this->getSubcategoryIds($category->id);
-                $rawQuery->where(function($q) use ($category, $subcategoryIds) {
+                $rawQuery->where(function ($q) use ($category, $subcategoryIds) {
                     $q->where('cat_id', $category->id);
                     if (!empty($subcategoryIds)) {
                         $q->orWhereIn('child_cat_id', $subcategoryIds);
@@ -633,8 +642,8 @@ class HighPerformanceFilterController extends Controller
      */
     private function executePaginatedQuery($query, int $offset, int $limit)
     {
-        return $query->offset($offset)
-            ->limit($limit)
+        return $query->skip($offset)
+            ->take($limit)
             ->get()
             ->toArray();
     }
@@ -719,7 +728,7 @@ class HighPerformanceFilterController extends Controller
             if ($category) {
                 if ($category->parent_id === null) {
                     $subcategoryIds = $this->getSubcategoryIds($category->id);
-                    $query->where(function($q) use ($category, $subcategoryIds) {
+                    $query->where(function ($q) use ($category, $subcategoryIds) {
                         $q->where('products.cat_id', $category->id);
                         if (!empty($subcategoryIds)) {
                             $q->orWhereIn('products.child_cat_id', $subcategoryIds);
@@ -818,16 +827,23 @@ class HighPerformanceFilterController extends Controller
             return [];
         }
 
-        return DB::table('products')
-            ->join('brands', 'products.brand_id', '=', 'brands.id')
-            ->whereIn('products.id', $productIds)
-            ->select('products.id as product_id', 'brands.title', 'brands.slug')
-            ->get()
-            ->keyBy('product_id')
-            ->map(function ($brand) {
-                return ['title' => $brand->title, 'slug' => $brand->slug];
-            })
-            ->toArray();
+        $brands = [];
+        foreach (array_chunk($productIds, self::BATCH_SIZE) as $chunk) {
+            $chunkBrands = DB::table('products')
+                ->join('brands', 'products.brand_id', '=', 'brands.id')
+                ->whereIn('products.id', $chunk)
+                ->select('products.id as product_id', 'brands.title', 'brands.slug')
+                ->take(count($chunk)) // Limit to the number of product IDs in chunk
+                ->get()
+                ->keyBy('product_id')
+                ->map(function ($brand) {
+                    return ['title' => $brand->title, 'slug' => $brand->slug];
+                })
+                ->toArray();
+            $brands = array_merge($brands, $chunkBrands);
+        }
+
+        return $brands;
     }
 
     /**
@@ -839,18 +855,23 @@ class HighPerformanceFilterController extends Controller
             return [];
         }
 
-        return DB::table('product_images')
-            ->whereIn('product_id', $productIds)
-            ->select('product_id', 'image_path')
-            ->orderBy('product_id')
-            ->orderBy('sort_order')
-            ->limit(count($productIds) * 2)
-            ->get()
-            ->groupBy('product_id')
-            ->map(function ($productImages) {
-                return $productImages->take(2)->pluck('image_path')->toArray();
-            })
-            ->toArray();
+        $images = [];
+        foreach (array_chunk($productIds, self::BATCH_SIZE) as $chunk) {
+            $chunkImages = DB::table('product_images')
+                ->whereIn('product_id', $chunk)
+                ->select('product_id', 'image_path')
+                ->orderBy('product_id')
+                ->orderBy('sort_order')
+                ->get()
+                ->groupBy('product_id')
+                ->map(function ($productImages) {
+                    return $productImages->take(2)->pluck('image_path')->toArray();
+                })
+                ->toArray();
+            $images = array_merge($images, $chunkImages);
+        }
+
+        return $images;
     }
 
     /**
@@ -862,22 +883,31 @@ class HighPerformanceFilterController extends Controller
             return [];
         }
 
+        $ratings = [];
         if (DB::getSchemaBuilder()->hasTable('product_ratings_cache')) {
-            return DB::table('product_ratings_cache')
-                ->whereIn('product_id', $productIds)
-                ->select('product_id', 'average_rating as average', 'total_reviews as total')
-                ->get()
-                ->keyBy('product_id')
-                ->map(function ($rating) {
-                    return [
-                        'average' => (float) $rating->average,
-                        'total' => (int) $rating->total
-                    ];
-                })
-                ->toArray();
+            foreach (array_chunk($productIds, self::BATCH_SIZE) as $chunk) {
+                $chunkRatings = DB::table('product_ratings_cache')
+                    ->whereIn('product_id', $chunk)
+                    ->select('product_id', 'average_rating as average', 'total_reviews as total')
+                    ->take(count($chunk)) // Limit to the number of product IDs in chunk
+                    ->get()
+                    ->keyBy('product_id')
+                    ->map(function ($rating) {
+                        return [
+                            'average' => (float) $rating->average,
+                            'total' => (int) $rating->total
+                        ];
+                    })
+                    ->toArray();
+                $ratings = array_merge($ratings, $chunkRatings);
+            }
         }
 
-        return array_fill_keys($productIds, ['average' => 0, 'total' => 0]);
+        // Fill missing ratings with defaults
+        return array_merge(
+            array_fill_keys($productIds, ['average' => 0, 'total' => 0]),
+            $ratings
+        );
     }
 
     /**
@@ -1000,7 +1030,7 @@ class HighPerformanceFilterController extends Controller
      */
     private function getSubcategoryIds(int $parentCategoryId): array
     {
-        return RedisHelper::remember("subcategory_ids_{$parentCategoryId}", 3600, function() use ($parentCategoryId) {
+        return RedisHelper::remember("subcategory_ids_{$parentCategoryId}", 3600, function () use ($parentCategoryId) {
             return Category::where('parent_id', $parentCategoryId)
                 ->where('status', 'active')
                 ->pluck('id')
@@ -1046,7 +1076,7 @@ class HighPerformanceFilterController extends Controller
             if ($category) {
                 if ($category->parent_id === null) {
                     $subcategoryIds = $this->getSubcategoryIds($category->id);
-                    $query->where(function($q) use ($category, $subcategoryIds) {
+                    $query->where(function ($q) use ($category, $subcategoryIds) {
                         $q->where('cat_id', $category->id);
                         if (!empty($subcategoryIds)) {
                             $q->orWhereIn('child_cat_id', $subcategoryIds);
@@ -1078,7 +1108,7 @@ class HighPerformanceFilterController extends Controller
     {
         $slabs = [5, 10, 20, 30, 50];
         $discounts = [];
-        
+
         foreach ($slabs as $slab) {
             $query = DB::table('products')
                 ->selectRaw('COUNT(*) as count')
@@ -1088,7 +1118,7 @@ class HighPerformanceFilterController extends Controller
             if ($category) {
                 if ($category->parent_id === null) {
                     $subcategoryIds = $this->getSubcategoryIds($category->id);
-                    $query->where(function($q) use ($category, $subcategoryIds) {
+                    $query->where(function ($q) use ($category, $subcategoryIds) {
                         $q->where('cat_id', $category->id);
                         if (!empty($subcategoryIds)) {
                             $q->orWhereIn('child_cat_id', $subcategoryIds);
@@ -1118,9 +1148,9 @@ class HighPerformanceFilterController extends Controller
      */
     private function getAvailabilityStats($baseStats): array
     {
-        $inStockCount = $baseStats && isset($baseStats['availability']['in_stock']['count']) 
+        $inStockCount = $baseStats && isset($baseStats['availability']['in_stock']['count'])
             ? (int) $baseStats['availability']['in_stock']['count'] : 0;
-        $outOfStockCount = $baseStats && isset($baseStats['availability']['out_of_stock']['count']) 
+        $outOfStockCount = $baseStats && isset($baseStats['availability']['out_of_stock']['count'])
             ? (int) $baseStats['availability']['out_of_stock']['count'] : 0;
 
         return [
@@ -1234,17 +1264,17 @@ class HighPerformanceFilterController extends Controller
     private function getProductBadges($product): array
     {
         $badges = [];
-        
+
         if ($product->discount > 0) {
             $badges[] = ['text' => $product->discount . '% Off', 'class' => 'discount'];
         }
-        
+
         if ($product->stock <= 0) {
             $badges[] = ['text' => 'Sold Out', 'class' => 'sold-out'];
         } elseif ($product->condition === 'new') {
             $badges[] = ['text' => 'New', 'class' => 'new'];
         }
-        
+
         return $badges;
     }
 }
