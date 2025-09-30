@@ -31,6 +31,8 @@ class Kernel extends ConsoleKernel
     {
         // $schedule->command('inspire')->hourly();
         $schedule->command('discounts:sync-status')->everyMinute()->withoutOverlapping();
+        $schedule->command('cache:prune-stale-tags')->daily();
+        $schedule->command('ratings:cache')->dailyAt('02:00');
     }
 
     /**

@@ -148,7 +148,10 @@ class RedisHelper
     public static function ttl(string $key): ?int
     {
         try {
-            $ttl = Redis::ttl($key);
+            $result = Redis::pipeline(function ($pipe) use ($key) {
+                $pipe->ttl($key);
+            });
+            $ttl = $result[0] ?? -1;
             return $ttl >= 0 ? $ttl : null;
         } catch (\Exception $e) {
             Log::error("Redis TTL error for key {$key}: " . $e->getMessage());
@@ -273,7 +276,7 @@ class RedisHelper
     /**
      * Deserialize data with compression handling
      */
-    private static function deserializeData(string $redisData): mixed
+    public static function deserializeData(string $redisData): mixed
     {
         // Check if data is compressed
         if (str_starts_with($redisData, self::COMPRESSION_PREFIX)) {
@@ -303,26 +306,24 @@ class RedisHelper
                 return [];
             }
 
-            $results = Redis::mget($keys);
-            $data = [];
+            $results = [];
+            $responses = Redis::pipeline(function ($pipe) use ($keys) {
+                foreach ($keys as $key) {
+                    $pipe->get($key);
+                }
+            });
+
+            Log::debug('RedisHelper::mget raw response', [
+                'keys' => $keys,
+                'responses' => $responses
+            ]);
 
             foreach ($keys as $index => $key) {
-                $redisData = $results[$index] ?? null;
-
-                if ($redisData === null) {
-                    $data[$key] = null;
-                    continue;
-                }
-
-                // Handle chunked data
-                if (str_starts_with($redisData, self::CHUNKED_PREFIX)) {
-                    $data[$key] = self::getChunkedData($key);
-                } else {
-                    $data[$key] = self::deserializeData($redisData);
-                }
+                $redisData = $responses[$index] ?? null;
+                $results[$key] = $redisData ? self::deserializeData($redisData) : null;
             }
 
-            return $data;
+            return $results;
         } catch (\Exception $e) {
             Log::error("Redis mget error: " . $e->getMessage());
             return array_fill_keys($keys, null);
@@ -392,14 +393,12 @@ class RedisHelper
                 return $cached;
             }
 
-            // Execute callback and cache result
             $value = $callback();
             self::put($key, $value, $ttl);
 
             return $value;
         } catch (\Exception $e) {
             Log::error("Redis REMEMBER error for key {$key}: " . $e->getMessage());
-            // If Redis fails, just execute the callback
             return $callback();
         }
     }
@@ -415,13 +414,17 @@ class RedisHelper
             }
 
             $allKeysToDelete = [];
+            $responses = Redis::pipeline(function ($pipe) use ($keys) {
+                foreach ($keys as $key) {
+                    $pipe->get($key);
+                }
+            });
 
-            foreach ($keys as $key) {
-                $redisData = Redis::get($key);
+            foreach ($keys as $index => $key) {
+                $redisData = $responses[$index] ?? null;
                 if ($redisData && str_starts_with($redisData, self::CHUNKED_PREFIX)) {
                     $metadataJson = substr($redisData, strlen(self::CHUNKED_PREFIX));
                     $metadata = json_decode($metadataJson, true);
-
                     if ($metadata && isset($metadata['chunk_count'])) {
                         $allKeysToDelete[] = $key;
                         for ($i = 0; $i < $metadata['chunk_count']; $i++) {
@@ -435,7 +438,13 @@ class RedisHelper
                 }
             }
 
-            return Redis::del($allKeysToDelete) > 0;
+            if (!empty($allKeysToDelete)) {
+                return Redis::pipeline(function ($pipe) use ($allKeysToDelete) {
+                    $pipe->del($allKeysToDelete);
+                })[0] > 0;
+            }
+
+            return true;
         } catch (\Exception $e) {
             Log::error("Redis forgetMany error: " . $e->getMessage());
             return false;
@@ -453,8 +462,41 @@ class RedisHelper
             }
 
             $success = true;
-            foreach ($data as $key => $value) {
-                if (!self::put($key, $value, $ttl)) {
+            $chunkedKeys = [];
+            Redis::pipeline(function ($pipe) use ($data, $ttl, &$success, &$chunkedKeys) {
+                foreach ($data as $key => $value) {
+                    try {
+                        $serialized = serialize($value);
+                        $dataSize = strlen($serialized);
+
+                        if ($dataSize > self::MAX_DATA_SIZE) {
+                            $chunkedKeys[] = $key;
+                            continue; // Handle chunked data separately
+                        }
+
+                        if ($dataSize > self::COMPRESSION_THRESHOLD) {
+                            $compressed = gzcompress($serialized, 6);
+                            if ($compressed === false) {
+                                Log::warning("Failed to compress data for key: {$key}");
+                                $success = false;
+                                continue;
+                            }
+                            $finalData = self::COMPRESSION_PREFIX . base64_encode($compressed);
+                        } else {
+                            $finalData = $serialized;
+                        }
+
+                        $pipe->set($key, $finalData, 'EX', $ttl);
+                    } catch (\Exception $e) {
+                        Log::error("Redis mset put error for key {$key}: " . $e->getMessage());
+                        $success = false;
+                    }
+                }
+            });
+
+            // Handle chunked data separately
+            foreach ($chunkedKeys as $key) {
+                if (!self::putChunkedData($key, serialize($data[$key]), $ttl)) {
                     $success = false;
                 }
             }
@@ -472,7 +514,10 @@ class RedisHelper
     public static function exists(string $key): bool
     {
         try {
-            return Redis::exists($key) > 0;
+            $result = Redis::pipeline(function ($pipe) use ($key) {
+                $pipe->exists($key);
+            });
+            return ($result[0] ?? 0) > 0;
         } catch (\Exception $e) {
             Log::error("Redis exists error for key {$key}: " . $e->getMessage());
             return false;

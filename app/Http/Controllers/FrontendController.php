@@ -34,6 +34,7 @@ class FrontendController extends Controller
     private const RECENT_PRODUCTS_CACHE_PREFIX = 'cache:recent_products:';
     private const HOMEPAGE_CACHE_PREFIX = 'cache:homepage:';
     private const PRODUCT_GRIDS_CACHE_PREFIX = 'cache:product_grids:';
+    private const CACHE_TTL = 3600; // Default cache TTL in seconds
     private static ?array $ttlConfig = null;
 
     protected $recentProductService;
@@ -1248,6 +1249,9 @@ class FrontendController extends Controller
         ]);
     }
 
+    /**
+     * Display products for a subcategory
+     */
     public function productSubCat(Request $request, $encryptedPath)
     {
         try {
@@ -1275,29 +1279,43 @@ class FrontendController extends Controller
                 $currentCategory = $child;
             }
 
-            $productQuery = Product::with(['reviews', 'discounts', 'brand'])
-                ->where('status', 'active');
-
             $descendantIds = $this->getDescendantIds($currentCategory);
-            $productQuery->where(function ($query) use ($descendantIds) {
-                $query->whereIn('cat_id', $descendantIds)
-                    ->orWhereIn('child_cat_id', $descendantIds);
-            });
+            $cacheKey = 'product_count_' . md5(serialize([
+                'category' => $currentCategory->id,
+                'descendant_ids' => $descendantIds,
+                'filters' => $request->except(['page', '_token'])
+            ]));
 
-            $this->applyFiltersToQuery($productQuery, $request);
-            $totalProducts = $productQuery->count();
-
-            $perPage = $request->input('show', 12);
-            $products = $productQuery->paginate($perPage);
-            $products->setPath("/product-cat/" . $encryptedPath);
-            $products->appends($request->except(['page', '_token']));
-
-            $maxPrice = Product::where('status', 'active')
+            $productQuery = Product::with(['reviews', 'discounts', 'brand'])
+                ->where('status', 'active')
                 ->where(function ($query) use ($descendantIds) {
                     $query->whereIn('cat_id', $descendantIds)
                         ->orWhereIn('child_cat_id', $descendantIds);
-                })
-                ->max('price') ?? 1000;
+                });
+
+            $this->applyFiltersToQuery($productQuery, $request);
+
+            // Get total count and paginated results in one go
+            $perPage = $request->input('show', 12);
+            $products = RedisHelper::remember($cacheKey . '_results_' . $request->input('page', 1), self::CACHE_TTL, function () use ($productQuery, $perPage, $request, $encryptedPath) {
+                $products = $productQuery->paginate($perPage);
+                $products->setPath("/product-cat/" . $encryptedPath);
+                $products->appends($request->except(['page', '_token']));
+                return $products;
+            });
+
+            $totalProducts = RedisHelper::remember($cacheKey, self::CACHE_TTL, function () use ($productQuery) {
+                return $productQuery->count();
+            });
+
+            $maxPrice = RedisHelper::remember($cacheKey . '_max_price', self::CACHE_TTL, function () use ($descendantIds) {
+                return Product::where('status', 'active')
+                    ->where(function ($query) use ($descendantIds) {
+                        $query->whereIn('cat_id', $descendantIds)
+                            ->orWhereIn('child_cat_id', $descendantIds);
+                    })
+                    ->max('price') ?? 1000;
+            });
 
             $recentProducts = $this->recentProductService->getRecentProducts();
 
@@ -1325,6 +1343,17 @@ class FrontendController extends Controller
                 'sortBy' => $request->input('sortBy', 'latest'),
                 'show' => $request->input('show', 12),
             ];
+
+            if (config('app.debug')) {
+                Log::debug('productSubCat: Processed request', [
+                    'category_id' => $currentCategory->id,
+                    'descendant_ids' => $descendantIds,
+                    'total_products' => $totalProducts,
+                    'filters' => $appliedFilters,
+                    'sql' => $productQuery->toSql(),
+                    'bindings' => $productQuery->getBindings()
+                ]);
+            }
 
             return view('frontend.pages.product-grids', [
                 'products' => $products,
