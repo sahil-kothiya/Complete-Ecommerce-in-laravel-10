@@ -4,7 +4,7 @@
     data-product-brand="{{ $product->brand->slug ?? '' }}"
     data-product-price="{{ $product->price }}"
     data-product-discount="{{ $product->discount }}"
-    data-product-rating="{{ $product->rating ?? 0 }}">
+    data-product-rating="{{ $product->rating_average ?? 0 }}">
     <div class="card h-100 border-0 d-flex flex-column product-card shadow-sm rounded">
         <div class="position-relative bg-light" style="aspect-ratio: 1 / 1;">
             <div class="slider-wrapper w-100 h-100" data-slider>
@@ -66,11 +66,11 @@
             @endif
 
             <!-- Rating Display -->
-            @if($product->rating > 0)
+            @if($product->rating_average > 0)
             <div class="mb-1">
                 <small class="text-warning">
                     @for($i = 1; $i <= 5; $i++)
-                        <i class="fa fa-star{{ $i <= $product->rating ? '' : '-o' }}"></i>
+                        <i class="fa fa-star{{ $i <= $product->rating_average  ? '' : '-o' }}"></i>
                         @endfor
                         <span class="text-muted">({{ $product->rating_count ?? 0 }})</span>
                 </small>

@@ -68,6 +68,29 @@ class Helper
         }
     }
 
+    public static function getCategoryTree()
+    {
+        // Load once — no recursive queries
+        $categories = Category::where('status', 'active')
+            ->orderBy('parent_id')
+            ->orderBy('title')
+            ->get();
+
+        // Group by parent_id
+        $grouped = $categories->groupBy('parent_id');
+
+        // Recursive builder
+        $buildTree = function ($parentId) use (&$buildTree, $grouped) {
+            return ($grouped[$parentId] ?? collect())->map(function ($category) use (&$buildTree) {
+                $category->children = $buildTree($category->id);
+                return $category;
+            });
+        };
+
+        // Root categories (parent_id = null)
+        return $buildTree(null);
+    }
+
     public static function productCategoryList($option = 'all')
     {
         if ($option = 'all') {

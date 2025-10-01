@@ -183,6 +183,36 @@ class Product extends Model
         return $this->stock > 0;
     }
 
+    // In Product.php model
+
+    // Accessor for rating average
+    public function getRatingAverageAttribute()
+    {
+        $rating = Cache::remember(
+            "product_rating_avg_{$this->id}",
+            3600,
+            function () {
+                return $this->reviews()
+                    ->selectRaw('AVG(CAST(rate AS DECIMAL(3,2))) as avg_rating')
+                    ->value('avg_rating');
+            }
+        );
+
+        return $rating ? round($rating, 1) : 0;
+    }
+
+    // Accessor for rating count
+    public function getRatingCountAttribute()
+    {
+        return Cache::remember(
+            "product_rating_count_{$this->id}",
+            3600,
+            function () {
+                return $this->reviews()->count();
+            }
+        );
+    }
+
     // Cache rating for performance
     public function getRatingAttribute()
     {

@@ -1,9 +1,8 @@
 @php
-function renderCategory($category, $parentSlug = '', $visited = [], $depth = 0) {
-    if (in_array($category->id, $visited) || $depth >= 10) {
+function renderCategory($category, $parentSlug = '', $depth = 0) {
+    if ($depth >= 10) {
         return '';
     }
-    $visited[] = $category->id;
     $path = $parentSlug ? $parentSlug . '/' . $category->slug : $category->slug;
     $encryptedPath = \App\Helpers\UrlEncryptor::encodePath($path);
     $hasChildren = $category->children && $category->children->count() > 0;
@@ -19,20 +18,22 @@ function renderCategory($category, $parentSlug = '', $visited = [], $depth = 0) 
     if ($hasChildren) {
         $output .= '<ul class="dropdown sub-dropdown border-0 shadow">';
         foreach ($category->children as $child) {
-            $output .= renderCategory($child, $path, $visited, $depth + 1);
+            $output .= renderCategory($child, $path, $depth + 1);
         }
         $output .= '</ul>';
     }
     $output .= '</li>';
     return $output;
 }
-$categories = Helper::getAllCategory();
+
+$categories = Helper::getCategoryTree();
 @endphp
+
 <li>
     <a class="nav-link dropdown-toggle" href="#" tabindex="11">Category</a>
     <ul class="dropdown border-0 shadow">
         @foreach($categories as $category)
-            {!! renderCategory($category, '', [], 0) !!}
+            {!! renderCategory($category, '', 0) !!}
         @endforeach
     </ul>
 </li>

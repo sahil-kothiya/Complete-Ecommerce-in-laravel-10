@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Category;
 use App\Models\Brand;
 use Illuminate\Support\Facades\Redis;
-use Illuminate\Support\Facades\Cache;
 
 class HighPerformanceFilterController extends Controller
 {
@@ -23,7 +22,7 @@ class HighPerformanceFilterController extends Controller
     {
         $startTime = microtime(true);
 
-        // try {
+        try {
             set_time_limit(self::MAX_EXECUTION_TIME);
 
             $categoryContext = $this->resolveCategoryContext($request, $path);
@@ -60,16 +59,17 @@ class HighPerformanceFilterController extends Controller
                 ]
             ], 200, ['Cache-Control' => 'public, max-age=' . self::PRODUCTS_CACHE_TTL]);
 
-        // } catch (\Exception $e) {
-        //     Log::error('Filter error: ' . $e->getMessage(), [
-        //         'trace' => $e->getTraceAsString()
-        //     ]);
+        } catch (\Exception $e) {
+            Log::error('Filter error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
 
-        //     return response()->json([
-        //         'success' => false,
-        //         'message' => 'Failed to load products'
-        //     ], 500);
-        // }
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load products',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
     }
 
     private function generateCacheKeys($category, array $filters, Request $request): array
@@ -79,10 +79,10 @@ class HighPerformanceFilterController extends Controller
         $page = $request->input('page', 1);
 
         return [
-            'filters' => "filters_v5:{$catKey}:{$filterHash}",
-            'products' => "products_v5:{$catKey}:{$filterHash}:{$page}",
-            'stats' => "stats_v5:{$catKey}:{$filterHash}",
-            'subcategories' => $category ? "subcategories_v5:{$category->id}" : null,
+            'filters' => "filters_v6:{$catKey}:{$filterHash}",
+            'products' => "products_v6:{$catKey}:{$filterHash}:{$page}",
+            'stats' => "stats_v6:{$catKey}:{$filterHash}",
+            'subcategories' => $category ? "subcategories_v6:{$category->id}" : null,
         ];
     }
 
@@ -129,20 +129,16 @@ class HighPerformanceFilterController extends Controller
      */
     private function getAggregatedStats($category, array $currentFilters): array
     {
-        $cacheKey = 'agg_stats_v5_' . md5(serialize([$category?->id, $currentFilters]));
+        $cacheKey = 'agg_stats_v6_' . md5(serialize([$category?->id, $currentFilters]));
         
-        return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($category, $currentFilters) {
+        return RedisHelper::remember($cacheKey, self::CACHE_TTL, function () use ($category, $currentFilters) {
             // Build base query with all filters except those being aggregated
             $baseQuery = $this->buildBaseStatsQuery($category, $currentFilters);
             
-            // Get the SQL and bindings from the base query
-            $baseSql = $baseQuery->toSql();
-            $bindings = $baseQuery->getBindings();
-            
-            // Single query with multiple CTEs - Fixed syntax
+            // Single monster query with multiple CTEs
             $sql = "
                 WITH filtered_products AS (
-                    {$baseSql}
+                    {$baseQuery->toSql()}
                 ),
                 price_stats AS (
                     SELECT 
@@ -196,7 +192,7 @@ class HighPerformanceFilterController extends Controller
                     ) as stats
             ";
 
-            $result = DB::selectOne($sql, $bindings);
+            $result = DB::selectOne($sql, $baseQuery->getBindings());
             $stats = json_decode($result->stats, true);
 
             return $this->formatAggregatedStats($stats, $currentFilters);
@@ -252,7 +248,8 @@ class HighPerformanceFilterController extends Controller
     }
 
     /**
-     * OPTIMIZED: Single query with joins for all product data
+     * FIXED: Optimized query with proper image aggregation
+     * Solution: Use ROW_NUMBER() window function to get ordered images, then aggregate
      */
     private function getOptimizedFilteredProducts($category, array $currentFilters, Request $request)
     {
@@ -261,26 +258,36 @@ class HighPerformanceFilterController extends Controller
         $offset = ($page - 1) * $perPage;
         $sortBy = $currentFilters['sortBy'] ?? 'latest';
 
-        // Single query with all joins - Fixed ARRAY_AGG issue
+        // Solution 1: Subquery approach with lateral join for images
         $query = DB::table('products as p')
             ->select([
-                'p.id', 'p.title', 'p.slug', 'p.price', 'p.discount', 
-                'p.stock', 'p.condition', 'p.created_at',
-                'b.title as brand_title', 'b.slug as brand_slug',
-                'prc.average_rating', 'prc.total_reviews',
-                // Fixed: Include sort_order in DISTINCT or use different approach
-                DB::raw('ARRAY_AGG(DISTINCT CONCAT(pi.sort_order, \':\', pi.image_path)) FILTER (WHERE pi.image_path IS NOT NULL) as images')
+                'p.id', 
+                'p.title', 
+                'p.slug', 
+                'p.price', 
+                'p.discount', 
+                'p.stock', 
+                'p.condition', 
+                'p.created_at',
+                'b.title as brand_title', 
+                'b.slug as brand_slug',
+                'prc.average_rating', 
+                'prc.total_reviews',
+                // Fixed: Use subquery to get ordered images as JSON array
+                DB::raw("(
+                    SELECT json_agg(pi2.image_path ORDER BY pi2.sort_order)
+                    FROM (
+                        SELECT image_path, sort_order
+                        FROM product_images
+                        WHERE product_id = p.id
+                        ORDER BY sort_order
+                        LIMIT 3
+                    ) pi2
+                ) as images")
             ])
             ->leftJoin('brands as b', 'p.brand_id', '=', 'b.id')
             ->leftJoin('product_ratings_cache as prc', 'p.id', '=', 'prc.product_id')
-            ->leftJoin('product_images as pi', function($join) {
-                $join->on('p.id', '=', 'pi.product_id')
-                     ->whereRaw('pi.sort_order <= 3'); // Limit to 3 images per product
-            })
-            ->where('p.status', 'active')
-            ->groupBy('p.id', 'p.title', 'p.slug', 'p.price', 'p.discount', 
-                     'p.stock', 'p.condition', 'p.created_at', 
-                     'b.title', 'b.slug', 'prc.average_rating', 'prc.total_reviews');
+            ->where('p.status', 'active');
 
         // Apply filters
         if ($category) {
@@ -297,6 +304,92 @@ class HighPerformanceFilterController extends Controller
 
         return [
             'products' => $this->transformProductsOptimized($products),
+            'pagination' => [
+                'current_page' => $page,
+                'last_page' => max(1, ceil($totalCount / $perPage)),
+                'total' => $totalCount,
+                'per_page' => $perPage,
+                'from' => $offset + 1,
+                'to' => min($offset + count($products), $totalCount)
+            ],
+            'total' => $totalCount
+        ];
+    }
+
+    /**
+     * Alternative solution using separate query for images (more compatible)
+     */
+    private function getOptimizedFilteredProductsAlternative($category, array $currentFilters, Request $request)
+    {
+        $perPage = min((int) $request->input('show', 12), 60);
+        $page = max(1, (int) $request->input('page', 1));
+        $offset = ($page - 1) * $perPage;
+        $sortBy = $currentFilters['sortBy'] ?? 'latest';
+
+        // Main product query without images
+        $query = DB::table('products as p')
+            ->select([
+                'p.id', 
+                'p.title', 
+                'p.slug', 
+                'p.price', 
+                'p.discount', 
+                'p.stock', 
+                'p.condition', 
+                'p.created_at',
+                'b.title as brand_title', 
+                'b.slug as brand_slug',
+                'prc.average_rating', 
+                'prc.total_reviews'
+            ])
+            ->leftJoin('brands as b', 'p.brand_id', '=', 'b.id')
+            ->leftJoin('product_ratings_cache as prc', 'p.id', '=', 'prc.product_id')
+            ->where('p.status', 'active');
+
+        // Apply filters
+        if ($category) {
+            $this->applyCategoryFilter($query, $category);
+        }
+        $this->applyFiltersToQuery($query, $currentFilters);
+        $this->applySorting($query, $sortBy);
+
+        // Execute with offset/limit
+        $products = $query->offset($offset)->limit($perPage)->get();
+
+        // Get product IDs
+        $productIds = $products->pluck('id')->toArray();
+
+        // Fetch images separately if products exist
+        $imagesMap = [];
+        if (!empty($productIds)) {
+            $images = DB::table('product_images')
+                ->whereIn('product_id', $productIds)
+                ->orderBy('product_id')
+                ->orderBy('sort_order')
+                ->select(['product_id', 'image_path', 'sort_order'])
+                ->get();
+
+            // Group images by product_id
+            foreach ($images as $image) {
+                if (!isset($imagesMap[$image->product_id])) {
+                    $imagesMap[$image->product_id] = [];
+                }
+                if (count($imagesMap[$image->product_id]) < 3) {
+                    $imagesMap[$image->product_id][] = $image->image_path;
+                }
+            }
+        }
+
+        // Attach images to products
+        foreach ($products as $product) {
+            $product->images = $imagesMap[$product->id] ?? [];
+        }
+
+        // Get count estimate
+        $totalCount = $this->getCountEstimate($category, $currentFilters);
+
+        return [
+            'products' => $this->transformProductsOptimizedWithImages($products),
             'pagination' => [
                 'current_page' => $page,
                 'last_page' => max(1, ceil($totalCount / $perPage)),
@@ -365,7 +458,7 @@ class HighPerformanceFilterController extends Controller
             });
         }
 
-        // Rating filter (already joined in main query)
+        // Rating filter
         if (!empty($filters['ratings'])) {
             $minRating = min(array_map('intval', $filters['ratings']));
             $query->where('prc.average_rating', '>=', $minRating);
@@ -395,6 +488,9 @@ class HighPerformanceFilterController extends Controller
         }
     }
 
+    /**
+     * Transform products with JSON decoded images
+     */
     private function transformProductsOptimized($products): array
     {
         return $products->map(function ($p) {
@@ -402,40 +498,60 @@ class HighPerformanceFilterController extends Controller
                 ? $p->price * (1 - $p->discount / 100) 
                 : $p->price;
 
-            // Parse images from the aggregated string (Postgres ARRAY_AGG returns string if not cast)
+            // Decode JSON images or use default
             $images = [];
-            if (!empty($p->images)) {
-                if (is_string($p->images)) {
-                    // Remove curly braces if present and split
-                    $imgArr = explode(',', trim($p->images, '{}'));
-                } else {
-                    $imgArr = (array) $p->images;
-                }
-                
-                $imageData = [];
-                foreach ($imgArr as $img) {
-                    if (empty($img)) continue;
-                    
-                    // Format: sort_order:image_path
-                    $parts = explode(':', $img, 2);
-                    if (count($parts) === 2) {
-                        $sortOrder = (int) $parts[0];
-                        $path = trim($parts[1]);
-                        if ($path) {
-                            $imageData[] = [
-                                'sort_order' => $sortOrder,
-                                'path' => $path
-                            ];
-                        }
-                    }
-                }
-                
-                // Sort imageData by sort_order and extract paths
-                if (!empty($imageData)) {
-                    usort($imageData, fn($a, $b) => $a['sort_order'] <=> $b['sort_order']);
-                    $images = array_column($imageData, 'path');
-                }
+            if ($p->images) {
+                $decoded = is_string($p->images) ? json_decode($p->images, true) : $p->images;
+                $images = is_array($decoded) ? array_filter($decoded) : [];
             }
+            if (empty($images)) {
+                $images = ['/images/default-placeholder.jpg'];
+            }
+
+            return [
+                'id' => $p->id,
+                'title' => $p->title,
+                'slug' => $p->slug,
+                'price' => [
+                    'original' => (float) $p->price,
+                    'final' => round($finalPrice, 2),
+                    'currency' => '$',
+                    'discount_percentage' => (int) $p->discount
+                ],
+                'stock' => (int) $p->stock,
+                'brand' => $p->brand_title ? [
+                    'title' => $p->brand_title,
+                    'slug' => $p->brand_slug
+                ] : null,
+                'images' => $images,
+                'rating' => [
+                    'average' => (float) ($p->average_rating ?? 0),
+                    'total' => (int) ($p->total_reviews ?? 0),
+                    'stars' => round($p->average_rating ?? 0)
+                ],
+                'badges' => $this->getProductBadges($p),
+                'urls' => [
+                    'detail' => "/product-detail/{$p->slug}",
+                    'add_to_cart' => "/cart/add/{$p->id}",
+                    'add_to_wishlist' => "/wishlist/add/{$p->id}"
+                ]
+            ];
+        })->toArray();
+    }
+
+    /**
+     * Transform products with array images (alternative method)
+     */
+    private function transformProductsOptimizedWithImages($products): array
+    {
+        return $products->map(function ($p) {
+            $finalPrice = $p->discount > 0 
+                ? $p->price * (1 - $p->discount / 100) 
+                : $p->price;
+
+            $images = !empty($p->images) && is_array($p->images) 
+                ? $p->images 
+                : ['/images/default-placeholder.jpg'];
 
             return [
                 'id' => $p->id,
@@ -470,11 +586,9 @@ class HighPerformanceFilterController extends Controller
 
     private function getCountEstimate($category, array $filters): int
     {
-        $cacheKey = 'count_v5_' . md5(serialize([$category?->id, $filters]));
+        $cacheKey = 'count_v6_' . md5(serialize([$category?->id, $filters]));
         
-        // Use Laravel's Cache facade instead of RedisHelper::remember
-        return Cache::remember($cacheKey, 300, function () use ($category, $filters) {
-            // For large datasets, use pg_class estimate
+        return RedisHelper::remember($cacheKey, 300, function () use ($category, $filters) {
             if ($this->shouldUseEstimate($filters)) {
                 $estimate = DB::selectOne("
                     SELECT reltuples::BIGINT as estimate 
@@ -485,7 +599,6 @@ class HighPerformanceFilterController extends Controller
                 return max(1, (int) ($estimate * $this->getFilterFactor($category, $filters)));
             }
 
-            // For filtered queries, do actual count
             $query = DB::table('products as p')->where('p.status', 'active');
             if ($category) {
                 $this->applyCategoryFilter($query, $category);
@@ -498,7 +611,6 @@ class HighPerformanceFilterController extends Controller
 
     private function shouldUseEstimate(array $filters): bool
     {
-        // Use estimate only when no filters applied
         return empty(array_filter($filters, fn($v) => !empty($v) && $v !== 'latest'));
     }
 
@@ -513,12 +625,10 @@ class HighPerformanceFilterController extends Controller
         return $factor;
     }
 
-    // Helper methods
     private function getBrandIdsBySlug(array $slugs): array
     {
-        $cacheKey = 'brand_ids_v5_' . md5(implode(',', $slugs));
-        // Use Laravel's Cache facade instead of RedisHelper::remember
-        return Cache::remember($cacheKey, 3600, function () use ($slugs) {
+        $cacheKey = 'brand_ids_v6_' . md5(implode(',', $slugs));
+        return RedisHelper::remember($cacheKey, 3600, function () use ($slugs) {
             return Brand::whereIn('slug', $slugs)
                 ->where('status', 'active')
                 ->pluck('id')
@@ -528,8 +638,7 @@ class HighPerformanceFilterController extends Controller
 
     private function getSubcategoryIds(int $parentId): array
     {
-        // Use Laravel's Cache facade instead of RedisHelper::remember
-        return Cache::remember("subcats_v5_{$parentId}", 3600, function () use ($parentId) {
+        return RedisHelper::remember("subcats_v6_{$parentId}", 3600, function () use ($parentId) {
             return Category::where('parent_id', $parentId)
                 ->where('status', 'active')
                 ->pluck('id')
