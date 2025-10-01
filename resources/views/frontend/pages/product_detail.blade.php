@@ -424,7 +424,9 @@
 
 @include('frontend.partials.similar-products-section')
 
-@include('frontend.partials.recently-viewed-section')
+@if(isset($recent_products) && count($recent_products) > 0)
+	@include('frontend.partials.recently-viewed-section')
+@endif
 
 @endsection
 

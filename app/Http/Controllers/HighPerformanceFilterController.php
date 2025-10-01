@@ -43,7 +43,9 @@ class HighPerformanceFilterController extends Controller
 
             // Build or retrieve product data
             $productData = $cachedData['products'] ?? $this->getOptimizedFilteredProducts($categoryContext, $currentFilters, $request);
-            if (!isset($cachedData['products'])) {
+            $isSimilar = $productData['is_similar'] ?? false;
+            $message = $isSimilar ? 'No products found for your selected filters. Showing similar products.' : null;
+            if (!isset($cachedData['products']) && !$isSimilar) {
                 RedisHelper::put($cacheKeys['products'], $productData, self::PRODUCTS_CACHE_TTL);
             }
 
@@ -56,7 +58,9 @@ class HighPerformanceFilterController extends Controller
                     'total_products' => $productData['total'],
                     'current_filters' => $currentFilters,
                     'processing_time_ms' => round((microtime(true) - $startTime) * 1000, 2),
-                    'cache_hit' => isset($cachedData['filters'], $cachedData['products'])
+                    'cache_hit' => isset($cachedData['filters'], $cachedData['products']),
+                    'is_similar' => $isSimilar,
+                    'message' => $message
                 ]
             ], 200, ['Cache-Control' => 'public, max-age=' . self::PRODUCTS_CACHE_TTL]);
 
@@ -261,14 +265,57 @@ class HighPerformanceFilterController extends Controller
         $offset = ($page - 1) * $perPage;
         $sortBy = $currentFilters['sortBy'] ?? 'latest';
 
-        // Single query with all joins - Fixed ARRAY_AGG issue
+        // Get original total count
+        $totalCount = $this->getCountEstimate($category, $currentFilters);
+        $isSimilar = false;
+
+        if ($totalCount == 0) {
+            // No products found, use similar filters: only category and sortBy
+            $similarFilters = ['sortBy' => $sortBy];
+            $totalCount = $this->getCountEstimate($category, $similarFilters);
+            $isSimilar = true;
+
+            // Build query with similar filters
+            $query = $this->buildProductQuery($category);
+            $this->applyFiltersToQuery($query, $similarFilters);
+            $this->applySorting($query, $sortBy);
+
+            // Always show page 1 for similar products
+            $page = 1;
+            $offset = 0;
+            $products = $query->offset($offset)->limit($perPage)->get();
+        } else {
+            // Normal filtered products
+            $query = $this->buildProductQuery($category);
+            $this->applyFiltersToQuery($query, $currentFilters);
+            $this->applySorting($query, $sortBy);
+
+            $products = $query->offset($offset)->limit($perPage)->get();
+        }
+
+        return [
+            'products' => $this->transformProductsOptimized($products),
+            'pagination' => [
+                'current_page' => $page,
+                'last_page' => max(1, ceil($totalCount / $perPage)),
+                'total' => $totalCount,
+                'per_page' => $perPage,
+                'from' => $offset + 1,
+                'to' => min($offset + count($products), $totalCount)
+            ],
+            'total' => $totalCount,
+            'is_similar' => $isSimilar
+        ];
+    }
+
+    private function buildProductQuery($category)
+    {
         $query = DB::table('products as p')
             ->select([
                 'p.id', 'p.title', 'p.slug', 'p.price', 'p.discount', 
                 'p.stock', 'p.condition', 'p.created_at',
                 'b.title as brand_title', 'b.slug as brand_slug',
                 'prc.average_rating', 'prc.total_reviews',
-                // Fixed: Include sort_order in DISTINCT or use different approach
                 DB::raw('ARRAY_AGG(DISTINCT CONCAT(pi.sort_order, \':\', pi.image_path)) FILTER (WHERE pi.image_path IS NOT NULL) as images')
             ])
             ->leftJoin('brands as b', 'p.brand_id', '=', 'b.id')
@@ -282,31 +329,11 @@ class HighPerformanceFilterController extends Controller
                      'p.stock', 'p.condition', 'p.created_at', 
                      'b.title', 'b.slug', 'prc.average_rating', 'prc.total_reviews');
 
-        // Apply filters
         if ($category) {
             $this->applyCategoryFilter($query, $category);
         }
-        $this->applyFiltersToQuery($query, $currentFilters);
-        $this->applySorting($query, $sortBy);
 
-        // Execute with offset/limit
-        $products = $query->offset($offset)->limit($perPage)->get();
-
-        // Get count estimate
-        $totalCount = $this->getCountEstimate($category, $currentFilters);
-
-        return [
-            'products' => $this->transformProductsOptimized($products),
-            'pagination' => [
-                'current_page' => $page,
-                'last_page' => max(1, ceil($totalCount / $perPage)),
-                'total' => $totalCount,
-                'per_page' => $perPage,
-                'from' => $offset + 1,
-                'to' => min($offset + count($products), $totalCount)
-            ],
-            'total' => $totalCount
-        ];
+        return $query;
     }
 
     private function applyCategoryFilter($query, $category)

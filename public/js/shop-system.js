@@ -394,9 +394,30 @@
                 if (!c.ok) throw Error(`Server returned ${c.status}`);
                 let o = await c.json();
                 if (o.success && s) {
+                    let html = '';
+                    if (o.meta?.is_similar) {
+                        html += `
+                            <div class="row mb-4">
+                                <div class="col-12">
+                                    <div class="alert alert-info d-flex align-items-center">
+                                        <i class="fa fa-info-circle me-2"></i>
+                                        ${o.meta.message || 'No products match your filters. Showing similar products.'}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        // Update URL to page 1
+                        let url = new URL(window.location);
+                        let params = new URLSearchParams(url.search);
+                        params.set('page', '1');
+                        let newSearch = params.toString();
+                        let newUrl = url.pathname + (newSearch ? '?' + newSearch : '');
+                        history.replaceState({ path: newUrl }, '', newUrl);
+                    }
                     let u = o.products.map((e) => this.renderProductCard(e)).join(""),
                         p = this.renderPagination(o.pagination || {});
                     (s.innerHTML = `
+                        ${html}
                         <div class="product-grid-container">
                             <div class="product-grid-row">
                                 ${u}
