@@ -393,20 +393,19 @@
                 let c = await fetch(`${n}?${l.toString()}`, { method: "GET", signal: this.abortController.signal, headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" } });
                 if (!c.ok) throw Error(`Server returned ${c.status}`);
                 let o = await c.json();
-                if (o.success && s) {
+                if (o.ok && s) {
                     let html = '';
-                    if (o.meta?.is_similar) {
+                    if (o.m?.sim) {
                         html += `
                             <div class="row mb-4">
                                 <div class="col-12">
                                     <div class="alert alert-info d-flex align-items-center">
                                         <i class="fa fa-info-circle me-2"></i>
-                                        ${o.meta.message || 'No products match your filters. Showing similar products.'}
+                                        ${o.m.msg || 'No products match your filters. Showing similar products.'}
                                     </div>
                                 </div>
                             </div>
                         `;
-                        // Update URL to page 1
                         let url = new URL(window.location);
                         let params = new URLSearchParams(url.search);
                         params.set('page', '1');
@@ -414,8 +413,8 @@
                         let newUrl = url.pathname + (newSearch ? '?' + newSearch : '');
                         history.replaceState({ path: newUrl }, '', newUrl);
                     }
-                    let u = o.products.map((e) => this.renderProductCard(e)).join(""),
-                        p = this.renderPagination(o.pagination || {});
+                    let u = o.p.map((e) => this.renderProductCard(e)).join(""),
+                        p = this.renderPagination(o.pg || {});
                     (s.innerHTML = `
                         ${html}
                         <div class="product-grid-container">
@@ -437,12 +436,12 @@
                         ("page" !== t || ("page" === t && "1" !== e)) && g.set(t, e);
                     });
                     let m = `${h.pathname}?${g.toString()}`;
-                    if ((history.replaceState({ path: m }, "", m), o.message && window.Swal && Swal.fire({ icon: "info", title: "Filter Results", text: o.message, timer: 3e3, showConfirmButton: !1 }), o.meta)) {
+                    if ((history.replaceState({ path: m }, "", m), o.m)) {
                         let v = document.getElementById("performance-info");
                         v &&
                             ((v.innerHTML = `
-                                Loaded ${o.meta.total_products} products in ${o.meta.processing_time_ms}ms
-                                ${o.meta.cache_hit ? "(Cache Hit)" : "(Cache Miss)"}
+                                Loaded ${o.m.tot} products in ${o.m.ms}ms
+                                ${o.m.ch ? "(Cache Hit)" : "(Cache Miss)"}
                             `),
                             (v.style.display = "block"));
                     }
@@ -454,52 +453,45 @@
             }
         }
         renderProductCard(e) {
-            e.images && e.images.length > 0 && (e.images[0].startsWith("storage/photos/1/Products/"), e.images[0]);
             let i = "";
             i =
-                e.images && e.images.length > 0
-                    ? e.images
+                e.i && e.i.length > 0
+                    ? e.i
                           .map((t) => {
                               let i = t.startsWith("storage/photos/1/Products/") ? `http://127.0.0.1:8000/${t}` : `http://127.0.0.1:8000/storage/photos/1/Products/${t}`;
-                              return `<img src="${i}" class="slider-image lazy" alt="${e.title}"
+                              return `<img src="${i}" class="slider-image lazy" alt="${e.t}"
                             loading="lazy" width="235" height="235" decoding="async"
                             onerror="this.src='/images/no-image.png'; this.onerror=null;">`;
                           })
                           .join("")
-                    : `
-                    <img src="/images/no-image.png" class="slider-image lazy" alt="${e.title}"
-                         loading="lazy" width="235" height="235" decoding="async">
-                `;
-            let a = e.brand || { title: "", slug: "" },
-                s = e.price?.final ?? e.discounted_price ?? e.price ?? 0,
-                l = e.price?.original ?? e.price ?? 0,
-                r = e.discount || (e.price?.discount_percentage > 0 ? e.price.discount_percentage : 0),
-                n = e.rating || { average: 0, total: 0 },
-                d = e.stock > 0,
+                    : `<img src="/images/no-image.png" class="slider-image lazy" alt="${e.t}"
+                         loading="lazy" width="235" height="235" decoding="async">`;
+            let a = e.b || { t: "", s: "" },
+                s = e.pr?.f ?? e.pr?.o ?? 0,
+                l = e.pr?.o ?? 0,
+                r = e.pr?.d || 0,
+                n = e.r || { a: 0, t: 0 },
+                d = e.st > 0,
                 c = "";
             r > 0
                 ? (c += `<span class="badge badge-primary badge-status badge-cg">${r}% Off</span>`)
-                : "new" === e.condition
-                ? (c += '<span class="badge badge-success badge-status">New</span>')
+                : "new" === e.c
+                ? (c += '<span class="badge badge-cg badge-success badge-status">New</span>')
                 : d || (c += '<span class="badge badge-danger badge-status">Sold Out</span>');
             let o = "";
-            n.average > 0 &&
+            n.a > 0 &&
                 (o = `
                     <div class="mb-1 rating-container">
                         <small class="text-warning">
-                            ${t.generateStars(Math.round(n.average))}
-                            <span class="text-muted rating-count">(${n.total})</span>
+                            ${t.generateStars(Math.round(n.a))}
+                            <span class="text-muted rating-count">(${n.t})</span>
                         </small>
                     </div>
                 `);
             let u = "";
             return `
-                <div class="product-card-container mb-4 isotope-item category-${e.cat_id} px-3"
-                     data-product-id="${e.id}"
-                     data-product-brand="${a.slug}"
-                     data-product-price="${s}"
-                     data-product-discount="${r}"
-                     data-product-rating="${n.average}">
+                <div class="product-card-container mb-4 isotope-item px-3"
+                     data-product-id="${e.id}">
                     <div class="card h-100 border-0 d-flex flex-column product-card shadow-sm rounded">
                         <div class="position-relative product-image-container">
                             <div class="slider-wrapper w-100 h-100" data-slider>
@@ -512,12 +504,12 @@
 
                         <div class="card-body d-flex flex-column px-3 py-2">
                             <h6 class="text-dark text-truncate mb-1">
-                                <a href="/product-detail/${e.slug}" class="text-dark product-title">
-                                    ${t.truncateText(e.title, 50)}
+                                <a href="/product-detail/${e.s}" class="text-dark product-title">
+                                    ${e.t}
                                 </a>
                             </h6>
 
-                            ${a.title ? `<small class="text-muted mb-1 brand-info"><i class="fa fa-tag"></i>${a.title}</small>` : ""}
+                            ${a.t ? `<small class="text-muted mb-1 brand-info"><i class="fa fa-tag"></i>${a.t}</small>` : ""}
 
                             ${o}
 
@@ -562,7 +554,7 @@
             `;
         }
         renderPagination(e) {
-            if (!e || e.total <= e.per_page) return '<div class="row mt-4"><div class="col-12 d-flex justify-content-center"><p class="text-muted text-center">End of results.</p></div></div>';
+            if (!e || e.tot <= e.pp) return '<div class="row mt-4"><div class="col-12 d-flex justify-content-center"><p class="text-muted text-center">End of results.</p></div></div>';
             let t = `
                 <div class="row mt-4">
                     <div class="col-12 d-flex justify-content-center">
@@ -571,24 +563,24 @@
                                 <ul class="pagination">
             `;
             t += `
-                <li class="page-item ${1 === e.current_page ? "disabled" : ""}">
-                    <a class="page-link" href="#" data-page="${e.current_page - 1}">
+                <li class="page-item ${1 === e.cp ? "disabled" : ""}">
+                    <a class="page-link" href="#" data-page="${e.cp - 1}">
                         Previous
                     </a>
                 </li>
             `;
-            let i = Math.max(1, e.current_page - 2),
-                a = Math.min(e.last_page, e.current_page + 2);
+            let i = Math.max(1, e.cp - 2),
+                a = Math.min(e.lp, e.cp + 2);
             for (let s = i; s <= a; s++)
                 t += `
-                    <li class="page-item ${s === e.current_page ? "active" : ""}">
+                    <li class="page-item ${s === e.cp ? "active" : ""}">
                         <a class="page-link" href="#" data-page="${s}">${s}</a>
                     </li>
                 `;
             return (
                 (t += `
-                <li class="page-item ${e.current_page === e.last_page ? "disabled" : ""}">
-                    <a class="page-link" href="#" data-page="${e.current_page + 1}">
+                <li class="page-item ${e.cp === e.lp ? "disabled" : ""}">
+                    <a class="page-link" href="#" data-page="${e.cp + 1}">
                         Next
                     </a>
                 </li>
