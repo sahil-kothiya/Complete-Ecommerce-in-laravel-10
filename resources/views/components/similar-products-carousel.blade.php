@@ -1,6 +1,6 @@
-{{-- Updated resources/views/components/recently-viewed-carousel.blade.php --}}
-<!-- Recently Viewed Section (Flipkart/Amazon Style Carousel) -->
-<div class="recently-viewed-section">
+{{-- resources/views/components/similar-products-carousel.blade.php --}}
+<!-- Related Products Section (Flipkart/Amazon Style Carousel) -->
+<div class="related-carousel-section">
     <div class="container">
         <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap">
             <div>
@@ -38,11 +38,11 @@
         </div>
         <div class="carousel-viewport position-relative">
             <div class="carousel-track flipkart-carousel" id="{{ $carouselId }}">
+                @php $tabindex = $startingTabIndex; @endphp
                 @if($products && $products->count() > 0)
-                    @foreach($products as $index => $product)
+                    @foreach($products as $product)
                         @php
                             $inWishlist = Helper::isProductInWishlist($product->slug);
-                            $tabindex = 47 + $index * 4;
                         @endphp
                         <div class="carousel-item flipkart-card" tabindex="{{ $tabindex }}">
                             <div class="flipkart-card-img-wrap">
@@ -82,6 +82,7 @@
                                 </div>
                             </div>
                         </div>
+                        @php $tabindex++; @endphp
                     @endforeach
                 @else
                     <div class="carousel-item text-center" style="min-width: {{ $itemMinWidth }}; max-width: {{ $itemMaxWidth }}; opacity: 0.7;">
@@ -92,7 +93,7 @@
         </div>
     </div>
 </div>
-<!-- End Recently Viewed Carousel -->
+<!-- End Related Products Carousel -->
 
 @push('styles')
 <link rel="stylesheet" href="{{ asset('css/product-detail.css') }}">

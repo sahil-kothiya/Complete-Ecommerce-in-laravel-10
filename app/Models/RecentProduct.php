@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Helpers\RedisHelper;
 use App\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -73,42 +72,39 @@ class RecentProduct extends Model
     {
         $userId = Auth::id();
         $sessionId = Session::getId();
-        $cacheKey = 'recent_products_' . ($userId ? "user_{$userId}" : "session_{$sessionId}");
 
-        return RedisHelper::remember($cacheKey, 1800, function () use ($userId, $sessionId, $limit) {
-            $query = self::with(['product.images' => function ($query) {
-                    $query->select(['id', 'image_path', 'product_id', 'is_primary'])
-                        ->orderBy('is_primary', 'desc')
-                        ->orderBy('sort_order', 'asc');
-                }])
-                ->where(function ($query) use ($userId, $sessionId) {
-                    if ($userId) {
-                        $query->where('user_id', $userId);
-                    } else {
-                        $query->where('session_id', $sessionId);
-                    }
-                })
-                ->whereHas('product', function ($query) {
-                    $query->where('status', 'active');
-                })
-                ->orderBy('viewed_at', 'desc')
-                ->limit($limit)
-                ->get();
+        $query = self::with(['product.images' => function ($query) {
+                $query->select(['id', 'image_path', 'product_id', 'is_primary'])
+                    ->orderBy('is_primary', 'desc')
+                    ->orderBy('sort_order', 'asc');
+            }])
+            ->where(function ($query) use ($userId, $sessionId) {
+                if ($userId) {
+                    $query->where('user_id', $userId);
+                } else {
+                    $query->where('session_id', $sessionId);
+                }
+            })
+            ->whereHas('product', function ($query) {
+                $query->where('status', 'active');
+            })
+            ->orderBy('viewed_at', 'desc')
+            ->limit($limit)
+            ->get();
 
-            $products = $query->pluck('product');
+        $products = $query->pluck('product');
 
-            if (config('app.debug')) {
-                Log::debug('getRecentProducts: Fetched recent products', [
-                    'user_id' => $userId,
-                    'session_id' => $sessionId,
-                    'limit' => $limit,
-                    'product_ids' => $products->pluck('id')->toArray(),
-                    'count' => $products->count()
-                ]);
-            }
+        if (config('app.debug')) {
+            Log::debug('getRecentProducts: Fetched recent products', [
+                'user_id' => $userId,
+                'session_id' => $sessionId,
+                'limit' => $limit,
+                'product_ids' => $products->pluck('id')->toArray(),
+                'count' => $products->count()
+            ]);
+        }
 
-            return $products;
-        });
+        return $products;
     }
 
     /**

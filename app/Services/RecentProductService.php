@@ -6,7 +6,6 @@ use App\Models\RecentProduct;
 use App\Models\Product;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
-use Illuminate\Support\Facades\Cookie;
 
 class RecentProductService
 {
@@ -26,9 +25,6 @@ class RecentProductService
 
         // Add to database
         RecentProduct::addProduct($productId);
-
-        // Also store in cookie for faster access (optional)
-        $this->addToCookie($productId);
 
         return true;
     }
@@ -66,28 +62,6 @@ class RecentProductService
     }
 
     /**
-     * Store recent products in cookie (for faster access)
-     */
-    private function addToCookie($productId, $maxItems = 10)
-    {
-        $recentProducts = json_decode(Cookie::get('recent_products', '[]'), true);
-        
-        // Remove if already exists
-        $recentProducts = array_filter($recentProducts, function($id) use ($productId) {
-            return $id != $productId;
-        });
-
-        // Add to beginning
-        array_unshift($recentProducts, $productId);
-
-        // Keep only max items
-        $recentProducts = array_slice($recentProducts, 0, $maxItems);
-
-        // Store in cookie for 30 days
-        Cookie::queue('recent_products', json_encode($recentProducts), 60 * 24 * 30);
-    }
-
-    /**
      * Handle user login - merge session data
      */
     public function handleUserLogin($userId)
@@ -111,8 +85,5 @@ class RecentProductService
                 $query->where('session_id', $sessionId);
             }
         })->delete();
-
-        // Clear cookie
-        Cookie::queue('recent_products', '', -1);
     }
 }

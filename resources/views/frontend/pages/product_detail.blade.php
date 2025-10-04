@@ -422,19 +422,29 @@
 </section>
 <!--/ End Shop Single -->
 
-@include('frontend.partials.similar-products-section')
+<x-similar-products-carousel
+	:products="$related_products"
+	title="Similar Products"
+	carousel-id="relatedCarousel"
+	no-products-message="No related products found."
+	starting-tab-index="47"
+	default-background-color="#28a745"
+	default-text-color="white"
+	default-auto-scroll-speed="200"
+	default-scroll-amount="3"
+	default-shimmer="true" />
 
 @if(isset($recent_products) && count($recent_products) > 0)
-    <x-recently-viewed-carousel 
-        :products="$recent_products"
-        title="Recently Viewed Products"
-        carousel-id="customRecentCarousel"
-        no-products-message="No recent views yet!"
-        default-background-color="#ff6b35"
-        default-text-color="white"
-        default-auto-scroll-speed="100"
-        default-scroll-amount="10"
-        default-shimmer="false" />
+	<x-recently-viewed-carousel
+		:products="$recent_products"
+		title="Recently Viewed Products"
+		carousel-id="customRecentCarousel"
+		no-products-message="No recent views yet!"
+		default-background-color="#ff6b35"
+		default-text-color="white"
+		default-auto-scroll-speed="100"
+		default-scroll-amount="10"
+		default-shimmer="false" />    
 @endif
 
 @endsection

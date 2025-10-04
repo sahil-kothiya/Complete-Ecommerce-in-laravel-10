@@ -1,5 +1,5 @@
 <?php
-// app/View/Components/CarouselNavButton.php (Class-based component for reusability)
+// Update to app/View/Components/CarouselNavButton.php (Add carouselId prop for better reusability)
 namespace App\View\Components;
 
 use Illuminate\View\Component;
@@ -19,6 +19,7 @@ class CarouselNavButton extends Component
     public $autoScrollSpeed;
     public $scrollAmount;
     public $shimmerAnimation;
+    public $carouselId; // New prop to specify the target carousel track
 
     public function __construct(
         $id,
@@ -27,13 +28,14 @@ class CarouselNavButton extends Component
         $direction = -1,
         $buttonClass = 'carousel-nav-btn',
         $iconClass = '',
-        $backgroundColor = null, // Default: inherit from CSS
-        $textColor = null, // Default: inherit from CSS
+        $backgroundColor = null,
+        $textColor = null,
         $hoverScale = '1.05',
         $hoverShadow = '0 4px 8px rgba(0, 0, 0, 0.2)',
-        $autoScrollSpeed = 150, // ms between scrolls
-        $scrollAmount = 5, // pixels per scroll step
-        $shimmerAnimation = true // Enable shimmer on auto-scroll
+        $autoScrollSpeed = 150,
+        $scrollAmount = 5,
+        $shimmerAnimation = true,
+        $carouselId = 'recentCarousel' // Default; will be overridden when passed
     ) {
         $this->id = $id;
         $this->ariaLabel = $ariaLabel;
@@ -48,6 +50,7 @@ class CarouselNavButton extends Component
         $this->autoScrollSpeed = $autoScrollSpeed;
         $this->scrollAmount = $scrollAmount;
         $this->shimmerAnimation = $shimmerAnimation;
+        $this->carouselId = $carouselId;
     }
 
     public function render()

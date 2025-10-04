@@ -1,4 +1,4 @@
-{{-- resources/views/components/carousel-nav-button.blade.php --}}
+{{-- Update to resources/views/components/carousel-nav-button.blade.php (Use carouselId in JS) --}}
 <button type="button" 
         class="{{ $buttonClass }}" 
         id="{{ $id }}" 
@@ -52,7 +52,7 @@
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const btn = document.getElementById('{{ $id }}');
-        const track = document.querySelector('#recentCarousel'); // Assuming shared track ID; customize if needed
+        const track = document.getElementById('{{ $carouselId }}');
         const viewport = track?.closest('.carousel-viewport');
 
         let autoScrollInterval = null;
