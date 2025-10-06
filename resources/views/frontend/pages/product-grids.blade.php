@@ -74,7 +74,16 @@
 </form>
 
 @if(isset($recent_products) && count($recent_products) > 0)
-    @include('frontend.partials.recently-viewed-section')
+	<x-recently-viewed-carousel
+		:products="$recent_products"
+		title="Recently Viewed Products"
+		carousel-id="customRecentCarousel"
+		no-products-message="No recent views yet!"
+		default-background-color="#ff6b35"
+		default-text-color="white"
+		default-auto-scroll-speed="100"
+		default-scroll-amount="10"
+		default-shimmer="false" />    
 @endif
 
 @endsection

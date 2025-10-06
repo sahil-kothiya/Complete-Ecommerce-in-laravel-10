@@ -1,5 +1,6 @@
-@section('main-content')
+@extends('backend.layouts.master')
 
+@section('main-content')
 <!-- Main content area for adding a new product -->
 <div class="card">
     <h5 class="card-header">Add Product</h5>
