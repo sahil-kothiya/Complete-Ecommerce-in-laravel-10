@@ -56,6 +56,19 @@
                             </div>
                         </div>
 
+                        <div class="form-group">
+                            <label><input type="checkbox" name="has_variants" id="has_variants" value="1" {{ old('has_variants') ? 'checked' : '' }}> Has Variants?</label>
+                        </div>
+                        <div id="variants-panel" style="display: none;">
+                            <div class="form-group">
+                                <label>Base Price <span class="text-danger">*</span></label>
+                                <input type="number" name="base_price" step="0.01" class="form-control" value="{{ old('base_price') }}" required>
+                            </div>
+                            <div id="type-selections"></div>
+                            <button type="button" id="load-types" class="btn btn-secondary mt-2">Load Types</button>
+                            <div id="variant-preview" class="mt-3"></div>
+                        </div>
+
                         <!-- Product Discount Input -->
                         <div class="col-md-3">
                             <div class="form-group">
@@ -854,6 +867,49 @@
             if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
                 e.preventDefault();
             }
+        });
+    });
+    
+    $('#has_variants').change(function() {
+        $('#variants-panel').toggle(this.checked);
+        if (this.checked) $('#load-types').click();
+    });
+    $('#load-types').click(function() {
+        $.get('{{ route("admin.variant-type.api") }}', function(types) {
+            let html = '<h6>Select Types & Options</h6>';
+            types.forEach(type => {
+                html += `<div class="form-group row">
+                <label class="col-md-3">${type.display_name}</label>
+                <div class="col-md-9"><select class="form-control type-select" data-type-id="${type.id}" multiple>
+                    <option value="">Select Options</option>
+                </select></div>
+            </div>`;
+            });
+            $('#type-selections').html(html);
+            $('.type-select').each(function() {
+                const typeId = $(this).data('type-id');
+                $.get(`/admin/variant-options/${typeId}/api`, function(opts) {
+                    let optHtml = '';
+                    opts.forEach(opt => optHtml += `<option value="${opt.id}">${opt.display_value}</option>`);
+                    $(this).html(optHtml); // Note: Use event delegation if needed
+                }.bind(this));
+            });
+        });
+        // Generate preview button
+        $('#type-selections').after('<button type="button" id="generate-preview" class="btn btn-info mt-2">Generate Variants</button>');
+    });
+    $(document).on('click', '#generate-preview', function() {
+        const selections = {};
+        $('.type-select').each(function() {
+            const vals = $(this).val();
+            if (vals && vals.length) selections[$(this).data('type-id')] = vals;
+        });
+        if (Object.keys(selections).length === 0) return alert('Select options first');
+        $.post('{{ route("admin.product.preview-variants") }}', {
+            selections: JSON.stringify(selections),
+            base_price: $('[name="base_price"]').val()
+        }, function(html) {
+            $('#variant-preview').html(html);
         });
     });
 </script>

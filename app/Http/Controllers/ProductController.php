@@ -145,6 +145,11 @@ class ProductController extends Controller
             // Create product first to get the ID
             $product = Product::create($validatedData);
 
+            if ($request->boolean('has_variants')) {
+                $product->update(['has_variants' => true, 'base_price' => $request->base_price]);
+                $this->handleVariants($request, $product);
+            }
+
             // Generate and assign SKU after product creation
             $sku = $this->generateUniqueSKU($product);
             if ($sku) {
@@ -396,6 +401,63 @@ class ProductController extends Controller
             report($e);
             return redirect()->route('product.index')->with('error', 'Update failed: ' . $e->getMessage());
         }
+    }
+
+    private function handleVariants(Request $request, Product $product) {
+        $product->variants()->delete(); // Clear old
+        $selections = $request->input('variant_selections', []); // e.g., ['color' => [1,2], 'size' => [3,4]]
+        $combinations = $this->generateCombinations($selections);
+        foreach ($combinations as $combo) {
+            $comboKey = md5(json_encode($combo['values']));
+            $variant = $product->variants()->create([
+                'sku' => $product->sku . '-' . implode('-', array_keys($combo['values'])),
+                'price' => $request->input("variant_price_{$comboKey}", $request->base_price),
+                'discount' => $request->input("variant_discount_{$comboKey}"),
+                'stock' => $request->input("variant_stock_{$comboKey}", 0),
+                'variant_values' => json_encode($combo['values']),
+                'images' => json_encode($request->input("variant_images_{$comboKey}", [])),
+                'status' => 'active'
+            ]);
+            foreach ($combo['values'] as $typeId => $optId) {
+                $variant->variantCombinations()->create(['variant_option_id' => $optId]);
+            }
+        }
+        // Invalidate cache
+        $key = "product_variants:{$product->id}";
+        \App\Helpers\RedisHelper::put($key, null, 0);
+    }
+
+    private function generateCombinations(array $selections): array {
+        $combs = [ ['values' => []] ];
+        foreach ($selections as $typeId => $optIds) {
+            $newCombs = [];
+            foreach ($combs as $comb) {
+                foreach ($optIds as $optId) {
+                    $newComb = $comb;
+                    $newComb['values'][$typeId] = $optId;
+                    $newCombs[] = $newComb;
+                }
+            }
+            $combs = $newCombs;
+        }
+        return $combs;
+    }
+
+    // Add preview endpoint
+    public function previewVariants(Request $request) {
+        $selections = $request->selections; // JSON from form
+        $combs = $this->generateCombinations($selections);
+        $html = '<table class="table table-sm"><thead><tr><th>Combination</th><th>Price</th><th>Discount</th><th>Stock</th><th>Images</th></tr></thead><tbody>';
+        foreach ($combs as $i => $comb) {
+            $key = md5(json_encode($comb['values']));
+            $display = collect($comb['values'])->map(fn($id) => ProductVariantOption::find($id)?->display_value ?? 'Unknown')->implode(', ');
+            $html .= "<tr><td>{$display}</td><td><input name='variant_price_{$key}' class='form-control form-control-sm' value='{$request->base_price}'></td>
+                <td><input name='variant_discount_{$key}' class='form-control form-control-sm'></td>
+                <td><input name='variant_stock_{$key}' class='form-control form-control-sm' value='0'></td>
+                <td><input name='variant_images_{$key}[]' class='form-control form-control-sm' multiple></td></tr>";
+        }
+        $html .= '</tbody></table><input type="hidden" name="variant_selections" value="' . $request->selections . '">';
+        return response($html);
     }
 
     /**

@@ -38,6 +38,8 @@ use App\Http\Controllers\{
     SquareController,
     StripeController,
     UsersController,
+    VariantOptionController,
+    VariantTypeController,
     WishlistController
 };
 
@@ -211,6 +213,12 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
         'coupon' => CouponController::class,
         'filter' => FilterController::class,
     ]);
+
+    Route::resource('variant-type', VariantTypeController::class)->parameters(['variant-type' => 'variantType']);
+    Route::resource('variant-option', VariantOptionController::class)->parameters(['variant-option' => 'variantOption']);
+    Route::get('variant-types/api', [VariantTypeController::class, 'apiIndex'])->name('admin.variant-type.api');
+    Route::get('variant-options/{typeId}/api', [VariantOptionController::class, 'apiOptions'])->name('admin.variant-option.api');
+    Route::post('product/preview-variants', [ProductController::class, 'previewVariants'])->name('admin.product.preview-variants');
 
     Route::delete('/product/{product}/image/{image}/delete', [ProductController::class, 'deleteImage'])
         ->name('product.image.delete');

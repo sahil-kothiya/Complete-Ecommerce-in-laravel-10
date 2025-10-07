@@ -132,6 +132,23 @@
 		</div>
 	</li>
 
+	<!-- Variant Management -->
+	<li class="nav-item">
+		<a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#variantCollapse">
+			<i class="fas fa-cogs"></i>
+			<span>Variants</span>
+		</a>
+		<div id="variantCollapse" class="collapse" aria-labelledby="headingShop">
+			<div class="bg-white py-2 collapse-inner rounded">
+				<h6 class="collapse-header">Variant Options:</h6>
+				<a class="collapse-item" href="{{ route('variant-type.index') }}">Types</a>
+				<a class="collapse-item" href="{{ route('variant-type.create') }}">Add Type</a>
+				<a class="collapse-item" href="{{ route('variant-option.index') }}">Options</a>
+				<a class="collapse-item" href="{{ route('variant-option.create') }}">Add Option</a>
+			</div>
+		</div>
+	</li>
+
 	<!-- Shipping -->
 	<li class="nav-item">
 		<a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#shippingCollapse" aria-expanded="true" aria-controls="shippingCollapse">

@@ -116,7 +116,8 @@ class Product extends Model
         return $this->belongsToMany(Discount::class, 'product_discount');
     }
 
-    public function reviews() {
+    public function reviews()
+    {
         return $this->hasMany(ProductReview::class, 'product_id');
     }
 
@@ -150,10 +151,10 @@ class Product extends Model
         if (!is_array($categoryIds)) {
             $categoryIds = [$categoryIds];
         }
-        
-        return $query->where(function($q) use ($categoryIds) {
+
+        return $query->where(function ($q) use ($categoryIds) {
             $q->whereIn('cat_id', $categoryIds)
-              ->orWhereIn('child_cat_id', $categoryIds);
+                ->orWhereIn('child_cat_id', $categoryIds);
         });
     }
 
@@ -234,5 +235,58 @@ class Product extends Model
                 ];
             }
         );
+    }
+
+    // Add these if missing
+    public function variants()
+    {
+        return $this->hasMany(ProductVariant::class);
+    }
+    public function activeVariants()
+    {
+        return $this->hasMany(ProductVariant::class)->where('status', 'active');
+    }
+    public function inStockVariants()
+    {
+        return $this->hasMany(ProductVariant::class)->where('status', 'active')->where('stock', '>', 0);
+    }
+
+    public function getVariantTypesAttribute()
+    {
+        if (!$this->has_variants) return collect();
+        $optionIds = $this->variants()->with('variantOptions')->get()->pluck('variantOptions.*.id')->flatten()->unique();
+        return ProductVariantType::whereHas('options', fn($q) => $q->whereIn('id', $optionIds))
+            ->with(['options' => fn($q) => $q->whereIn('id', $optionIds)->active()])
+            ->active()->orderBy('sort_order')->get();
+    }
+
+    public function getPriceRangeAttribute()
+    {
+        if (!$this->has_variants) return null;
+        $variants = $this->activeVariants()->where('stock', '>', 0)->get();
+        if ($variants->isEmpty()) return null;
+        $min = $variants->min('discounted_price');
+        $max = $variants->max('discounted_price');
+        return $min === $max ? '$' . number_format($min, 2) : '$' . number_format($min, 2) . ' - $' . number_format($max, 2);
+    }
+
+    // Cached variants for frontend (using RedisHelper)
+    public function getVariantsJsonAttribute()
+    {
+        $key = "product_variants:{$this->id}";
+        if (\App\Helpers\RedisHelper::has($key)) {
+            return \App\Helpers\RedisHelper::get($key);
+        }
+        $variants = $this->activeVariants()->with('variantOptions.variantType')->get()->map(fn($v) => [
+            'id' => $v->id,
+            'sku' => $v->sku,
+            'price' => $v->price,
+            'stock' => $v->stock,
+            'display' => $v->display_name,
+            'values' => $v->variant_values
+        ]);
+        $json = $variants->toJson();
+        \App\Helpers\RedisHelper::put($key, $json, 3600);
+        return $json;
     }
 }
