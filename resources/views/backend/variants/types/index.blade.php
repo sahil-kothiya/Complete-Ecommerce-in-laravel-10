@@ -47,7 +47,7 @@
                             <form action="{{ route('variant-type.destroy', $type->id) }}" method="POST" class="d-inline">
                                 @csrf
                                 @method('DELETE')
-                                <button type="button" class="btn btn-danger btn-sm dltBtn" data-id="{{ $type->id }}" data-toggle="tooltip" title="Delete">
+                                <button type="button" class="btn btn-danger btn-sm dlt-Btn" data-toggle="tooltip" title="Delete">
                                     <i class="fas fa-trash-alt"></i>
                                 </button>
                             </form>
@@ -59,6 +59,30 @@
             @else
             <p class="text-center">No variant types found.</p>
             @endif
+
+        </div>
+
+        <!-- Delete Confirmation Modal -->
+        <div class="modal fade" id="deleteModal" tabindex="-1" role="dialog" aria-labelledby="deleteModalLabel" aria-hidden="true">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="deleteModalLabel">Confirm Delete</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        Are you sure you want to delete this variant type? This action cannot be undone and will permanently delete associated options.
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-danger" id="confirmDelete">
+                            <i class="fas fa-trash"></i> Yes, Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -66,7 +90,6 @@
 
 @push('styles')
 <link href="{{ asset('backend/vendor/datatables/dataTables.bootstrap4.min.css') }}" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert2.min.css" />
 
 <style>
     .table th, .table td { vertical-align: middle; }
@@ -77,7 +100,6 @@
 @push('scripts')
 <script src="{{ asset('backend/vendor/datatables/jquery.dataTables.min.js') }}"></script>
 <script src="{{ asset('backend/vendor/datatables/dataTables.bootstrap4.min.js') }}"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert2/11.7.3/sweetalert2.min.js"></script>
 
 <script>
 $(document).ready(function() {
@@ -87,44 +109,40 @@ $(document).ready(function() {
         searching: true,
         responsive: true,
         order: [[0, 'desc']],
-        columnDefs: [{ orderable: false, targets: [6] }] // Actions column
+        columnDefs: [{ orderable: false, targets: [5] }]
     });
 
-    $('.dltBtn').click(function(e) {
+    // Delete button click
+    $('.dlt-Btn').click(function(e) {
         e.preventDefault();
-        const form = $(this).closest('.delete-form');
-        const id = $(this).data('id');
+        const form = $(this).closest('form');
+        $('#deleteModal').data('form', form).modal('show');
+    });
 
-        Swal.fire({
-            title: 'Are you sure?',
-            text: 'Once deleted, you will not be able to recover this type! (Options will be cascaded deleted.)',
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#d33',
-            cancelButtonColor: '#3085d6',
-            confirmButtonText: 'Yes, delete it!'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                // Submit via AJAX for better error handling
-                const formData = new FormData(form[0]);
-                $.ajax({
-                    url: form.attr('action'),
-                    type: 'POST',
-                    data: formData,
-                    processData: false,
-                    contentType: false,
-                    headers: {
-                        'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
-                    },
-                    success: function(response) {
-                        Swal.fire('Deleted!', 'Variant type has been deleted.', 'success');
-                        form.closest('tr').fadeOut();  // Remove row from table
-                    },
-                    error: function(xhr) {
-                        const errorMsg = xhr.responseJSON?.message || 'Failed to delete. Please try again.';
-                        Swal.fire('Error!', errorMsg, 'error');
-                    }
+    // Confirm delete
+    $('#confirmDelete').click(function() {
+        const form = $('#deleteModal').data('form');
+        const formData = new FormData(form[0]);
+
+        $.ajax({
+            url: form.attr('action'),
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            headers: {
+                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+            },
+            success: function() {
+                form.closest('tr').fadeOut(500, function() {
+                    $(this).remove();
                 });
+                $('#deleteModal').modal('hide');
+            },
+            error: function(xhr) {
+                const errorMsg = xhr.responseJSON?.message || 'Failed to delete. Please try again.';
+                alert('Error: ' + errorMsg); // Simple alert for error, or enhance with another modal if needed
+                $('#deleteModal').modal('hide');
             }
         });
     });

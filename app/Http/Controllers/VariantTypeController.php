@@ -47,7 +47,6 @@ class VariantTypeController extends Controller
     }
 
     public function destroy(ProductVariantType $variantType) {
-        dd('here');
         $variantType->delete();
         return redirect()->route('variant-type.index')->with('success', 'Type deleted successfully');
     }

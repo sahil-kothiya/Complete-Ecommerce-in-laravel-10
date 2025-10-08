@@ -28,12 +28,14 @@ class VariantOptionController extends Controller
             'sort_order' => 'integer|min:0'
         ]);
         ProductVariantOption::create($validated);
-        return redirect()->route('admin.variant-option.index')->with('success', 'Option created successfully');
+        return redirect()->route('variant-option.index')->with('success', 'Option created successfully');
     }
 
-    public function edit(ProductVariantOption $variantOption) {
-        $types = ProductVariantType::active()->get();
-        return view('backend.variants.options.edit', compact('variantOption', 'types'));
+    public function edit(ProductVariantOption $variantOption)  // Model binding: {variantOption} from route resolves here
+    {
+        $option = $variantOption;  // Alias for view consistency
+        $types = ProductVariantType::active()->orderBy('sort_order')->get();  // Fetch active types for select
+        return view('backend.variants.options.edit', compact('option', 'types'));  // Pass $option and $types
     }
 
     public function update(Request $request, ProductVariantOption $variantOption) {
@@ -45,12 +47,12 @@ class VariantOptionController extends Controller
             'sort_order' => 'integer|min:0'
         ]);
         $variantOption->update($validated);
-        return redirect()->route('admin.variant-option.index')->with('success', 'Option updated successfully');
+        return redirect()->route('variant-option.index')->with('success', 'Option updated successfully');
     }
 
     public function destroy(ProductVariantOption $variantOption) {
         $variantOption->delete();
-        return redirect()->route('admin.variant-option.index')->with('success', 'Option deleted successfully');
+        return redirect()->route('variant-option.index')->with('success', 'Option deleted successfully');
     }
 
     // API for options by type

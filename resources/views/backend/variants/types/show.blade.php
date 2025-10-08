@@ -52,6 +52,9 @@
                         <td><span class="badge badge-{{ $option->status == 'active' ? 'success' : 'secondary' }}">{{ ucfirst($option->status) }}</span></td>
                         <td>
                             <a href="{{ route('variant-option.edit', $option) }}" class="btn btn-primary btn-sm"><i class="fas fa-edit"></i></a>
+                            <button type="button" class="btn btn-danger btn-sm dltBtn" data-id="{{ $option->id }}" data-display="{{ $option->display_value }}" data-form-action="{{ route('variant-option.destroy', $option) }}" title="Delete Option">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
                         </td>
                     </tr>
                     @endforeach
@@ -65,4 +68,60 @@
         @endif
     </div>
 </div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" role="dialog" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">Confirm Delete</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                Are you sure you want to delete the option "<span id="option-name"></span>"? This action cannot be undone.
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <form id="deleteForm" method="POST" style="display: inline;">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 @endsection
+
+@push('scripts')
+<script src="{{ asset('backend/vendor/datatables/jquery.dataTables.min.js') }}"></script>
+<script src="{{ asset('backend/vendor/datatables/dataTables.bootstrap4.min.js') }}"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> {{-- Ensure jQuery is loaded for modal --}}
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script> {{-- Bootstrap JS for modal, if not in layout --}}
+
+<script>
+$(document).ready(function() {
+    $('.dltBtn').click(function(e) {
+        e.preventDefault();
+        const id = $(this).data('id');
+        const display = $(this).data('display');
+        const action = $(this).data('form-action');
+
+        // Set modal content
+        $('#option-name').text(display);
+        $('#deleteForm').attr('action', action);
+
+        // Show modal
+        $('#deleteModal').modal('show');
+    });
+
+    // Handle form submission in modal
+    $('#deleteForm').submit(function(e) {
+        // Optional: Add loading state
+        $(this).find('button[type="submit"]').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Deleting...');
+    });
+});
+</script>
+@endpush

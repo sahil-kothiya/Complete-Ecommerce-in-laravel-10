@@ -214,14 +214,23 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
         'filter' => FilterController::class,
     ]);
 
-    Route::resource('variant-type', VariantTypeController::class)->parameters(['variant-type' => 'variantType']);
-    Route::resource('variant-option', VariantOptionController::class)->parameters(['variant-option' => 'variantOption']);
-    Route::get('variant-types/api', [VariantTypeController::class, 'apiIndex'])->name('admin.variant-type.api');
-    Route::get('variant-options/{typeId}/api', [VariantOptionController::class, 'apiOptions'])->name('admin.variant-option.api');
-    Route::post('product/preview-variants', [ProductController::class, 'previewVariants'])->name('admin.product.preview-variants');
+    // Variant Type Resource (no name prefix)
+    Route::resource('variant-type', VariantTypeController::class)->parameters([
+        'variant-type' => 'variantType'
+    ]);
 
-    Route::delete('/product/{product}/image/{image}/delete', [ProductController::class, 'deleteImage'])
-        ->name('product.image.delete');
+    // Variant Option Resource (no name prefix)
+    Route::resource('variant-option', VariantOptionController::class)->parameters([
+        'variant-option' => 'variantOption'
+    ]);
+
+    // API Routes (no name prefix; URLs still /admin/variant-types/api)
+    Route::get('variant-types/api', [VariantTypeController::class, 'apiIndex'])->name('variant-type.api');
+    Route::get('variant-options/{typeId}/api', [VariantOptionController::class, 'apiOptions'])->name('variant-option.api');
+    Route::post('product/preview-variants', [ProductController::class, 'previewVariants'])->name('product.preview-variants');
+
+    // Existing image delete (no name prefix)
+    Route::delete('product/{product}/image/{image}/delete', [ProductController::class, 'deleteImage'])->name('product.image.delete');
 
     Route::post('/brand/store-ajax', [BrandController::class, 'storeAjax'])->name('brand.store.ajax');
 });
