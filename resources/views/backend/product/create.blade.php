@@ -56,8 +56,25 @@
                             </div>
                         </div>
 
-                        <div class="form-group">
-                            <label><input type="checkbox" name="has_variants" id="has_variants" value="1" {{ old('has_variants') ? 'checked' : '' }}> Has Variants?</label>
+                        
+                        <!-- Product Discount Input -->
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label for="discount">Discount (%)</label>
+                                <input type="number" id="discount" name="discount" class="form-control" value="{{ old('discount') }}" min="0" max="100" placeholder="Enter discount" tabindex="6">
+                                @error('discount')<span class="text-danger">{{ $message }}</span>@enderror
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="form-group form-check">
+                                <input type="checkbox" name="has_variants" id="has_variants" value="1" class="form-check-input" {{ old('has_variants') ? 'checked' : '' }}>
+                                <label class="form-check-label" for="has_variants">
+                                    Has Variants?
+                                </label>
+                            </div>
                         </div>
                         <div id="variants-panel" style="display: none;">
                             <div class="form-group">
@@ -68,20 +85,11 @@
                             <button type="button" id="load-types" class="btn btn-secondary mt-2">Load Types</button>
                             <div id="variant-preview" class="mt-3"></div>
                         </div>
-
-                        <!-- Product Discount Input -->
-                        <div class="col-md-3">
-                            <div class="form-group">
-                                <label for="discount">Discount (%)</label>
-                                <input type="number" id="discount" name="discount" class="form-control" value="{{ old('discount') }}" min="0" max="100" placeholder="Enter discount" tabindex="6">
-                                @error('discount')<span class="text-danger">{{ $message }}</span>@enderror
-                            </div>
-                        </div>
                     </div>
 
-                    <div class="row">
+                    <div class="row" id="non-variant-row">
                         <!-- Product Size Selection -->
-                        <div class="col-md-3">
+                        <div class="col-md-3" id="size-field">
                             <div class="form-group">
                                 <label for="size">Size</label>
                                 @php $selectedSizes = old('size', []); @endphp
@@ -130,7 +138,7 @@
                         </div>
 
                         <!-- Product Quantity Input -->
-                        <div class="col-md-3">
+                        <div class="col-md-3" id="stock-field">
                             <div class="form-group">
                                 <label for="stock">Quantity <span class="text-danger">*</span></label>
                                 <input type="number" id="stock" name="stock" class="form-control" value="{{ old('stock') }}" min="0" placeholder="Enter quantity" required tabindex="11">
@@ -504,6 +512,29 @@
             opacity: 1;
         }
     }
+
+    /* Variant types horizontal layout */
+    .variant-type-group {
+        margin-bottom: 1rem;
+    }
+
+    .variant-type-group label {
+        display: block;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .variant-type-group select {
+        width: 100%;
+        min-height: 100px; /* Fixed height for consistency */
+    }
+
+    @media (max-width: 768px) {
+        .variant-type-group {
+            margin-bottom: 0.5rem;
+        }
+    }
 </style>
 @endpush
 
@@ -516,6 +547,11 @@
 <script>
     // Initialize Laravel File Manager for image selection
     $('#lfm').filemanager('image');
+
+    // Ensure CSRF token is sent with every jQuery AJAX request
+    $.ajaxSetup({
+        headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') }
+    });
 
     // Handle image loading errors with fallback display
     function handleImageError(img) {
@@ -766,7 +802,7 @@
             }
 
             $.ajax({
-                url: `/admin/category/${catId}/child`,
+                url: `/category/${catId}/child`,
                 type: 'GET',
                 dataType: 'json',
                 success: function(response) {
@@ -871,28 +907,34 @@
     });
     
     $('#has_variants').change(function() {
-        $('#variants-panel').toggle(this.checked);
-        if (this.checked) $('#load-types').click();
+        const isChecked = this.checked;
+        $('#variants-panel').toggle(isChecked);
+        $('#size-field, #stock-field').toggle(!isChecked);
+        if (isChecked) {
+            $('#load-types').click();
+        }
     });
+    
     $('#load-types').click(function() {
-        $.get('{{ route("admin.variant-type.api") }}', function(types) {
-            let html = '<h6>Select Types & Options</h6>';
+        $.get('{{ route("variant-type.api") }}', function(types) {
+            let html = '<h6>Select Types & Options</h6><div class="row">';
             types.forEach(type => {
-                html += `<div class="form-group row">
-                <label class="col-md-3">${type.display_name}</label>
-                <div class="col-md-9"><select class="form-control type-select" data-type-id="${type.id}" multiple>
-                    <option value="">Select Options</option>
-                </select></div>
-            </div>`;
+                html += `<div class="col-md-3 variant-type-group">
+                    <label>${type.display_name}</label>
+                    <select class="form-control type-select" data-type-id="${type.id}" multiple size="4">
+                        <option value="">Select Options</option>
+                    </select>
+                </div>`;
             });
+            html += '</div>';
             $('#type-selections').html(html);
             $('.type-select').each(function() {
                 const typeId = $(this).data('type-id');
                 $.get(`/admin/variant-options/${typeId}/api`, function(opts) {
                     let optHtml = '';
                     opts.forEach(opt => optHtml += `<option value="${opt.id}">${opt.display_value}</option>`);
-                    $(this).html(optHtml); // Note: Use event delegation if needed
-                }.bind(this));
+                    $(`select[data-type-id="${typeId}"]`).html(optHtml);
+                });
             });
         });
         // Generate preview button
@@ -905,12 +947,27 @@
             if (vals && vals.length) selections[$(this).data('type-id')] = vals;
         });
         if (Object.keys(selections).length === 0) return alert('Select options first');
-        $.post('{{ route("admin.product.preview-variants") }}', {
+        $.post('{{ route("product.preview-variants") }}', {
+            _token: '{{ csrf_token() }}',
             selections: JSON.stringify(selections),
             base_price: $('[name="base_price"]').val()
         }, function(html) {
             $('#variant-preview').html(html);
+        }).fail(function(xhr) {
+            // Show a useful message if CSRF or auth fails
+            if (xhr.status === 419) {
+                showNotification('Session expired or CSRF token missing. Please reload the page and try again.', 'error');
+            } else if (xhr.status === 401) {
+                showNotification('You are not authenticated. Please login and try again.', 'error');
+            } else {
+                showNotification('Could not generate variant preview. Try again.', 'error');
+            }
         });
     });
+    
+    // Initialize state on page load if checkbox was checked
+    if ($('#has_variants').is(':checked')) {
+        $('#has_variants').trigger('change');
+    }
 </script>
 @endpush

@@ -8,10 +8,10 @@ use App\Models\Product;
 use App\Models\Category;
 use App\Models\Brand;
 use App\Models\ProductImage;
+use App\Models\ProductVariantOption;
 use Helper;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\FacadesLog;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -445,19 +445,44 @@ class ProductController extends Controller
 
     // Add preview endpoint
     public function previewVariants(Request $request) {
-        $selections = $request->selections; // JSON from form
-        $combs = $this->generateCombinations($selections);
-        $html = '<table class="table table-sm"><thead><tr><th>Combination</th><th>Price</th><th>Discount</th><th>Stock</th><th>Images</th></tr></thead><tbody>';
-        foreach ($combs as $i => $comb) {
-            $key = md5(json_encode($comb['values']));
-            $display = collect($comb['values'])->map(fn($id) => ProductVariantOption::find($id)?->display_value ?? 'Unknown')->implode(', ');
-            $html .= "<tr><td>{$display}</td><td><input name='variant_price_{$key}' class='form-control form-control-sm' value='{$request->base_price}'></td>
-                <td><input name='variant_discount_{$key}' class='form-control form-control-sm'></td>
-                <td><input name='variant_stock_{$key}' class='form-control form-control-sm' value='0'></td>
-                <td><input name='variant_images_{$key}[]' class='form-control form-control-sm' multiple></td></tr>";
+        try {
+            $selections = $request->input('selections', []);
+
+            // If selections were sent as a JSON string (client uses JSON.stringify), decode it
+            if (is_string($selections)) {
+                $decoded = json_decode($selections, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $selections = $decoded;
+                } else {
+                    // Malformed JSON - treat as empty
+                    Log::warning('previewVariants: malformed selections JSON', ['raw' => $selections]);
+                    $selections = [];
+                }
+            }
+
+            // Ensure we have an array of selections
+            if (!is_array($selections) || empty($selections)) {
+                return response("<div class='alert alert-warning'>No variant options selected.</div>", 200);
+            }
+
+            $combs = $this->generateCombinations($selections);
+
+            $html = '<table class="table table-sm"><thead><tr><th>Combination</th><th>Price</th><th>Discount</th><th>Stock</th><th>Images</th></tr></thead><tbody>';
+            foreach ($combs as $i => $comb) {
+                $key = md5(json_encode($comb['values']));
+                $display = collect($comb['values'])->map(fn($id) => ProductVariantOption::find($id)?->display_value ?? 'Unknown')->implode(', ');
+                $priceVal = htmlspecialchars((string) $request->input('base_price', ''));
+                $html .= "<tr><td>{$display}</td><td><input name='variant_price_{$key}' class='form-control form-control-sm' value='{$priceVal}'></td>
+                    <td><input name='variant_discount_{$key}' class='form-control form-control-sm'></td>
+                    <td><input name='variant_stock_{$key}' class='form-control form-control-sm' value='0'></td>
+                    <td><input name='variant_images_{$key}[]' class='form-control form-control-sm' multiple></td></tr>";
+            }
+            $html .= '</tbody></table><input type="hidden" name="variant_selections" value="' . htmlspecialchars(is_string($request->input('selections')) ? $request->input('selections') : json_encode($request->input('selections')) ) . '">';
+            return response($html);
+        } catch (\Throwable $e) {
+            Log::error('previewVariants failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString(), 'request' => $request->all()]);
+            return response("<div class='alert alert-danger'>Could not generate preview. Try again.</div>", 500);
         }
-        $html .= '</tbody></table><input type="hidden" name="variant_selections" value="' . $request->selections . '">';
-        return response($html);
     }
 
     /**
