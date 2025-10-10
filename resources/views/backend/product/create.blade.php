@@ -76,15 +76,22 @@
                                 </label>
                             </div>
                         </div>
-                        <div id="variants-panel" style="display: none;">
-                            <div class="form-group">
-                                <label>Base Price <span class="text-danger">*</span></label>
-                                <input type="number" name="base_price" step="0.01" class="form-control" value="{{ old('base_price') }}" required>
-                            </div>
-                            <div id="type-selections"></div>
-                            <button type="button" id="load-types" class="btn btn-secondary mt-2">Load Types</button>
-                            <div id="variant-preview" class="mt-3"></div>
+                    </div>
+                    <div id="variants-panel" style="display: none;">
+                        <div class="form-group">
+                            <label>Base Price <span class="text-danger">*</span></label>
+                            <input type="number" name="base_price" step="0.01" class="form-control" value="{{ old('base_price') }}" required>
                         </div>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="mb-0">Select Types & Options</h6>
+                            <button type="button" id="load-types" class="btn btn-secondary btn-sm">Load Types</button>
+                        </div>
+                        <div id="type-selections" class="row"></div>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="mb-0">Variant Preview</h6>
+                            <button type="button" id="generate-preview" class="btn btn-info btn-sm">Generate Variants</button>
+                        </div>
+                        <div id="variant-preview" class="table-responsive"></div>
                     </div>
 
                     <div class="row" id="non-variant-row">
@@ -514,25 +521,75 @@
     }
 
     /* Variant types horizontal layout */
+    #type-selections {
+        padding: 15px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+        margin-bottom: 20px;
+    }
+
     .variant-type-group {
-        margin-bottom: 1rem;
+        margin-bottom: 1.5rem;
+        padding: 10px;
+        background-color: #fff;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+    }
+
+    .variant-type-group:hover {
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        transform: translateY(-2px);
     }
 
     .variant-type-group label {
         display: block;
-        font-weight: bold;
-        margin-bottom: 0.5rem;
-        font-size: 0.875rem;
+        font-weight: 600;
+        margin-bottom: 0.75rem;
+        color: #333;
+        font-size: 0.95rem;
     }
 
     .variant-type-group select {
         width: 100%;
-        min-height: 100px; /* Fixed height for consistency */
+        min-height: 120px;
+        padding: 8px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background-color: #fff;
+        font-size: 0.9rem;
+        color: #495057;
+    }
+
+    .variant-type-group select:focus {
+        border-color: #80bdff;
+        outline: 0;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+
+    .variant-type-group select option {
+        padding: 5px 10px;
     }
 
     @media (max-width: 768px) {
         .variant-type-group {
-            margin-bottom: 0.5rem;
+            margin-bottom: 1rem;
+            padding: 8px;
+        }
+
+        .variant-type-group label {
+            font-size: 0.9rem;
+        }
+
+        .variant-type-group select {
+            min-height: 100px;
+            font-size: 0.85rem;
+        }
+
+        #type-selections {
+            padding: 10px;
         }
     }
 </style>
@@ -917,7 +974,7 @@
     
     $('#load-types').click(function() {
         $.get('{{ route("variant-type.api") }}', function(types) {
-            let html = '<h6>Select Types & Options</h6><div class="row">';
+            let html = '<div class="row">';
             types.forEach(type => {
                 html += `<div class="col-md-3 variant-type-group">
                     <label>${type.display_name}</label>
@@ -937,8 +994,6 @@
                 });
             });
         });
-        // Generate preview button
-        $('#type-selections').after('<button type="button" id="generate-preview" class="btn btn-info mt-2">Generate Variants</button>');
     });
     $(document).on('click', '#generate-preview', function() {
         const selections = {};
@@ -951,17 +1006,25 @@
             _token: '{{ csrf_token() }}',
             selections: JSON.stringify(selections),
             base_price: $('[name="base_price"]').val()
-        }, function(html) {
+        }, function(response) {
+            let html = '<table class="table table-bordered"><thead><tr><th>Variant</th><th>SKU</th><th>Price</th><th>Discount</th><th>Stock</th><th>Images</th></tr></thead><tbody>';
+            response.variants.forEach((variant, idx) => {
+                html += `<tr>
+                    <td>${variant.name}</td>
+                    <td><input type="text" name="variants[${idx}][sku]" value="${variant.sku}" class="form-control" required></td>
+                    <td><input type="number" name="variants[${idx}][price]" value="${variant.price}" class="form-control" required></td>
+                    <td><input type="number" name="variants[${idx}][discount]" value="${variant.discount || ''}" class="form-control"></td>
+                    <td><input type="number" name="variants[${idx}][stock]" value="${variant.stock}" class="form-control" required></td>
+                    <td><input type="text" name="variants[${idx}][images]" class="form-control variant-images" data-index="${idx}" readonly>
+                        <a class="btn btn-primary lfm-variant" data-input="variant-images-${idx}" data-preview="variant-holder-${idx}">Choose</a>
+                        <div id="variant-holder-${idx}" class="img-fluid"></div></td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
             $('#variant-preview').html(html);
-        }).fail(function(xhr) {
-            // Show a useful message if CSRF or auth fails
-            if (xhr.status === 419) {
-                showNotification('Session expired or CSRF token missing. Please reload the page and try again.', 'error');
-            } else if (xhr.status === 401) {
-                showNotification('You are not authenticated. Please login and try again.', 'error');
-            } else {
-                showNotification('Could not generate variant preview. Try again.', 'error');
-            }
+            $('.lfm-variant').each(function() {
+                $(this).filemanager('image');
+            });
         });
     });
     

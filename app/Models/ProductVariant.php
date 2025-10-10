@@ -9,18 +9,28 @@ class ProductVariant extends Model
 {
     use HasFactory;
 
+    protected $table = 'product_variants';
+
     protected $fillable = [
-        'product_id', 'sku', 'price', 'discount', 
-        'stock', 'variant_values', 'images', 'status'
+        'product_id',
+        'sku',
+        'price',
+        'discount',
+        'stock',
+        'variant_values',
+        'status'
     ];
 
     protected $casts = [
         'variant_values' => 'array',
-        'images' => 'array',
         'price' => 'decimal:2',
-        'discount' => 'decimal:2'
+        'discount' => 'decimal:2',
+        'stock' => 'integer'
     ];
 
+    /**
+     * Relationships
+     */
     public function product()
     {
         return $this->belongsTo(Product::class);
@@ -34,14 +44,26 @@ class ProductVariant extends Model
     public function variantOptions()
     {
         return $this->belongsToMany(
-            ProductVariantOption::class, 
+            ProductVariantOption::class,
             'product_variant_combinations',
             'product_variant_id',
             'variant_option_id'
-        );
+        )->with('variantType');
     }
 
-    // Get discounted price
+    public function images()
+    {
+        return $this->hasMany(VariantImage::class, 'product_variant_id');
+    }
+
+    public function primaryImage()
+    {
+        return $this->hasOne(VariantImage::class, 'product_variant_id')->where('is_primary', true);
+    }
+
+    /**
+     * Attributes
+     */
     public function getDiscountedPriceAttribute()
     {
         if ($this->discount > 0) {
@@ -50,19 +72,15 @@ class ProductVariant extends Model
         return $this->price;
     }
 
-    // Check if in stock
-    public function isInStock()
-    {
-        return $this->stock > 0 && $this->status === 'active';
-    }
-
-    // Get variant display string (e.g., "Red, 8GB RAM, 128GB Storage")
     public function getDisplayNameAttribute()
     {
         $options = $this->variantOptions()->with('variantType')->get();
         return $options->map(fn($opt) => $opt->display_value)->join(', ');
     }
 
+    /**
+     * Scopes
+     */
     public function scopeActive($query)
     {
         return $query->where('status', 'active');
@@ -71,5 +89,13 @@ class ProductVariant extends Model
     public function scopeInStock($query)
     {
         return $query->where('stock', '>', 0);
+    }
+
+    /**
+     * Methods
+     */
+    public function isInStock()
+    {
+        return $this->stock > 0 && $this->status === 'active';
     }
 }

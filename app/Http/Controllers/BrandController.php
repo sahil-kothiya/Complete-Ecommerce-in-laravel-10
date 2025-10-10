@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\Brand;
 use Illuminate\Support\Str;
 use App\Helpers\helpers;
+use App\Models\Category;
 
 class BrandController extends Controller
 {
@@ -174,5 +175,11 @@ class BrandController extends Controller
             'status' => 'success',
             'data' => $brand
         ]);
+    }
+
+    public function getBrandsByCategory(Category $category)
+    {
+        $brands = $category->brands()->select('id', 'title')->get();
+        return response()->json(['status' => true, 'data' => $brands]);
     }
 }

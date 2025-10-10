@@ -7,15 +7,13 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('variant_images', function (Blueprint $table) {
             $table->id();
             $table->foreignId('product_variant_id')->constrained('product_variants')->onDelete('cascade');
             $table->string('image_path'); // S3/CDN path
+            $table->string('thumbnail_path')->nullable();
             $table->boolean('is_primary')->default(false);
             $table->smallInteger('sort_order')->default(0);
             $table->timestamps();
@@ -26,13 +24,11 @@ return new class extends Migration
 
         // Partial for primary images
         DB::statement("CREATE INDEX idx_primary_variant_images ON variant_images (product_variant_id) WHERE is_primary = true;");
-        // GIN for full-text on paths if needed (e.g., search by filename)
+        
+        // GIN for full-text on paths
         DB::statement("CREATE INDEX IF NOT EXISTS variant_images_path_gin_idx ON variant_images USING GIN (to_tsvector('english', image_path));");
     }
     
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('variant_images');

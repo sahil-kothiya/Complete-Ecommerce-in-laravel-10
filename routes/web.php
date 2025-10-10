@@ -173,6 +173,8 @@ Route::get('/mollie/success', [MollieController::class, 'success'])->name('molli
 Route::get('/mollie/cancel', [MollieController::class, 'cancel'])->name('mollie.cancel');
 Route::post('/mollie/webhook', [MollieController::class, 'webhook'])->name('mollie.webhook');
 
+Route::get('/category/{category}/brands', [BrandController::class, 'getBrandsByCategory'])->name('category.brands');
+
 // Admin
 Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::get('/', [AdminController::class, 'index'])->name('admin');

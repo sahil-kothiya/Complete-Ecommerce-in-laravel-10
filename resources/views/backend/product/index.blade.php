@@ -37,6 +37,7 @@
                         <th>SKU</th>
                         <th>Stock</th>
                         <th>Photo</th>
+                        <th>Variant Product</th> <!-- New Column -->
                         <th>Status</th>
                         <th>Action</th>
                     </tr>
@@ -44,47 +45,84 @@
                 <tbody>
                     @foreach($products as $product)
                     @php
-                    $sub_cat_info = DB::table('categories')->select('title')->where('id', $product->child_cat_id)->first();
-                    $brand = DB::table('brands')->select('title')->where('id', $product->brand_id)->first();
-                    $primaryImage = $product->images->firstWhere('is_primary', 1);
+                    // Image logic: Use variant's primary image if has_variants, else product’s primary image
+                    $primaryImage = $product->has_variants && $product->variants->count() > 0
+                        ? $product->variants->first()->primaryImage
+                        : $product->primaryImage;
+
+                    $stock = $product->has_variants ? $product->variants->sum('stock') : $product->base_stock;
+
+                    if ($product->has_variants) {
+                        $activeInStockVariants = $product->variants->where('status', 'active')->where('stock', '>', 0);
+                        if ($activeInStockVariants->count() > 0) {
+                            $minPrice = $activeInStockVariants->min(function($v) {
+                                return $v->price * (1 - ($v->discount ?? 0) / 100);
+                            });
+                            $maxPrice = $activeInStockVariants->max(function($v) {
+                                return $v->price * (1 - ($v->discount ?? 0) / 100);
+                            });
+                            $displayPrice = number_format($minPrice, 2);
+                            if ($minPrice != $maxPrice) {
+                                $displayPrice .= ' - ' . number_format($maxPrice, 2);
+                            }
+                        } else {
+                            $displayPrice = 'Out of Stock';
+                        }
+                        $displayDiscount = ($activeInStockVariants->max('discount') ?? 0) . '% OFF';
+                        $displaySku = 'Multiple';
+                        $displaySize = 'Varies';
+                    } else {
+                        $discountedPrice = $product->base_price * (1 - ($product->base_discount ?? 0) / 100);
+                        $displayPrice = number_format($discountedPrice, 2);
+                        $displayDiscount = ($product->base_discount ?? 0) . '% OFF';
+                        $displaySku = $product->base_sku ?? 'N/A';
+                        $displaySize = 'N/A';
+                    }
                     @endphp
                     <tr>
                         <td>{{ $loop->iteration }}</td>
-                        <td tabindex="{{ $loop->iteration + 1 }}">{{ $product->title }}</td>
+                        <td tabindex="{{ $loop->iteration + 1 }}">{{ $product->title }} {{ $product->has_variants ? '(Variants)' : '' }}</td>
                         <td>
-                            {{ $product->cat_info['title'] }}
-                            @if($sub_cat_info)
-                            <sub>{{ $sub_cat_info->title }}</sub>
+                            {{ $product->cat_info->title ?? 'N/A' }}
+                            @if($product->sub_cat_info)
+                            <sub>{{ $product->sub_cat_info->title }}</sub>
                             @endif
                         </td>
                         <td>{{ $product->is_featured ? 'Yes' : 'No' }}</td>
-                        <td>$. {{ number_format($product->price, 2) }} /-</td>
-                        <td>{{ $product->discount }}% OFF</td>
-                        <td>{{ $product->size ?? 'N/A' }}</td>
+                        <td>$. {{ $displayPrice }} /-</td>
+                        <td>{{ $displayDiscount }}</td>
+                        <td>{{ $displaySize }}</td>
                         <td>{{ $product->condition ?? 'N/A' }}</td>
-                        <td>{{ $brand->title ?? 'N/A' }}</td>
-                        <td>{{ $product->sku ?? 'N/A' }}</td>
+                        <td>{{ $product->brand->title ?? 'N/A' }}</td>
+                        <td>{{ $displaySku }}</td>
                         <td>
-                            @if($product->stock > 0)
-                            <span class="badge badge-primary">{{ $product->stock }}</span>
+                            @if($stock > 0)
+                            <span class="badge badge-primary">{{ $stock }}</span>
                             @else
-                            <span class="badge badge-danger">{{ $product->stock }}</span>
+                            <span class="badge badge-danger">{{ $stock }}</span>
                             @endif
                         </td>
                         <td>
                             @if($primaryImage)
-                            <img src="{{ asset($primaryImage->image_path) }}"
-                                class="img-fluid zoom"
-                                style="max-width:80px;"
-                                alt="{{ $primaryImage->alt_text ?? $product->title . ' - Product Image' }}"
-                                tabindex="{{ $loop->iteration + 100 }}"
-                                onerror="this.src='{{ asset('backend/img/thumbnail-default.jpg') }}'; this.alt='Default Image';">
+                            <img src="{{ $primaryImage->thumbnail_url ?? $primaryImage->url }}"
+                                 class="img-fluid zoom"
+                                 style="max-width:80px;"
+                                 alt="{{ $primaryImage->alt_text ?? $product->title . ' - Product Image' }}"
+                                 tabindex="{{ $loop->iteration + 100 }}"
+                                 onerror="this.src='{{ asset('backend/img/thumbnail-default.jpg') }}'; this.alt='Default Image';">
                             @else
                             <img src="{{ asset('backend/img/thumbnail-default.jpg') }}"
-                                class="img-fluid"
-                                style="max-width:80px;"
-                                alt="Default Image"
-                                tabindex="{{ $loop->iteration + 100 }}">
+                                 class="img-fluid"
+                                 style="max-width:80px;"
+                                 alt="Default Image"
+                                 tabindex="{{ $loop->iteration + 100 }}">
+                            @endif
+                        </td>
+                        <td>
+                            @if($product->has_variants)
+                                <button class="btn btn-success" disabled>Yes</button>
+                            @else
+                                <button class="btn btn-secondary" disabled>No</button>
                             @endif
                         </td>
                         <td>
@@ -96,22 +134,22 @@
                         </td>
                         <td class="d-flex">
                             <a href="{{ route('product.edit', $product->id) }}"
-                                class="btn btn-primary btn-sm mr-1"
-                                style="height:30px; width:30px; border-radius:50%"
-                                data-toggle="tooltip"
-                                title="Edit"
-                                tabindex="{{ $loop->iteration + 200 }}">
+                               class="btn btn-primary btn-sm mr-1"
+                               style="height:30px; width:30px; border-radius:50%"
+                               data-toggle="tooltip"
+                               title="Edit"
+                               tabindex="{{ $loop->iteration + 200 }}">
                                 <i class="fas fa-edit"></i>
                             </a>
                             <form method="POST" action="{{ route('product.destroy', $product->id) }}">
                                 @csrf
                                 @method('DELETE')
                                 <button class="btn btn-danger btn-sm dltBtn"
-                                    data-id="{{ $product->id }}"
-                                    style="height:30px; width:30px; border-radius:50%"
-                                    data-toggle="tooltip"
-                                    title="Delete"
-                                    tabindex="{{ $loop->iteration + 300 }}">
+                                        data-id="{{ $product->id }}"
+                                        style="height:30px; width:30px; border-radius:50%"
+                                        data-toggle="tooltip"
+                                        title="Delete"
+                                        tabindex="{{ $loop->iteration + 300 }}">
                                     <i class="fas fa-trash-alt"></i>
                                 </button>
                             </form>
@@ -191,7 +229,7 @@
             ],
             columnDefs: [{
                 orderable: false,
-                targets: [11, 12, 13] // Photo, Status, Action columns
+                targets: [11, 12, 13, 14] // Photo, Variant Product, Status, Action columns
             }],
             responsive: true
         });

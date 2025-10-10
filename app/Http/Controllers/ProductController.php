@@ -26,10 +26,19 @@ class ProductController extends Controller
      */
     public function index()
     {
-        // dd(RedisHelper::get('cache:homepage:product_lists'));
+        $products = Product::with([
+            'cat_info',
+            'sub_cat_info',
+            'brand',
+            'primaryImage',
+            'variants' => function ($query) {
+                $query->where('status', 'active')->with('primaryImage');
+            }
+        ])
+        // ->where('has_variants', false)
+        ->orderBy('id', 'desc')
+        ->paginate(10);
 
-        // $products = Product::getAllProduct();
-        $products = Product::with(['cat_info', 'sub_cat_info'])->orderBy('id', 'desc')->paginate(10);
         return view('backend.product.index', compact('products'));
     }
 
@@ -444,46 +453,54 @@ class ProductController extends Controller
     }
 
     // Add preview endpoint
-    public function previewVariants(Request $request) {
-        try {
-            $selections = $request->input('selections', []);
+    public function previewVariants(Request $request)
+{
+    $selections = json_decode($request->input('selections'), true);
+    $basePrice = $request->input('base_price');
+    $variants = [];
 
-            // If selections were sent as a JSON string (client uses JSON.stringify), decode it
-            if (is_string($selections)) {
-                $decoded = json_decode($selections, true);
-                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                    $selections = $decoded;
-                } else {
-                    // Malformed JSON - treat as empty
-                    Log::warning('previewVariants: malformed selections JSON', ['raw' => $selections]);
-                    $selections = [];
-                }
-            }
-
-            // Ensure we have an array of selections
-            if (!is_array($selections) || empty($selections)) {
-                return response("<div class='alert alert-warning'>No variant options selected.</div>", 200);
-            }
-
-            $combs = $this->generateCombinations($selections);
-
-            $html = '<table class="table table-sm"><thead><tr><th>Combination</th><th>Price</th><th>Discount</th><th>Stock</th><th>Images</th></tr></thead><tbody>';
-            foreach ($combs as $i => $comb) {
-                $key = md5(json_encode($comb['values']));
-                $display = collect($comb['values'])->map(fn($id) => ProductVariantOption::find($id)?->display_value ?? 'Unknown')->implode(', ');
-                $priceVal = htmlspecialchars((string) $request->input('base_price', ''));
-                $html .= "<tr><td>{$display}</td><td><input name='variant_price_{$key}' class='form-control form-control-sm' value='{$priceVal}'></td>
-                    <td><input name='variant_discount_{$key}' class='form-control form-control-sm'></td>
-                    <td><input name='variant_stock_{$key}' class='form-control form-control-sm' value='0'></td>
-                    <td><input name='variant_images_{$key}[]' class='form-control form-control-sm' multiple></td></tr>";
-            }
-            $html .= '</tbody></table><input type="hidden" name="variant_selections" value="' . htmlspecialchars(is_string($request->input('selections')) ? $request->input('selections') : json_encode($request->input('selections')) ) . '">';
-            return response($html);
-        } catch (\Throwable $e) {
-            Log::error('previewVariants failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString(), 'request' => $request->all()]);
-            return response("<div class='alert alert-danger'>Could not generate preview. Try again.</div>", 500);
-        }
+    // Generate combinations
+    $combinations = $this->generateVariantCombinations($selections);
+    foreach ($combinations as $idx => $combo) {
+        $name = implode(' / ', array_map(fn($opt) => $opt['display_value'], $combo));
+        $sku = $this->generateSKU($name, $idx);
+        $variants[] = [
+            'name' => $name,
+            'sku' => $sku,
+            'price' => $basePrice,
+            'discount' => null,
+            'stock' => 10,
+        ];
     }
+
+    return response()->json(['variants' => $variants]);
+}
+
+private function generateVariantCombinations($selections)
+{
+    $options = [];
+    foreach ($selections as $typeId => $optionIds) {
+        $options[$typeId] = ProductVariantOption::whereIn('id', $optionIds)->get()->toArray();
+    }
+
+    $combinations = [[]];
+    foreach ($options as $typeId => $opts) {
+        $newCombinations = [];
+        foreach ($combinations as $combo) {
+            foreach ($opts as $opt) {
+                $newCombinations[] = array_merge($combo, [$opt]);
+            }
+        }
+        $combinations = $newCombinations;
+    }
+    return $combinations;
+}
+
+private function generateSKU($name, $index)
+{
+    $base = strtoupper(substr(preg_replace('/[^a-zA-Z0-9]/', '', $name), 0, 3));
+    return "{$base}-V{$index}-" . time();
+}
 
     /**
      * Remove the specified resource from storage.
@@ -540,22 +557,22 @@ class ProductController extends Controller
         return null; // Could not generate unique SKU
     }
 
-    /**
-     * Generate SKU based on product attributes
-     */
-    private function generateSKU(Product $product, int $attempt): string
-    {
-        // Load relationships if not already loaded
-        $product->load(['category', 'brand']);
+    // /**
+    //  * Generate SKU based on product attributes
+    //  */
+    // private function generateSKU(Product $product, int $attempt): string
+    // {
+    //     // Load relationships if not already loaded
+    //     $product->load(['category', 'brand']);
 
-        $cat = $this->getCode($product->category->code ?? $product->category->name ?? 'GEN');
-        $brand = $this->getCode($product->brand->code ?? $product->brand->name ?? 'GEN');
-        $variant = $this->mapSize($product->size) . $this->hashDigit($product->id);
-        $unique = $this->generateUniqueID($product->id, $attempt);
-        $checksum = $this->crc16Checksum($cat . $brand . $variant . $unique);
+    //     $cat = $this->getCode($product->category->code ?? $product->category->name ?? 'GEN');
+    //     $brand = $this->getCode($product->brand->code ?? $product->brand->name ?? 'GEN');
+    //     $variant = $this->mapSize($product->size) . $this->hashDigit($product->id);
+    //     $unique = $this->generateUniqueID($product->id, $attempt);
+    //     $checksum = $this->crc16Checksum($cat . $brand . $variant . $unique);
 
-        return $cat . $brand . $variant . $unique . $checksum;
-    }
+    //     return $cat . $brand . $variant . $unique . $checksum;
+    // }
 
     /**
      * Get 3-character code from string

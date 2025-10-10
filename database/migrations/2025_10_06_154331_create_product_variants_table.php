@@ -16,7 +16,6 @@ return new class extends Migration
             $table->decimal('price', 10, 2); // Variant-specific price
             $table->decimal('discount', 10, 2)->nullable(); // Variant-specific
             $table->integer('stock')->default(0); // Variant-specific
-            $table->string('size')->nullable(); // If not using variant types for size; else remove
             $table->enum('status', ['active', 'inactive'])->default('active');
             $table->timestamps();
 
