@@ -14,8 +14,8 @@ class OptimizedVariantMasterSeederNew extends Seeder
     // Configuration
     protected int $startingProductId;
     protected bool $enableTruncate = false;
-    protected int $targetProducts = 1000; // 1,000 products
-    protected int $variantProducts = 500; // 500 products with variants
+    protected int $targetProducts = 1; // 1,000 products
+    protected int $variantProducts = 1; // 500 products with variants
     protected int $variantsPerProduct = 4; // ~4 variants per variant-enabled product
     protected int $batchSize = 500;
     protected int $imageBatchSize = 500;

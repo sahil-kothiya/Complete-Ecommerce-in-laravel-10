@@ -179,7 +179,8 @@ Route::get('/category/{category}/brands', [BrandController::class, 'getBrandsByC
 Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::get('/', [AdminController::class, 'index'])->name('admin');
     Route::view('/file-manager', 'backend.layouts.file-manager')->name('file-manager');
-    Route::post('/category/{id}/child', [CategoryController::class, 'getChildByParent']);
+    // Route::post('/category/{id}/child', [CategoryController::class, 'getChildByParent']);
+    Route::get('/category/{id}/child', [CategoryController::class, 'getChildCategories'])->name('category.child');
 
     Route::get('/profile', [AdminController::class, 'profile'])->name('admin-profile');
     Route::post('/profile/{id}', [AdminController::class, 'profileUpdate'])->name('profile-update');

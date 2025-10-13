@@ -15,6 +15,8 @@ class Kernel extends ConsoleKernel
     protected $commands = [
         \App\Console\Commands\SeedBulkProducts::class,
         \App\Console\Commands\ManageHomepageCache::class,
+        \App\Console\Commands\SyncSequences::class,
+        \App\Console\Commands\SequencesInfo::class,
         \App\Console\Commands\IndexProducts::class,
         \App\Console\Commands\ReindexProducts::class,
         \App\Console\Commands\MinifyAssets::class,

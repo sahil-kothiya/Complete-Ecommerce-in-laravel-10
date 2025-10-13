@@ -11,6 +11,9 @@ use App\Models\Post;
 use App\Models\PostCategory;
 use App\Models\PostTag;
 use App\Models\Product;
+use App\Models\ProductImage;
+use App\Models\ProductVariant;
+use App\Models\VariantImage;
 use App\Services\ProductFilterService;
 use App\Services\ProductSearchService;
 use App\Services\RecentProductService;
@@ -319,24 +322,42 @@ class FrontendController extends Controller
             'id',
             'title',
             'slug',
-            'price',
-            'discount',
-            'stock',
-            'condition',
+            'base_price',
+            'base_discount',
+            'base_stock',
+            'has_variants',
             'cat_id',
-            'size',
+            'condition',
             'summary',
             'is_featured'
         ])
             ->where('status', 'active')
             ->where('is_featured', true)
             ->with([
-                'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
-                'cat_info' => fn($q) => $q->select(['id', 'title'])
+                'images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true),
+                'cat_info' => fn($q) => $q->select(['id', 'title']),
+                'variants' => fn($q) => $q->where('status', 'active')
+                    ->select(['id', 'product_id', 'price', 'discount', 'stock'])
+                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true)])
             ])
             ->latest('id')
             ->limit(350)
             ->get();
+
+        $products->transform(function ($product) {
+            if ($product->has_variants) {
+                $minVariant = $product->variants->sortBy(function ($variant) {
+                    return $variant->discount > 0 ? $variant->price - ($variant->price * $variant->discount / 100) : $variant->price;
+                })->first();
+                $product->discounted_price = $minVariant ? ($minVariant->discount > 0 ? $minVariant->price - ($minVariant->price * $minVariant->discount / 100) : $minVariant->price) : null;
+                $product->images = $minVariant ? $minVariant->images : collect();
+            } else {
+                $product->discounted_price = $product->base_discount > 0
+                    ? $product->base_price - ($product->base_price * $product->base_discount / 100)
+                    : $product->base_price;
+            }
+            return $product;
+        });
 
         RedisHelper::put($key, $products, $ttl);
         return $products;
@@ -437,36 +458,148 @@ class FrontendController extends Controller
         $minRatings = $request->input('min_rating', []);
         $minDiscounts = $request->input('min_discount', []);
 
-        $productsQuery = Product::query()->where('status', 'active');
+        $productsQuery = Product::query()
+            ->select([
+                'products.id',
+                'products.title',
+                'products.slug',
+                'products.base_price',
+                'products.base_discount',
+                'products.base_stock',
+                'products.has_variants',
+                'products.cat_id',
+                'products.condition',
+                'products.is_featured',
+                'products.status',
+            ])
+            ->where('products.status', 'active')
+            ->with([
+                'images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true),
+                'cat_info' => fn($q) => $q->select(['id', 'title']),
+                'variants' => fn($q) => $q->where('status', 'active')
+                    ->select(['id', 'product_id', 'price', 'discount', 'stock'])
+                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true)])
+            ]);
+
         if (!empty($categories)) {
             $productsQuery->whereIn('cat_id', Category::whereIn('slug', $categories)->pluck('id'));
         }
         if (!empty($brands)) {
             $productsQuery->whereIn('brand_id', Brand::whereIn('slug', $brands)->pluck('id'));
         }
+
         if ($priceRange) {
             [$minPrice, $maxPrice] = explode('-', $priceRange);
-            $productsQuery->whereBetween('price', [(float)$minPrice, (float)$maxPrice]);
+            $productsQuery->where(function ($query) use ($minPrice, $maxPrice) {
+                // Non-variant products
+                $query->where(function ($q) use ($minPrice, $maxPrice) {
+                    $q->where('has_variants', false)
+                    ->whereRaw('
+                        CASE 
+                            WHEN base_discount > 0 THEN 
+                                base_price - (base_price * base_discount / 100)
+                            ELSE 
+                                base_price 
+                        END BETWEEN ? AND ?', [(float)$minPrice, (float)$maxPrice]);
+                })
+                // Variant products (use lowest variant price)
+                ->orWhere(function ($q) use ($minPrice, $maxPrice) {
+                    $q->where('has_variants', true)
+                    ->whereHas('variants', function ($subQuery) use ($minPrice, $maxPrice) {
+                        $subQuery->where('status', 'active')
+                                ->whereRaw('
+                                    CASE 
+                                        WHEN discount > 0 THEN 
+                                            price - (price * discount / 100)
+                                        ELSE 
+                                            price 
+                                    END BETWEEN ? AND ?', [(float)$minPrice, (float)$maxPrice]);
+                    });
+                });
+            });
         }
+
         if (!empty($minRatings)) {
-            $productsQuery->whereIn('rating', $minRatings);
+            $productsQuery->whereRaw('
+                products.id IN (
+                    SELECT product_id 
+                    FROM product_reviews 
+                    WHERE product_reviews.product_id = products.id 
+                    GROUP BY product_id 
+                    HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
+                )', [min(array_map('intval', $minRatings))]);
         }
+
         if (!empty($minDiscounts)) {
-            $productsQuery->whereIn('discount', $minDiscounts);
+            $validDiscounts = array_filter(array_map('intval', $minDiscounts), fn($d) => $d >= 0 && $d <= 100);
+            if (!empty($validDiscounts)) {
+                $productsQuery->where(function ($query) use ($validDiscounts) {
+                    $query->where('has_variants', false)
+                        ->whereIn('base_discount', $validDiscounts)
+                        ->orWhere(function ($q) use ($validDiscounts) {
+                            $q->where('has_variants', true)
+                                ->whereHas('variants', fn($subQuery) => $subQuery->whereIn('discount', $validDiscounts));
+                        })
+                        ->orWhereHas('discounts', fn($subQuery) => $subQuery->where('type', 'percentage')
+                            ->where('is_active', true)
+                            ->where('starts_at', '<=', now())
+                            ->where('ends_at', '>=', now())
+                            ->whereIn('value', $validDiscounts));
+                });
+            }
         }
+
         if ($query) {
-            $productsQuery->where('title', 'like', "%{$query}%");
+            $productsQuery->where('title', 'ILIKE', "%{$query}%");
         }
 
         if ($sortBy === 'price_low_high') {
-            $productsQuery->orderBy('price', 'ASC');
+            $productsQuery->orderByRaw('
+                CASE 
+                    WHEN has_variants = false THEN 
+                        CASE 
+                            WHEN base_discount > 0 THEN 
+                                base_price - (base_price * base_discount / 100)
+                            ELSE 
+                                base_price 
+                        END
+                    ELSE 
+                        (SELECT MIN(
+                            CASE 
+                                WHEN discount > 0 THEN 
+                                    price - (price * discount / 100)
+                                ELSE 
+                                    price 
+                            END
+                        ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
+                END ASC
+            ');
         } elseif ($sortBy === 'price_high_low') {
-            $productsQuery->orderBy('price', 'DESC');
+            $productsQuery->orderByRaw('
+                CASE 
+                    WHEN has_variants = false THEN 
+                        CASE 
+                            WHEN base_discount > 0 THEN 
+                                base_price - (base_price * base_discount / 100)
+                            ELSE 
+                                base_price 
+                        END
+                    ELSE 
+                        (SELECT MAX(
+                            CASE 
+                                WHEN discount > 0 THEN 
+                                    price - (price * discount / 100)
+                                ELSE 
+                                    price 
+                            END
+                        ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
+                END DESC
+            ');
         } else {
             $productsQuery->latest('id');
         }
 
-        $products = $productsQuery->with(['images', 'cat_info'])->paginate($show);
+        $products = $productsQuery->paginate($show);
         $products->setPath('/product-grids');
         $products->appends($request->except('page'));
 
@@ -691,37 +824,49 @@ class FrontendController extends Controller
             if (is_string($brands)) {
                 $brands = array_filter(explode(',', $brands));
             }
-
             if (!empty($brands)) {
                 $brandIds = Brand::whereIn('slug', $brands)
                     ->where('status', 'active')
                     ->pluck('id')
                     ->toArray();
-
                 if (!empty($brandIds)) {
                     $productQuery->whereIn('brand_id', $brandIds);
                 }
             }
         }
 
-        // Updated price range filter to work with discounted price
         $priceRange = $request->input('price_range', '');
         if ($priceRange && str_contains($priceRange, '-')) {
             $priceParts = explode('-', $priceRange);
             if (count($priceParts) == 2) {
                 $minPrice = (float) trim($priceParts[0]);
                 $maxPrice = (float) trim($priceParts[1]);
-
                 if ($minPrice >= 0 && $maxPrice > $minPrice) {
-                    // Filter based on final price (after discount calculation)
-                    $productQuery->whereRaw('
-                    CASE 
-                        WHEN discount > 0 THEN 
-                            price - (price * discount / 100)
-                        ELSE 
-                            price 
-                    END BETWEEN ? AND ?
-                ', [$minPrice, $maxPrice]);
+                    $productQuery->where(function ($query) use ($minPrice, $maxPrice) {
+                        $query->where(function ($q) use ($minPrice, $maxPrice) {
+                            $q->where('has_variants', false)
+                            ->whereRaw('
+                                CASE 
+                                    WHEN base_discount > 0 THEN 
+                                        base_price - (base_price * base_discount / 100)
+                                    ELSE 
+                                        base_price 
+                                END BETWEEN ? AND ?', [$minPrice, $maxPrice]);
+                        })
+                        ->orWhere(function ($q) use ($minPrice, $maxPrice) {
+                            $q->where('has_variants', true)
+                            ->whereHas('variants', function ($subQuery) use ($minPrice, $maxPrice) {
+                                $subQuery->where('status', 'active')
+                                        ->whereRaw('
+                                            CASE 
+                                                WHEN discount > 0 THEN 
+                                                    price - (price * discount / 100)
+                                                ELSE 
+                                                    price 
+                                            END BETWEEN ? AND ?', [$minPrice, $maxPrice]);
+                            });
+                        });
+                    });
                 }
             }
         }
@@ -730,15 +875,14 @@ class FrontendController extends Controller
         if (!empty($minRatings)) {
             $minRatings = is_array($minRatings) ? $minRatings : array_filter(explode(',', $minRatings));
             $minRating = min(array_map('intval', $minRatings));
-
             $productQuery->whereRaw('
-            products.id IN (
-                SELECT product_id 
-                FROM product_reviews 
-                WHERE product_reviews.product_id = products.id 
-                GROUP BY product_id 
-                HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
-            )', [$minRating]);
+                products.id IN (
+                    SELECT product_id 
+                    FROM product_reviews 
+                    WHERE product_reviews.product_id = products.id 
+                    GROUP BY product_id 
+                    HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
+                )', [$minRating]);
         }
 
         $minDiscounts = $request->input('min_discount', []);
@@ -746,28 +890,21 @@ class FrontendController extends Controller
             if (is_string($minDiscounts)) {
                 $minDiscounts = array_filter(explode(',', $minDiscounts));
             }
-
             if (!empty($minDiscounts)) {
-                $validDiscounts = array_filter(array_map('intval', $minDiscounts), function ($discount) {
-                    return $discount >= 0 && $discount <= 100;
-                });
-
+                $validDiscounts = array_filter(array_map('intval', $minDiscounts), fn($d) => $d >= 0 && $d <= 100);
                 if (!empty($validDiscounts)) {
                     $productQuery->where(function ($query) use ($validDiscounts) {
-                        foreach ($validDiscounts as $discount) {
-                            $query->orWhere('discount', '>=', $discount);
-                        }
-                        $query->orWhereHas('discounts', function ($subQuery) use ($validDiscounts) {
-                            $subQuery->where('type', 'percentage')
+                        $query->where('has_variants', false)
+                            ->whereIn('base_discount', $validDiscounts)
+                            ->orWhere(function ($q) use ($validDiscounts) {
+                                $q->where('has_variants', true)
+                                    ->whereHas('variants', fn($subQuery) => $subQuery->whereIn('discount', $validDiscounts));
+                            })
+                            ->orWhereHas('discounts', fn($subQuery) => $subQuery->where('type', 'percentage')
                                 ->where('is_active', true)
                                 ->where('starts_at', '<=', now())
                                 ->where('ends_at', '>=', now())
-                                ->where(function ($q) use ($validDiscounts) {
-                                    foreach ($validDiscounts as $discount) {
-                                        $q->orWhere('value', '>=', $discount);
-                                    }
-                                });
-                        });
+                                ->whereIn('value', $validDiscounts));
                     });
                 }
             }
@@ -776,26 +913,48 @@ class FrontendController extends Controller
         $sortBy = $request->input('sortBy', 'latest');
         switch ($sortBy) {
             case 'price_low_high':
-                // Sort by final price (after discount)
                 $productQuery->orderByRaw('
-                CASE 
-                    WHEN discount > 0 THEN 
-                        price - (price * discount / 100)
-                    ELSE 
-                        price 
-                END ASC
-            ');
+                    CASE 
+                        WHEN has_variants = false THEN 
+                            CASE 
+                                WHEN base_discount > 0 THEN 
+                                    base_price - (base_price * base_discount / 100)
+                                ELSE 
+                                    base_price 
+                            END
+                        ELSE 
+                            (SELECT MIN(
+                                CASE 
+                                    WHEN discount > 0 THEN 
+                                        price - (price * discount / 100)
+                                    ELSE 
+                                        price 
+                                END
+                            ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
+                    END ASC
+                ');
                 break;
             case 'price_high_low':
-                // Sort by final price (after discount)
                 $productQuery->orderByRaw('
-                CASE 
-                    WHEN discount > 0 THEN 
-                        price - (price * discount / 100)
-                    ELSE 
-                        price 
-                END DESC
-            ');
+                    CASE 
+                        WHEN has_variants = false THEN 
+                            CASE 
+                                WHEN base_discount > 0 THEN 
+                                    base_price - (base_price * base_discount / 100)
+                                ELSE 
+                                    base_price 
+                            END
+                        ELSE 
+                            (SELECT MAX(
+                                CASE 
+                                    WHEN discount > 0 THEN 
+                                        price - (price * discount / 100)
+                                    ELSE 
+                                        price 
+                                END
+                            ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
+                    END DESC
+                ');
                 break;
             case 'rating_high_low':
                 $productQuery->leftJoin('product_reviews', 'products.id', '=', 'product_reviews.product_id')
@@ -992,50 +1151,103 @@ class FrontendController extends Controller
      * @return \Illuminate\View\View
      */
     public function productSearch(Request $request)
-    {
-        $query = $request->input('search', '');
-        $perPage = 9;
-        $ttl = $this->getTtlConfig();
-        $recent_products = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['product_lists']);
+{
+    $query = $request->input('search', '');
+    $perPage = 9;
+    $ttl = $this->getTtlConfig();
+    $recent_products = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['product_lists']);
 
-        if (empty($query)) {
-            $products = Product::where('status', 'active')
-                ->with(['images', 'cat_info'])
-                ->paginate($perPage);
-
-            return view('frontend.pages.product-grids')
-                ->with('products', $products)
-                ->with('recent_products', $recent_products)
-                ->with('search_query', $query);
-        }
-
-        try {
-            $searchResult = $this->searchService->search($query, $perPage, $request->input('page', 1));
-            $products = new LengthAwarePaginator(
-                collect($searchResult['products']),
-                $searchResult['total'],
-                $perPage,
-                $request->input('page', 1),
-                [
-                    'path' => $request->url(),
-                    'pageName' => 'page',
-                ]
-            );
-            $products->appends($request->except('page'));
-            Log::info("Search performed using: " . $searchResult['source']);
-        } catch (\Exception $e) {
-            Log::error('Search error: ' . $e->getMessage());
-            $products = Product::where('title', 'ILIKE', "%{$query}%")
-                ->where('status', 'active')
-                ->orderBy('id', 'DESC')
-                ->paginate($perPage);
-        }
+    if (empty($query)) {
+        $products = Product::where('status', 'active')
+            ->select([
+                'id',
+                'title',
+                'slug',
+                'base_price',
+                'base_discount',
+                'base_stock',
+                'has_variants',
+                'cat_id',
+                'condition',
+                'is_featured',
+            ])
+            ->with([
+                'images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true),
+                'cat_info' => fn($q) => $q->select(['id', 'title']),
+                'variants' => fn($q) => $q->where('status', 'active')
+                    ->select(['id', 'product_id', 'price', 'discount', 'stock'])
+                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true)])
+            ])
+            ->paginate($perPage);
 
         return view('frontend.pages.product-grids')
             ->with('products', $products)
             ->with('recent_products', $recent_products)
             ->with('search_query', $query);
     }
+
+    try {
+        $searchResult = $this->searchService->search($query, $perPage, $request->input('page', 1));
+        $products = new LengthAwarePaginator(
+            collect($searchResult['products'])->map(function ($product) {
+                $product = (object) $product;
+                if ($product->has_variants) {
+                    $product->price = ProductVariant::where('product_id', $product->id)
+                        ->where('status', 'active')
+                        ->min('price');
+                    $product->images = VariantImage::whereIn('product_variant_id', ProductVariant::where('product_id', $product->id)->pluck('id'))
+                        ->where('is_primary', true)
+                        ->select(['id', 'image_path', 'product_variant_id'])
+                        ->get();
+                } else {
+                    $product->images = ProductImage::where('product_id', $product->id)
+                        ->where('is_primary', true)
+                        ->select(['id', 'image_path'])
+                        ->get();
+                }
+                return $product;
+            }),
+            $searchResult['total'],
+            $perPage,
+            $request->input('page', 1),
+            [
+                'path' => $request->url(),
+                'pageName' => 'page',
+            ]
+        );
+        $products->appends($request->except('page'));
+        Log::info("Search performed using: " . $searchResult['source']);
+    } catch (\Exception $e) {
+        Log::error('Search error: ' . $e->getMessage());
+        $products = Product::where('title', 'ILIKE', "%{$query}%")
+            ->where('status', 'active')
+            ->select([
+                'id',
+                'title',
+                'slug',
+                'base_price',
+                'base_discount',
+                'base_stock',
+                'has_variants',
+                'cat_id',
+                'condition',
+                'is_featured',
+            ])
+            ->with([
+                'images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true),
+                'cat_info' => fn($q) => $q->select(['id', 'title']),
+                'variants' => fn($q) => $q->where('status', 'active')
+                    ->select(['id', 'product_id', 'price', 'discount', 'stock'])
+                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true)])
+            ])
+            ->paginate($perPage);
+    }
+
+    return view('frontend.pages.product-grids')
+        ->with('products', $products)
+        ->with('recent_products', $recent_products)
+        ->with('search_query', $query);
+}
 
     /**
      * Provide autocomplete suggestions for search.
@@ -1057,18 +1269,40 @@ class FrontendController extends Controller
             } else {
                 $products = Product::where('status', 'active')
                     ->where('title', 'ILIKE', "%{$query}%")
-                    ->select('id', 'title', 'slug', 'price', 'discount', 'photo')
+                    ->select(['id', 'title', 'slug', 'base_price', 'base_discount', 'has_variants'])
+                    ->with([
+                        'images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true),
+                        'variants' => fn($q) => $q->where('status', 'active')
+                            ->select(['id', 'product_id', 'price', 'discount'])
+                            ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true)])
+                    ])
                     ->limit(10)
                     ->get();
 
                 $suggestions = $products->map(function ($product) {
+                    $price = $product->has_variants
+                        ? ProductVariant::where('product_id', $product->id)
+                            ->where('status', 'active')
+                            ->min('price')
+                        : ($product->base_discount > 0
+                            ? $product->base_price - ($product->base_price * $product->base_discount / 100)
+                            : $product->base_price);
+
+                    $photo = $product->has_variants
+                        ? VariantImage::whereIn('product_variant_id', ProductVariant::where('product_id', $product->id)->pluck('id'))
+                            ->where('is_primary', true)
+                            ->value('image_path')
+                        : ProductImage::where('product_id', $product->id)
+                            ->where('is_primary', true)
+                            ->value('image_path');
+
                     return [
                         'id' => $product->id,
                         'title' => $product->title,
                         'slug' => $product->slug,
-                        'price' => $product->price,
-                        'discount' => $product->discount ?? 0,
-                        'photo' => $product->photo ? explode(',', $product->photo)[0] : null
+                        'price' => $price,
+                        'discount' => $product->has_variants ? null : $product->base_discount,
+                        'photo' => $photo
                     ];
                 });
             }
@@ -1152,10 +1386,30 @@ class FrontendController extends Controller
      * @return \Illuminate\View\View
      */
     public function productDetail($slug)
-    {   
-        $product_detail = Product::getProductBySlug($slug);
-        $related_products = $product_detail && $product_detail->rel_prods ? $product_detail->rel_prods->where('id', '!=', $product_detail->id) : collect();
+    {
+        $product_detail = Product::where('slug', $slug)
+            ->where('status', 'active')
+            ->with([
+                'images' => fn($q) => $q->select(['id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])->orderBy('sort_order'),
+                'variants' => fn($q) => $q->where('status', 'active')
+                    ->with([
+                        'images' => fn($q) => $q->select(['id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])->orderBy('sort_order'),
+                        'options' => fn($q) => $q->with(['variant_type' => fn($q) => $q->select(['id', 'name', 'display_name'])])
+                    ])
+                    ->select(['id', 'product_id', 'sku', 'price', 'discount', 'stock', 'variant_values']),
+                'variant_types' => fn($q) => $q->with(['options' => fn($q) => $q->where('status', 'active')
+                    ->select(['id', 'variant_type_id', 'value', 'display_value', 'hex_color', 'sort_order'])])
+            ])
+            ->firstOrFail();
+
+        // Fetch related products (exclude current product, respect variants)
+        $related_products = $product_detail->rel_prods
+            ? $product_detail->rel_prods->where('id', '!=', $product_detail->id)
+            : collect();
+
+        // Fetch recent products
         $recent_products = $this->recentProductService->getRecentProducts();
+
         return view('frontend.pages.product_detail', compact('product_detail', 'related_products', 'recent_products'));
     }
 
@@ -1166,7 +1420,27 @@ class FrontendController extends Controller
      */
     public function productLists()
     {
-        $products = Product::query();
+        $products = Product::query()
+            ->select([
+                'id',
+                'title',
+                'slug',
+                'base_price',
+                'base_discount',
+                'base_stock',
+                'has_variants',
+                'cat_id',
+                'condition',
+                'is_featured',
+            ])
+            ->where('status', 'active')
+            ->with([
+                'images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true),
+                'cat_info' => fn($q) => $q->select(['id', 'title']),
+                'variants' => fn($q) => $q->where('status', 'active')
+                    ->select(['id', 'product_id', 'price', 'discount', 'stock'])
+                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true)])
+            ]);
 
         if (!empty($_GET['category'])) {
             $slug = explode(',', $_GET['category']);
@@ -1182,21 +1456,64 @@ class FrontendController extends Controller
 
         if (!empty($_GET['sortBy'])) {
             if ($_GET['sortBy'] == 'title') {
-                $products->where('status', 'active')->orderBy('title', 'ASC');
+                $products->orderBy('title', 'ASC');
             } elseif ($_GET['sortBy'] == 'price') {
-                $products->orderBy('price', 'ASC');
+                $products->orderByRaw('
+                    CASE 
+                        WHEN has_variants = false THEN 
+                            CASE 
+                                WHEN base_discount > 0 THEN 
+                                    base_price - (base_price * base_discount / 100)
+                                ELSE 
+                                    base_price 
+                            END
+                        ELSE 
+                            (SELECT MIN(
+                                CASE 
+                                    WHEN discount > 0 THEN 
+                                        price - (price * discount / 100)
+                                    ELSE 
+                                        price 
+                                END
+                            ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
+                    END ASC
+                ');
             }
         }
 
         if (!empty($_GET['price'])) {
             $price = explode('-', $_GET['price']);
             if (count($price) === 2 && is_numeric($price[0]) && is_numeric($price[1])) {
-                $products->whereBetween('price', [(float)$price[0], (float)$price[1]]);
+                $products->where(function ($query) use ($price) {
+                    $query->where(function ($q) use ($price) {
+                        $q->where('has_variants', false)
+                        ->whereRaw('
+                            CASE 
+                                WHEN base_discount > 0 THEN 
+                                    base_price - (base_price * base_discount / 100)
+                                ELSE 
+                                    base_price 
+                            END BETWEEN ? AND ?', [(float)$price[0], (float)$price[1]]);
+                    })
+                    ->orWhere(function ($q) use ($price) {
+                        $q->where('has_variants', true)
+                        ->whereHas('variants', function ($subQuery) use ($price) {
+                            $subQuery->where('status', 'active')
+                                    ->whereRaw('
+                                        CASE 
+                                            WHEN discount > 0 THEN 
+                                                price - (price * discount / 100)
+                                            ELSE 
+                                                price 
+                                        END BETWEEN ? AND ?', [(float)$price[0], (float)$price[1]]);
+                        });
+                    });
+                });
             }
         }
 
-        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
-        $products = $products->where('status', 'active')->paginate($_GET['show'] ?? 6);
+        $recent_products = $this->getRecentProductsData('recent_latest', 3600);
+        $products = $products->paginate($_GET['show'] ?? 6);
 
         return view('frontend.pages.product-lists')
             ->with('products', $products)
@@ -1236,12 +1553,33 @@ class FrontendController extends Controller
         $perPage = $request->get('show', 12);
         $page = $request->get('page', 1);
 
-        $service = app(ProductFilterService::class);
-        $products = $service->getProducts($filters, $perPage, $page);
+        $category = Category::where('slug', $request->slug)->firstOrFail();
+        $descendantIds = method_exists($category, 'descendantsAndSelf')
+            ? $category->descendantsAndSelf()->pluck('id')->toArray()
+            : $this->getDescendantIds($category);
+
+        $productQuery = Product::with([
+            'images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true),
+            'cat_info' => fn($q) => $q->select(['id', 'title']),
+            'variants' => fn($q) => $q->where('status', 'active')
+                ->select(['id', 'product_id', 'price', 'discount', 'stock'])
+                ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true)])
+        ])
+            ->where('status', 'active')
+            ->where(function ($query) use ($descendantIds) {
+                $query->whereIn('cat_id', $descendantIds)
+                    ->orWhereIn('child_cat_id', $descendantIds);
+            });
+
+        $this->applyFiltersToQuery($productQuery, $request);
+
+        $products = $productQuery->paginate($perPage);
+        $products->setPath('/product-cat/' . $request->slug);
+        $products->appends($request->except(['page', '_token']));
 
         return view('frontend.pages.product-grids', [
             'products' => $products,
-            'category' => Category::where('slug', $request->slug)->firstOrFail(),
+            'category' => $category,
             'show' => $perPage,
             'sortBy' => $filters['sortBy'],
             'price' => $filters['price_range'],
@@ -1260,22 +1598,14 @@ class FrontendController extends Controller
             $currentCategory = Category::whereNull('parent_id')
                 ->where('status', 'active')
                 ->where('slug', $segments[0])
-                ->first();
-
-            if (!$currentCategory) {
-                abort(404, 'Root category not found');
-            }
+                ->firstOrFail();
 
             array_shift($segments);
             foreach ($segments as $segment) {
                 $child = $currentCategory->children()
                     ->where('slug', $segment)
                     ->where('status', 'active')
-                    ->first();
-
-                if (!$child) {
-                    abort(404, 'Sub-category not found');
-                }
+                    ->firstOrFail();
                 $currentCategory = $child;
             }
 
@@ -1286,7 +1616,14 @@ class FrontendController extends Controller
                 'filters' => $request->except(['page', '_token'])
             ]));
 
-            $productQuery = Product::with(['reviews', 'discounts', 'brand'])
+            $productQuery = Product::with([
+                'images' => fn($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true),
+                'cat_info' => fn($q) => $q->select(['id', 'title']),
+                'sub_cat_info' => fn($q) => $q->select(['id', 'title']),
+                'variants' => fn($q) => $q->where('status', 'active')
+                    ->select(['id', 'product_id', 'price', 'discount', 'stock'])
+                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true)])
+            ])
                 ->where('status', 'active')
                 ->where(function ($query) use ($descendantIds) {
                     $query->whereIn('cat_id', $descendantIds)
@@ -1295,7 +1632,6 @@ class FrontendController extends Controller
 
             $this->applyFiltersToQuery($productQuery, $request);
 
-            // Get total count and paginated results in one go
             $perPage = $request->input('show', 12);
             $products = RedisHelper::remember($cacheKey . '_results_' . $request->input('page', 1), self::CACHE_TTL, function () use ($productQuery, $perPage, $request, $encryptedPath) {
                 $products = $productQuery->paginate($perPage);
@@ -1314,7 +1650,29 @@ class FrontendController extends Controller
                         $query->whereIn('cat_id', $descendantIds)
                             ->orWhereIn('child_cat_id', $descendantIds);
                     })
-                    ->max('price') ?? 1000;
+                    ->selectRaw('
+                        MAX(
+                            CASE 
+                                WHEN has_variants = false THEN 
+                                    CASE 
+                                        WHEN base_discount > 0 THEN 
+                                            base_price - (base_price * base_discount / 100)
+                                        ELSE 
+                                            base_price 
+                                    END
+                                ELSE 
+                                    (SELECT MAX(
+                                        CASE 
+                                            WHEN discount > 0 THEN 
+                                                price - (price * discount / 100)
+                                            ELSE 
+                                                price 
+                                        END
+                                    ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
+                            END
+                        ) as max_price
+                    ')
+                    ->value('max_price') ?? 1000;
             });
 
             $recentProducts = $this->recentProductService->getRecentProducts();
@@ -1416,46 +1774,57 @@ class FrontendController extends Controller
      * @return \Illuminate\Support\Collection
      */
     private function getRecentProductsData(string $key, int $ttl)
-    {
-        return Cache::remember($key, $ttl, function () use ($key, $ttl) {
-            $recentProducts = Product::where('status', 'active')
-                ->select([
-                    'id',
-                    'title',
-                    'slug',
-                    'price',
-                    'discount',
-                    'stock',
-                    'condition',
-                    'cat_id',
-                    'size',
-                    'summary'
-                ])
-                ->with([
-                    'images' => fn($q) => $q->select(['id', 'image_path', 'product_id']),
-                    'cat_info' => fn($q) => $q->select(['id', 'title'])
-                ])
-                ->orderBy('id', 'DESC')
-                ->limit(3)
-                ->get();
+{
+    return Cache::remember($key, $ttl, function () use ($key, $ttl) {
+        $recentProducts = Product::where('status', 'active')
+            ->select([
+                'id',
+                'title',
+                'slug',
+                'base_price',
+                'base_discount',
+                'base_stock',
+                'has_variants',
+                'cat_id',
+                'condition',
+                'summary'
+            ])
+            ->with([
+                'images' => fn($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true),
+                'cat_info' => fn($q) => $q->select(['id', 'title']),
+                'variants' => fn($q) => $q->where('status', 'active')
+                    ->select(['id', 'product_id', 'price', 'discount', 'stock'])
+                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true)])
+            ])
+            ->orderBy('id', 'DESC')
+            ->limit(3)
+            ->get();
 
-            $recentProducts->transform(function ($product) {
-                $product->discounted_price = $product->discount > 0
-                    ? $product->price - ($product->price * $product->discount / 100)
-                    : $product->price;
-                $product->in_wishlist = class_exists('Helper') && method_exists('Helper', 'isProductInWishlist')
-                    ? Helper::isProductInWishlist($product->slug)
-                    : false;
-                return $product;
-            });
-
-            if (!RedisHelper::put($key, $recentProducts, $ttl)) {
-                Log::warning("Failed to store recent products in Redis for key: {$key}");
+        $recentProducts->transform(function ($product) {
+            if ($product->has_variants) {
+                $minVariant = $product->variants->sortBy(function ($variant) {
+                    return $variant->discount > 0 ? $variant->price - ($variant->price * $variant->discount / 100) : $variant->price;
+                })->first();
+                $product->discounted_price = $minVariant ? ($minVariant->discount > 0 ? $minVariant->price - ($minVariant->price * $minVariant->discount / 100) : $minVariant->price) : null;
+                $product->images = $minVariant ? $minVariant->images : collect();
+            } else {
+                $product->discounted_price = $product->base_discount > 0
+                    ? $product->base_price - ($product->base_price * $product->base_discount / 100)
+                    : $product->base_price;
             }
-
-            return $recentProducts;
+            $product->in_wishlist = class_exists('Helper') && method_exists('Helper', 'isProductInWishlist')
+                ? Helper::isProductInWishlist($product->slug)
+                : false;
+            return $product;
         });
-    }
+
+        if (!RedisHelper::put($key, $recentProducts, $ttl)) {
+            Log::warning("Failed to store recent products in Redis for key: {$key}");
+        }
+
+        return $recentProducts;
+    });
+}
 
     /**
      * Display blog page with filtering.

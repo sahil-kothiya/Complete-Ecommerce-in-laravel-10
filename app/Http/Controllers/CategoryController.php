@@ -282,6 +282,19 @@ class CategoryController extends Controller
         return response()->json(['status' => true, 'msg' => '', 'data' => $child_cat]);
     }
 
+    public function getChildCategories($id)
+    {
+        $childCategories = Category::where('parent_id', $id)
+            ->where('status', 'active')
+            ->select('id', 'title')
+            ->get();
+
+        return response()->json([
+            'status' => true,
+            'data' => $childCategories
+        ]);
+    }
+
     /**
      * Convert a full URL to a relative storage path.
      *

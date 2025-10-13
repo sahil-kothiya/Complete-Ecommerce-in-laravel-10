@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\VariantImage;
 
 class ProductVariant extends Model
 {
@@ -38,7 +39,7 @@ class ProductVariant extends Model
 
     public function variantCombinations()
     {
-        return $this->hasMany(ProductVariantCombination::class);
+        return $this->hasMany(ProductVariantCombination::class, 'product_variant_id');
     }
 
     public function variantOptions()

@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Category;
 use App\Models\Brand;
 use App\Models\ProductImage;
+use App\Models\VariantImage;
 use App\Models\ProductVariantOption;
 use Helper;
 use Illuminate\Support\Facades\DB;
@@ -35,9 +36,9 @@ class ProductController extends Controller
                 $query->where('status', 'active')->with('primaryImage');
             }
         ])
-        // ->where('has_variants', false)
-        ->orderBy('id', 'desc')
-        ->paginate(10);
+            // ->where('has_variants', false)
+            ->orderBy('id', 'desc')
+            ->paginate(10);
 
         return view('backend.product.index', compact('products'));
     }
@@ -55,158 +56,254 @@ class ProductController extends Controller
         return view('backend.product.create', compact('categories', 'brands'));
     }
 
-    /**
-     * Store a newly created resource in storage.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
-     */
     public function store(Request $request)
     {
-        // dd($request->all());
-        $validatedData = $request->validate([
+        // Log incoming request summary for debugging (exclude sensitive fields)
+        try {
+            Log::debug('Product store - incoming request', $request->only([
+                'title', 'slug', 'cat_id', 'child_cat_id', 'brand_id', 'has_variants',
+                'base_sku', 'base_price', 'base_stock', 'variants'
+            ]));
+        } catch (\Exception $e) {
+            // Ensure logging won't break the flow
+            Log::debug('Product store - failed to log incoming request', ['error' => $e->getMessage()]);
+        }
+        // Define validation rules
+        $rules = [
             'title' => 'required|string|max:255',
-            'summary' => 'required|nullable|string',
+            'slug' => 'required|string|max:255|unique:products,slug',
+            'summary' => 'required|string',
             'description' => 'nullable|string',
-            'photo' => 'required|string', // from FileManager, comma-separated
-            'size' => 'nullable|array',
-            'stock' => 'required|integer|min:0',
-            'cat_id' => 'nullable|exists:categories,id',
+            'cat_id' => 'required|exists:categories,id',
             'child_cat_id' => 'nullable|exists:categories,id',
             'brand_id' => 'nullable|exists:brands,id',
             'is_featured' => 'nullable|boolean',
             'status' => 'required|in:active,inactive',
             'condition' => 'required|in:default,new,hot',
-            'price' => 'required|numeric|min:0',
-            'discount' => 'nullable|numeric|min:0',
+            'size' => 'nullable|array',
             'enable_alt_text' => 'nullable|boolean',
-            'alt_text' => 'nullable|array',
-            'alt_text.*' => 'nullable|string|max:255',
-            'alt_text_order' => 'nullable|array', // Add validation for order array
-        ]);
+            'has_variants' => 'nullable|boolean',
+        ];
 
-        // Step 1: Split and clean the photo URLs
-        $rawPaths = array_filter(array_map('trim', explode(',', $validatedData['photo'] ?? '')));
-        unset($validatedData['photo']);
-
-        // FIXED: Get alt text data with proper ordering
-        $enableAltText = $request->boolean('enable_alt_text');
-        $altTexts = [];
-
-        if ($enableAltText && $request->has('alt_text')) {
-            $rawAltTexts = $request->input('alt_text', []);
-
-            // If alt_text comes as associative array (alt_text[0], alt_text[1], etc.)
-            // we need to maintain the proper order matching the images
-            if (is_array($rawAltTexts)) {
-                // Sort by key to maintain order (0, 1, 2, etc.)
-                ksort($rawAltTexts);
-                $altTexts = array_values($rawAltTexts); // Convert to indexed array
-            }
-
-            // Debug logging (remove in production)
-            Log::info('Alt texts received:', [
-                'raw' => $rawAltTexts,
-                'processed' => $altTexts,
-                'image_count' => count($rawPaths)
-            ]);
+        // Conditional validation based on has_variants
+        if ($request->boolean('has_variants')) {
+            $rules['variants'] = 'required|array|min:1';
+            $rules['variants.*.sku'] = 'required|string|max:255|unique:product_variants,sku';
+            $rules['variants.*.price'] = 'required|numeric|min:0';
+            $rules['variants.*.discount'] = 'nullable|numeric|min:0|max:100';
+            $rules['variants.*.stock'] = 'required|integer|min:0';
+            $rules['variants.*.images'] = 'required|string';
+            $rules['variant_options'] = 'required|array|min:1';
+            $rules['variant_options.*'] = 'required|array|min:1';
+        } else {
+            $rules['base_price'] = 'required|numeric|min:0';
+            $rules['base_discount'] = 'nullable|numeric|min:0|max:100';
+            $rules['base_stock'] = 'required|integer|min:0';
+            $rules['base_sku'] = 'required|string|max:255|unique:products,base_sku';
+            $rules['photo'] = 'required|string';
+            $rules['alt_text'] = 'nullable|array';
+            $rules['alt_text.*'] = 'nullable|string|max:125';
         }
 
-        // Remove alt text related fields from validated data before creating product
-        unset($validatedData['enable_alt_text'], $validatedData['alt_text'], $validatedData['alt_text_order']);
+        // Custom validation messages
+        $messages = [
+            'title.required' => 'Product title is required.',
+            'slug.required' => 'Product slug is required.',
+            'slug.unique' => 'This slug is already taken.',
+            'summary.required' => 'Product summary is required.',
+            'cat_id.required' => 'Please select a category.',
+            'cat_id.exists' => 'Selected category does not exist.',
+            'status.required' => 'Please select a status.',
+            'condition.required' => 'Please select a condition.',
+            'base_price.required' => 'Price is required.',
+            'base_price.min' => 'Price must be greater than or equal to 0.',
+            'base_stock.required' => 'Stock quantity is required.',
+            'base_stock.min' => 'Stock cannot be negative.',
+            'base_sku.required' => 'SKU is required.',
+            'base_sku.unique' => 'This SKU is already in use.',
+            'photo.required' => 'At least one product image is required.',
+            'base_discount.min' => 'Discount cannot be negative.',
+            'base_discount.max' => 'Discount cannot exceed 100%.',
+            'variants.required' => 'Please generate variants before submitting.',
+            'variants.min' => 'At least one variant is required.',
+            'variants.*.sku.required' => 'Variant SKU is required.',
+            'variants.*.sku.unique' => 'This variant SKU is already in use.',
+            'variants.*.price.required' => 'Variant price is required.',
+            'variants.*.stock.required' => 'Variant stock is required.',
+            'variants.*.images.required' => 'Variant images are required.',
+            'variant_options.required' => 'Please select variant options.',
+            'alt_text.*.max' => 'Alt text cannot exceed 125 characters.',
+        ];
 
+        // Validate the request
+        $validatedData = $request->validate($rules, $messages);
+
+        // Log validated data summary
+        try {
+            Log::info('Product store - validation passed', array_merge(
+                ['has_variants' => $request->boolean('has_variants')],
+                array_intersect_key($validatedData, array_flip([
+                    'title', 'slug', 'cat_id', 'child_cat_id', 'brand_id', 'base_sku', 'base_price', 'base_stock'
+                ]))
+            ));
+        } catch (\Exception $e) {
+            Log::debug('Product store - failed to log validated data', ['error' => $e->getMessage()]);
+        }
+
+        // Process non-variant images
         $webpPaths = [];
+        if (!$request->boolean('has_variants') && !empty($validatedData['photo'])) {
+            $rawPaths = array_filter(array_map('trim', explode(',', $validatedData['photo'])));
 
-        foreach ($rawPaths as $index => $url) {
-            // Step 2: Extract relative path by removing asset('storage')
-            $parsed = parse_url($url, PHP_URL_PATH); // gets only /storage/photos/...
-            $publicPath = ltrim(str_replace('/storage/', '', $parsed), '/'); // now: photos/1/Products/filename.webp
+            foreach ($rawPaths as $index => $url) {
+                try {
+                    $parsed = parse_url($url, PHP_URL_PATH);
+                    $publicPath = ltrim(str_replace('/storage/', '', $parsed), '/');
+                    $fullPath = storage_path("app/public/{$publicPath}");
 
-            // Step 3: Convert to actual storage path
-            $fullPath = storage_path("app/public/{$publicPath}");
+                    if (file_exists($fullPath)) {
+                        $image = Image::make($fullPath)->encode('webp', 75);
+                        $webpFilename = 'product_' . uniqid() . "_{$index}.webp";
+                        $webpPath = "public/products/{$webpFilename}";
+                        Storage::put($webpPath, (string) $image);
+                        $webpPaths[] = "products/{$webpFilename}";
 
-            // Step 4: Validate file exists and convert
-            if (file_exists($fullPath)) {
-                $image = Image::make($fullPath)->encode('webp', 75);
+                        // Log each successful image conversion
+                        Log::info('Product store - converted image to webp', [
+                            'original' => $fullPath,
+                            'webp_path' => $webpPath,
+                            'public_path' => end($webpPaths)
+                        ]);
+                    } else {
+                        Log::warning("Product store - source image not found", ['path' => $fullPath, 'url' => $url]);
+                    }
+                } catch (\Exception $e) {
+                    Log::error("Product store - image processing failed", ['url' => $url, 'error' => $e->getMessage()]);
+                }
+            }
 
-                $webpFilename = 'product_' . uniqid() . "_{$index}.webp";
-                $webpPath = "public/products/{$webpFilename}";
-
-                Storage::put($webpPath, (string) $image);
-
-                // Save this for DB or other processing
-                $webpPaths[] = "storage/products/{$webpFilename}";
-            } else {
-                Log::warning("Image not found: {$fullPath}");
+            // Validate that at least one image was processed successfully
+            if (empty($webpPaths)) {
+                Log::error('Product store - no images processed successfully', ['photo_input' => $validatedData['photo']]);
+                return redirect()->back()
+                    ->withInput()
+                    ->withErrors(['photo' => 'Failed to process images. Please try again.']);
             }
         }
 
-        // 2. Safe slug generation (unique)
-        $validatedData['slug'] = generateUniqueSlug($validatedData['title'], Product::class, 'slug');
+        // Prepare product data (fixed keys to match model)
+        $productData = [
+            'title' => $validatedData['title'],
+            'slug' => $validatedData['slug'],
+            'summary' => $validatedData['summary'],
+            'description' => $validatedData['description'] ?? null,
+            'cat_id' => $validatedData['cat_id'],
+            'child_cat_id' => $validatedData['child_cat_id'] ?? null,
+            'brand_id' => $validatedData['brand_id'] ?? null,
+            'is_featured' => $request->boolean('is_featured'),
+            'status' => $validatedData['status'],
+            'condition' => $validatedData['condition'],
+            'size' => $request->has('size') ? implode(',', $validatedData['size']) : 'M',
+            'has_variants' => $request->boolean('has_variants'),
+        ];
 
-        // 3. Cast/prepare values based on indexed schema
-        $validatedData['is_featured'] = $request->boolean('is_featured');
-        $validatedData['size'] = $request->has('size') ? implode(',', $validatedData['size']) : 'M';
+        // Add non-variant specific fields (fixed keys to 'base_*')
+        if (!$request->boolean('has_variants')) {
+            $productData['base_price'] = $validatedData['base_price'];
+            $productData['base_discount'] = $validatedData['base_discount'] ?? null;
+            $productData['base_stock'] = $validatedData['base_stock'];
+            $productData['base_sku'] = $validatedData['base_sku'];
+        }
+
+        // Log about to begin DB transaction and product summary
+        Log::debug('Product store - beginning transaction', [
+            'has_variants' => $request->boolean('has_variants'),
+            'webp_count' => count($webpPaths)
+        ]);
 
         DB::beginTransaction();
 
         try {
-            // Create product first to get the ID
-            $product = Product::create($validatedData);
-
-            if ($request->boolean('has_variants')) {
-                $product->update(['has_variants' => true, 'base_price' => $request->base_price]);
-                $this->handleVariants($request, $product);
-            }
-
-            // Generate and assign SKU after product creation
-            $sku = $this->generateUniqueSKU($product);
-            if ($sku) {
-                $product->update(['sku' => $sku]);
-            } else {
-                throw new \Exception('Could not generate unique SKU after maximum attempts');
-            }
-
-            // FIXED: Handle product images with alt text - improved logic
-            foreach ($webpPaths as $index => $path) {
-                // Get alt text for this image if provided
-                $altText = null;
-
-                if ($enableAltText) {
-                    // Check if alt text exists for this specific index
-                    if (isset($altTexts[$index]) && !empty(trim($altTexts[$index]))) {
-                        $altText = trim($altTexts[$index]);
-                    } else {
-                        // Generate default alt text if empty or missing
-                        $altText = $validatedData['title'] . ' - ' . ($index === 0 ? 'Main Image' : 'Image ' . ($index + 1));
+            // If using PostgreSQL ensure the products sequence is synced with the max id
+            try {
+                $pdo = DB::getPdo();
+                $driver = $pdo->getAttribute(\PDO::ATTR_DRIVER_NAME) ?? '';
+                if ($driver === 'pgsql') {
+                    $seqRow = DB::selectOne("SELECT pg_get_serial_sequence('products', 'id') as seq");
+                    if ($seqRow && isset($seqRow->seq)) {
+                        // set sequence to current max(id) so nextval returns max+1
+                        DB::statement("SELECT setval('" . $seqRow->seq . "', (SELECT COALESCE(MAX(id), 0) FROM products))");
+                        Log::info('Product store - synced products sequence for pgsql', ['sequence' => $seqRow->seq]);
                     }
                 }
+            } catch (\Exception $e) {
+                // Non-fatal: log and continue. This prevents sequence issues on Postgres only.
+                Log::warning('Product store - failed to sync products sequence', ['error' => $e->getMessage()]);
+            }
+            // Create product
+            $product = Product::create($productData);
 
-                ProductImage::create([
-                    'product_id' => $product->id,
-                    'image_path' => $path,
-                    'alt_text' => $altText, // This will be null if alt text is disabled
-                    'is_primary' => $index === 0,
-                    'sort_order' => $index + 1,
-                ]);
+            Log::info('Product store - product created', ['product_id' => $product->id, 'base_sku' => $product->base_sku ?? null]);
 
-                // Debug logging for each image created (remove in production)
-                Log::info("Created ProductImage", [
-                    'product_id' => $product->id,
-                    'image_path' => $path,
-                    'alt_text' => $altText,
-                    'is_primary' => $index === 0,
-                    'sort_order' => $index + 1,
-                ]);
+            // Handle non-variant images
+            if (!$request->boolean('has_variants') && !empty($webpPaths)) {
+                $enableAltText = $request->boolean('enable_alt_text');
+                $altTexts = $enableAltText && $request->has('alt_text')
+                    ? array_values($request->input('alt_text', []))
+                    : [];
+
+                foreach ($webpPaths as $index => $path) {
+                    $altText = null;
+
+                    if ($enableAltText && isset($altTexts[$index]) && !empty(trim($altTexts[$index]))) {
+                        $altText = trim($altTexts[$index]);
+                    } elseif ($enableAltText) {
+                        $altText = $validatedData['title'] . ' - ' . ($index === 0 ? 'Main Image' : 'Image ' . ($index + 1));
+                    }
+
+                    // Use the relative path without 'storage/'
+                    ProductImage::create([
+                        'product_id' => $product->id,
+                        'image_path' => $path, // e.g., 'products/variant_686d384c5eb_0.webp'
+                        'alt_text' => $altText,
+                        'is_primary' => $index === 0,
+                        'sort_order' => $index + 1,
+                    ]);
+                }
+            }
+
+            // Handle variants
+            if ($request->boolean('has_variants')) {
+                // Ensure product_variants sequence is in sync on PostgreSQL to avoid duplicate key errors
+                try {
+                    $pdo = DB::getPdo();
+                    $driver = $pdo->getAttribute(\PDO::ATTR_DRIVER_NAME) ?? '';
+                    if ($driver === 'pgsql') {
+                        $seqRow = DB::selectOne("SELECT pg_get_serial_sequence('product_variants', 'id') as seq");
+                        if ($seqRow && isset($seqRow->seq)) {
+                            DB::statement("SELECT setval('" . $seqRow->seq . "', (SELECT COALESCE(MAX(id), 0) FROM product_variants))");
+                            Log::info('Product store - synced product_variants sequence for pgsql', ['sequence' => $seqRow->seq]);
+                        }
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Product store - failed to sync product_variants sequence', ['error' => $e->getMessage()]);
+                }
+
+                Log::debug('Product store - handling variants', ['product_id' => $product->id, 'variants_count' => count($request->input('variants', []))]);
+                $this->handleVariants($request, $product);
+                Log::debug('Product store - finished handling variants', ['product_id' => $product->id]);
             }
 
             DB::commit();
 
-            return redirect()->route('product.index')->with('success', 'Product added successfully');
-        } catch (\Throwable $e) {
+            Log::info('Product store - transaction committed', ['product_id' => $product->id]);
+
+            return redirect()->route('product.index')
+                ->with('success', 'Product created successfully!');
+        } catch (\Illuminate\Database\QueryException $e) {
             DB::rollBack();
 
-            // Clean up any uploaded WebP files on failure
+            // Clean up uploaded WebP files on failure
             foreach ($webpPaths as $path) {
                 $fullWebpPath = str_replace('storage/', 'public/', $path);
                 if (Storage::exists($fullWebpPath)) {
@@ -214,53 +311,195 @@ class ProductController extends Controller
                 }
             }
 
-            // Log the full error for debugging
+            Log::error('Database error during product creation', [
+                'error' => $e->getMessage(),
+                'sql' => $e->getSql() ?? 'N/A',
+                'bindings' => $e->getBindings() ?? [],
+            ]);
+
+            // Check for specific database errors
+            if (strpos($e->getMessage(), 'Duplicate entry') !== false || strpos($e->getMessage(), 'unique constraint') !== false) {
+                return redirect()->back()
+                    ->withInput()
+                    ->withErrors(['error' => 'A product with this ID, SKU, or slug already exists. Check database sequence.']);
+            }
+
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['error' => 'Database error occurred. Please try again.']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            // Clean up uploaded WebP files on failure
+            foreach ($webpPaths as $path) {
+                $fullWebpPath = str_replace('storage/', 'public/', $path);
+                if (Storage::exists($fullWebpPath)) {
+                    Storage::delete($fullWebpPath);
+                }
+            }
+
             Log::error('Product creation failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'request_data' => $request->all()
+                'request_data' => $request->except(['_token']),
             ]);
 
-            report($e);
-            return redirect()->route('product.index')->with('error', 'Product creation failed: ' . $e->getMessage());
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['error' => 'An unexpected error occurred: ' . $e->getMessage()]);
         }
     }
 
     /**
-     * Display the specified resource.
-     *
-     * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * Handle variant creation for the product
      */
-    public function show($id)
+    private function handleVariants(Request $request, Product $product)
     {
-        // Implement if needed
+        $variantOptions = $request->input('variant_options', []);
+        $variantsData = $request->input('variants', []);
+
+        if (empty($variantOptions) || empty($variantsData)) {
+            throw new \Exception('No variant options or data provided');
+        }
+
+        // Generate combinations from selected variant options
+        $combinations = $this->generateCombinations($variantOptions);
+
+        if (count($combinations) !== count($variantsData)) {
+            throw new \Exception('Mismatch between generated combinations and provided variant data');
+        }
+
+        foreach ($variantsData as $index => $variantData) {
+            // Validate required variant fields
+            if (
+                empty($variantData['sku']) || empty($variantData['price']) ||
+                !isset($variantData['stock']) || empty($variantData['images'])
+            ) {
+                throw new \Exception("Missing required data for variant at index {$index}");
+            }
+
+            // Process variant images
+            $webpPaths = [];
+            $rawPaths = array_filter(array_map('trim', explode(',', $variantData['images'])));
+
+            foreach ($rawPaths as $imgIndex => $url) {
+                try {
+                    $parsed = parse_url($url, PHP_URL_PATH);
+                    $publicPath = ltrim(str_replace('/storage/', '', $parsed), '/');
+                    $fullPath = storage_path("app/public/{$publicPath}");
+
+                    if (file_exists($fullPath)) {
+                        $image = Image::make($fullPath)->encode('webp', 75);
+                        $webpFilename = 'variant_' . uniqid() . "_{$imgIndex}.webp";
+                        $webpPath = "public/products/variants/{$webpFilename}";
+                        Storage::put($webpPath, (string) $image);
+                        $webpPaths[] = "products/variants/{$webpFilename}";
+                    } else {
+                        Log::warning("Variant image not found: {$fullPath}");
+                    }
+                } catch (\Exception $e) {
+                    Log::error("Variant image processing failed", [
+                        'url' => $url,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            if (empty($webpPaths)) {
+                throw new \Exception("Failed to process images for variant at index {$index}");
+            }
+
+            // Create variant
+            $variant = $product->variants()->create([
+                'product_id' => $product->id,
+                'sku' => $variantData['sku'],
+                'price' => $variantData['price'],
+                'discount' => $variantData['discount'] ?? null,
+                'stock' => $variantData['stock'],
+                'variant_values' => json_encode($combinations[$index]['values'] ?? []),
+                'status' => 'active',
+            ]);
+
+            // Associate variant options
+            foreach ($combinations[$index]['values'] ?? [] as $typeId => $optionId) {
+                $variant->variantCombinations()->create([
+                    'variant_option_id' => $optionId,
+                ]);
+            }
+
+            // Store variant images in the dedicated variant_images table
+            foreach ($webpPaths as $imgIndex => $path) {
+                VariantImage::create([
+                    'product_variant_id' => $variant->id,
+                    'image_path' => $path,
+                    'thumbnail_path' => null,
+                    'is_primary' => $imgIndex === 0,
+                    'sort_order' => $imgIndex + 1,
+                ]);
+            }
+        }
+
+        // Invalidate cache if using Redis
+        if (class_exists('App\Helpers\RedisHelper')) {
+            $key = "product_variants:{$product->id}";
+            RedisHelper::put($key, null, 0);
+        }
     }
 
     /**
-     * Show the form for editing the specified resource.
-     *
-     * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * Generate variant combinations from selected options
      */
+    private function generateCombinations(array $selections): array
+    {
+        $options = [];
+
+        foreach ($selections as $typeId => $optionIds) {
+            if (empty($optionIds)) {
+                continue;
+            }
+
+            $typeOptions = ProductVariantOption::whereIn('id', $optionIds)
+                ->select('id', 'display_value', 'variant_type_id')
+                ->get()
+                ->toArray();
+
+            if (!empty($typeOptions)) {
+                $options[$typeId] = $typeOptions;
+            }
+        }
+
+        if (empty($options)) {
+            throw new \Exception('No valid variant options found');
+        }
+
+        $combinations = [['values' => []]];
+
+        foreach ($options as $typeId => $typeOptions) {
+            $newCombs = [];
+            foreach ($combinations as $comb) {
+                foreach ($typeOptions as $option) {
+                    $newComb = $comb;
+                    $newComb['values'][$typeId] = $option['id'];
+                    $newCombs[] = $newComb;
+                }
+            }
+            $combinations = $newCombs;
+        }
+
+        return $combinations;
+    }
+
     public function edit($id)
     {
-        $brands = Brand::get();
-        $product = Product::with('images')->findOrFail($id); // eager loading images
-        // $categories = Category::where('is_parent', 1)->get();
-        $categories = Category::all();
-        $items = Product::where('id', $id)->get();
+        $product = Product::with(['images', 'variants.images', 'variants.variantOptions.variantType'])->findOrFail($id);
+        $brands = Brand::all();
+        // Fetch parent categories where parent_id is NULL
+        $categories = Category::whereNull('parent_id')->get();
+        // Fetch subcategories based on the product's category
+        $subcategories = $product->cat_id ? Category::where('parent_id', $product->cat_id)->get() : collect();
 
-        return view('backend.product.edit', compact('product', 'brands', 'categories', 'items'));
+        return view('backend.product.edit', compact('product', 'brands', 'categories', 'subcategories'));
     }
-
-    /**
-     * Update the specified resource in storage.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  int  $id
-     * @return \Illuminate\Http\Response
-     */
 
     public function update(Request $request, $id)
     {
@@ -412,95 +651,70 @@ class ProductController extends Controller
         }
     }
 
-    private function handleVariants(Request $request, Product $product) {
-        $product->variants()->delete(); // Clear old
-        $selections = $request->input('variant_selections', []); // e.g., ['color' => [1,2], 'size' => [3,4]]
-        $combinations = $this->generateCombinations($selections);
-        foreach ($combinations as $combo) {
-            $comboKey = md5(json_encode($combo['values']));
-            $variant = $product->variants()->create([
-                'sku' => $product->sku . '-' . implode('-', array_keys($combo['values'])),
-                'price' => $request->input("variant_price_{$comboKey}", $request->base_price),
-                'discount' => $request->input("variant_discount_{$comboKey}"),
-                'stock' => $request->input("variant_stock_{$comboKey}", 0),
-                'variant_values' => json_encode($combo['values']),
-                'images' => json_encode($request->input("variant_images_{$comboKey}", [])),
-                'status' => 'active'
-            ]);
-            foreach ($combo['values'] as $typeId => $optId) {
-                $variant->variantCombinations()->create(['variant_option_id' => $optId]);
-            }
-        }
-        // Invalidate cache
-        $key = "product_variants:{$product->id}";
-        \App\Helpers\RedisHelper::put($key, null, 0);
-    }
-
-    private function generateCombinations(array $selections): array {
-        $combs = [ ['values' => []] ];
-        foreach ($selections as $typeId => $optIds) {
-            $newCombs = [];
-            foreach ($combs as $comb) {
-                foreach ($optIds as $optId) {
-                    $newComb = $comb;
-                    $newComb['values'][$typeId] = $optId;
-                    $newCombs[] = $newComb;
-                }
-            }
-            $combs = $newCombs;
-        }
-        return $combs;
-    }
-
     // Add preview endpoint
     public function previewVariants(Request $request)
-{
-    $selections = json_decode($request->input('selections'), true);
-    $basePrice = $request->input('base_price');
-    $variants = [];
+    {
+        $request->validate([
+            'selections' => 'required|array',
+            'base_price' => 'nullable|numeric|min:0',
+        ]);
+        $selections = $request->input('selections'); // Already an array, no json_decode needed
+        $basePrice = $request->input('base_price');
+        $variants = [];
 
-    // Generate combinations
-    $combinations = $this->generateVariantCombinations($selections);
-    foreach ($combinations as $idx => $combo) {
-        $name = implode(' / ', array_map(fn($opt) => $opt['display_value'], $combo));
-        $sku = $this->generateSKU($name, $idx);
-        $variants[] = [
-            'name' => $name,
-            'sku' => $sku,
-            'price' => $basePrice,
-            'discount' => null,
-            'stock' => 10,
-        ];
-    }
-
-    return response()->json(['variants' => $variants]);
-}
-
-private function generateVariantCombinations($selections)
-{
-    $options = [];
-    foreach ($selections as $typeId => $optionIds) {
-        $options[$typeId] = ProductVariantOption::whereIn('id', $optionIds)->get()->toArray();
-    }
-
-    $combinations = [[]];
-    foreach ($options as $typeId => $opts) {
-        $newCombinations = [];
-        foreach ($combinations as $combo) {
-            foreach ($opts as $opt) {
-                $newCombinations[] = array_merge($combo, [$opt]);
-            }
+        // Validate selections
+        if (!is_array($selections) || empty($selections)) {
+            return response()->json(['error' => 'Invalid or empty selections provided'], 400);
         }
-        $combinations = $newCombinations;
-    }
-    return $combinations;
-}
 
-private function generateSKU($name, $index)
-{
-    $base = strtoupper(substr(preg_replace('/[^a-zA-Z0-9]/', '', $name), 0, 3));
-    return "{$base}-V{$index}-" . time();
-}
+        // Generate combinations
+        $combinations = $this->generateVariantCombinations($selections);
+        foreach ($combinations as $idx => $combo) {
+            $name = implode(' / ', array_map(fn($opt) => $opt['display_value'], $combo));
+            $sku = $this->generateSKU($name, $idx);
+            $variants[] = [
+                'name' => $name,
+                'sku' => $sku,
+                'price' => $basePrice,
+                'discount' => null,
+                'stock' => 10,
+            ];
+        }
+
+        return response()->json(['variants' => $variants]);
+    }
+
+    protected function generateVariantCombinations($selections)
+    {
+        $options = [];
+        foreach ($selections as $typeId => $optionIds) {
+            $typeOptions = ProductVariantOption::whereIn('id', $optionIds)
+                ->select('id', 'display_value')
+                ->get()
+                ->toArray();
+            $options[] = $typeOptions;
+        }
+
+        // Generate Cartesian product of options
+        $combinations = [[]];
+        foreach ($options as $typeOptions) {
+            $temp = [];
+            foreach ($combinations as $combo) {
+                foreach ($typeOptions as $option) {
+                    $temp[] = array_merge($combo, [$option]);
+                }
+            }
+            $combinations = $temp;
+        }
+
+        return $combinations;
+    }
+
+    protected function generateSKU($name, $index)
+    {
+        $slug = Str::slug($name);
+        return "SKU-{$slug}-{$index}";
+    }
 
     /**
      * Remove the specified resource from storage.
