@@ -291,7 +291,7 @@
                     <div>
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <label class="font-weight-bold">Existing Variants</label>
-                            <button type="button" id="generate-preview" class="btn btn-info btn-sm">Generate Variants</button>
+                            <button type="button" id="generate-preview" class="btn btn-info btn-sm">Generate New Variants</button>
                         </div>
                         <div id="variant-preview" class="table-responsive">
                             @if($product->has_variants)
@@ -311,7 +311,10 @@
                                     @foreach($product->variants as $index => $variant)
                                     <tr data-variant-id="{{ $variant->id }}">
                                         <td>{{ $variant->display_name }}</td>
-                                        <td><input type="text" name="variants[{{ $index }}][sku]" value="{{ old('variants.' . $index . '.sku', $variant->sku) }}" class="form-control" required></td>
+                                        <td>
+                                            <input type="hidden" name="variants[{{ $index }}][id]" value="{{ $variant->id }}">
+                                            <input type="text" name="variants[{{ $index }}][sku]" value="{{ old('variants.' . $index . '.sku', $variant->sku) }}" class="form-control" required>
+                                        </td>
                                         <td><input type="number" name="variants[{{ $index }}][price]" step="0.01" min="0" value="{{ old('variants.' . $index . '.price', $variant->price) }}" class="form-control" required></td>
                                         <td><input type="number" name="variants[{{ $index }}][discount]" min="0" max="100" value="{{ old('variants.' . $index . '.discount', $variant->discount) }}" class="form-control"></td>
                                         <td><input type="number" name="variants[{{ $index }}][stock]" min="0" value="{{ old('variants.' . $index . '.stock', $variant->stock) }}" class="form-control" required></td>
@@ -392,6 +395,26 @@
         </form>
     </div>
 </div>
+<!-- Delete Variant Image Modal -->
+<div class="modal fade" id="deleteVariantImageModal" tabindex="-1" aria-labelledby="deleteVariantImageModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteVariantImageModalLabel">Confirm Delete</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            </div>
+            <div class="modal-body">
+                Are you sure you want to delete this variant image? This action cannot be undone.
+                <input type="hidden" id="deleteVariantImageId" name="imageId">
+                <input type="hidden" id="deleteVariantId" name="variantId">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteVariantImage">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
 @endsection
 
 @push('styles')
@@ -461,6 +484,17 @@
         $('#lfm').filemanager('image');
         $('.lfm-variant').each(function() { $(this).filemanager('image'); });
 
+        // Initialize Select2 for existing variant type selects
+        $('.type-select').each(function() {
+            const typeId = $(this).data('type-id');
+            $(this).select2({
+                placeholder: `Select ${$(this).prev().text()} options`,
+                allowClear: true,
+                width: '100%',
+                dropdownParent: $('#variants-panel')
+            });
+        });
+
         // Auto-generate slug
         $('#inputTitle').on('input', function() {
             const title = $(this).val().trim();
@@ -479,7 +513,9 @@
             $('#non-variant-section, #non-variant-images').toggle(!isChecked);
             if (isChecked) {
                 $('#base_price, #base_discount, #base_stock, #base_sku, #photo').removeAttr('required');
-                $('#load-types').click();
+                if ($('#type-selections').children().length === 0) {
+                    $('#load-types').click();
+                }
             } else {
                 $('#base_price, #base_stock, #base_sku, #photo').attr('required', true);
             }
@@ -553,18 +589,18 @@
                     html += `
                         <tr>
                             <td>${variant.name}</td>
-                            <td><input type="text" name="variants[${idx}][sku]" value="${variant.sku || ''}" class="form-control" required></td>
-                            <td><input type="number" name="variants[${idx}][price]" step="0.01" min="0" value="${variant.price || ''}" class="form-control" required></td>
-                            <td><input type="number" name="variants[${idx}][discount]" min="0" max="100" value="${variant.discount || ''}" class="form-control"></td>
-                            <td><input type="number" name="variants[${idx}][stock]" min="0" value="${variant.stock || ''}" class="form-control" required></td>
+                            <td><input type="text" name="new_variants[${idx}][sku]" value="${variant.sku || ''}" class="form-control" required></td>
+                            <td><input type="number" name="new_variants[${idx}][price]" step="0.01" min="0" value="${variant.price || ''}" class="form-control" required></td>
+                            <td><input type="number" name="new_variants[${idx}][discount]" min="0" max="100" value="${variant.discount || ''}" class="form-control"></td>
+                            <td><input type="number" name="new_variants[${idx}][stock]" min="0" value="${variant.stock || ''}" class="form-control" required></td>
                             <td>
                                 <div class="input-group">
-                                    <input type="text" name="variants[${idx}][images]" id="variant-images-${idx}" class="form-control" readonly required>
+                                    <input type="text" name="new_variants[${idx}][images]" id="variant-images-new-${idx}" class="form-control" readonly required>
                                     <div class="input-group-append">
-                                        <a class="btn btn-primary lfm-variant" data-input="variant-images-${idx}" data-preview="variant-holder-${idx}"><i class="fa fa-picture-o"></i> Choose</a>
+                                        <a class="btn btn-primary lfm-variant" data-input="variant-images-new-${idx}" data-preview="variant-holder-new-${idx}"><i class="fa fa-picture-o"></i> Choose</a>
                                     </div>
                                 </div>
-                                <div id="variant-holder-${idx}" class="mt-2 d-flex flex-wrap gap-2"></div>
+                                <div id="variant-holder-new-${idx}" class="mt-2 d-flex flex-wrap gap-2"></div>
                             </td>
                         </tr>`;
                 });
@@ -596,18 +632,33 @@
             });
         });
 
-        // Delete variant image
         $(document).on('click', '.delete-variant-image-btn', function() {
             const imageId = $(this).data('image-id');
             const variantId = $(this).data('variant-id');
             const $container = $(this).closest('.image-container');
-            if (!confirm('Are you sure you want to delete this variant image?')) return;
+
+            // Set the image and variant IDs in the modal
+            $('#deleteVariantImageId').val(imageId);
+            $('#deleteVariantId').val(variantId);
+
+            // Open the modal
+            $('#deleteVariantImageModal').modal('show');
+        });
+
+        $('#confirmDeleteVariantImage').click(function() {
+            const imageId = $('#deleteVariantImageId').val();
+            const variantId = $('#deleteVariantId').val();
+            const $container = $(`.image-container[data-image-id="${imageId}"]`);
+
+            if (!imageId || !variantId) return;
+
             $container.addClass('deleting');
             $.ajax({
                 url: `/admin/product/variant/${variantId}/image/${imageId}/delete`,
                 type: 'DELETE',
                 headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
                 success: function(response) {
+                    $('#deleteVariantImageModal').modal('hide'); // Close modal on success
                     if (response.success) {
                         $container.fadeOut(300, function() { $(this).remove(); });
                         showNotification('Variant image deleted successfully!', 'success');
@@ -616,9 +667,43 @@
                         showNotification(response.message || 'Failed to delete variant image.', 'error');
                     }
                 },
+                error: function(xhr) {
+                    $container.removeClass('deleting');
+                    showNotification('Failed to delete variant image. ' + (xhr.responseJSON?.message || 'Server error.'), 'error');
+                }
+            });
+        });
+
+        // Close modal and reset values when canceled
+        $('#deleteVariantImageModal').on('hidden.bs.modal', function() {
+            $('#deleteVariantImageId').val('');
+            $('#deleteVariantId').val('');
+        });
+
+        // Delete product image
+        $(document).on('click', '.delete-image-btn', function() {
+            const imageId = $(this).data('image-id');
+            const productId = $(this).data('product-id');
+            const $container = $(this).closest('.image-container');
+            if (!confirm('Are you sure you want to delete this image?')) return;
+            $container.addClass('deleting');
+            $.ajax({
+                url: `/admin/product/${productId}/image/${imageId}/delete`,
+                type: 'DELETE',
+                headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+                success: function(response) {
+                    if (response.success) {
+                        $container.fadeOut(300, function() { $(this).remove(); });
+                        updateImagePreview();
+                        showNotification('Image deleted successfully!', 'success');
+                    } else {
+                        $container.removeClass('deleting');
+                        showNotification(response.message || 'Failed to delete image.', 'error');
+                    }
+                },
                 error: function() {
                     $container.removeClass('deleting');
-                    showNotification('Failed to delete variant image.', 'error');
+                    showNotification('Failed to delete image.', 'error');
                 }
             });
         });
@@ -660,7 +745,7 @@
                 const variantRows = $('#variant-preview tbody tr');
                 if (variantRows.length === 0) {
                     valid = false;
-                    showNotification('Please generate variants before submitting.', 'error');
+                    showNotification('Please generate or keep at least one variant before submitting.', 'error');
                     e.preventDefault();
                     return false;
                 }
@@ -864,6 +949,7 @@
 
             if ($('#enable_alt_text').is(':checked')) {
                 $altSection.show();
+                $('#current-alt-section').show();
             }
         }
 
@@ -894,7 +980,7 @@
         }
 
         function updateCharCount(index) {
-            const $textarea = $(`textarea[data-index="${index}"]`);
+            const $textarea = $(`textarea[data-index="${index}"], textarea[data-index="existing-${index}"]`);
             const $charCount = $textarea.closest('.alt-text-item').find('.char-count');
             const length = $textarea.val().length;
             $charCount.text(`${length}/125 characters`);
@@ -913,6 +999,10 @@
                 $altSection.hide().removeClass('alt-text-section-show');
                 $currentAltSection.hide().removeClass('alt-text-section-show');
             }
+            $('.alt-text-item').each(function() {
+                const index = $(this).data('index') || $(this).data('existing-id');
+                updateCharCount(index);
+            });
         });
 
         $('#photo').on('input change', updateImagePreview);
@@ -939,8 +1029,9 @@
             let autoAlt = productTitle;
             if (brand && brand !== 'Select Brand') autoAlt += ` by ${brand}`;
             if (category && category !== 'Select Category') autoAlt += ` - ${category}`;
-            autoAlt += index === 0 ? ' - Main Image' : ` - Image ${index + 1}`;
-            $(`textarea[name="new_alt_text[${index}]"]`).val(autoAlt.substring(0, 125));
+            autoAlt += index.includes('existing') ? ` - Image ${index.split('-')[1]}` : (index === 0 ? ' - Main Image' : ` - Image ${parseInt(index) + 1}`);
+            const targetField = index.includes('existing') ? `existing_alt_text[${index.split('-')[1]}]` : `new_alt_text[${index}]`;
+            $(`textarea[name="${targetField}"]`).val(autoAlt.substring(0, 125));
             updateCharCount(index);
         });
 
@@ -971,8 +1062,8 @@
         }
 
         $('#addBrandBtn').click(function() {
-            $('#new_brand_title').val('');
-            $('#addBrandModal').modal('show');
+            $('#new_brand_title').val(''); // Clear the input
+            $('#addBrandModal').modal('show'); // Open the modal
         });
 
         $('#addBrandForm').submit(function(e) {
@@ -988,14 +1079,33 @@
             }, function(res) {
                 if (res.status === 'success') {
                     $('#brand_id').append(`<option value="${res.data.id}" selected>${res.data.title}</option>`);
-                    $('#brand_id').selectpicker('refresh');
-                    $('#addBrandModal').modal('hide');
+                    $('#brand_id').selectpicker('refresh'); // Refresh Bootstrap Select
+                    $('#addBrandModal').modal('hide'); // Close the modal
                     showNotification('Brand added successfully!', 'success');
                 } else {
                     showNotification(res.message || 'Error adding brand.', 'error');
                 }
             }).fail(() => showNotification('Failed to add brand.', 'error'));
         });
+
+        // Initialize character counts for existing alt text
+        $('.alt-text-item').each(function() {
+            const index = $(this).data('index') || $(this).data('existing-id');
+            updateCharCount(index);
+        });
+
+        // Handle image error
+        window.handleImageError = function(element) {
+            const fallback = $('<div class="image-not-found"><i class="fa fa-image"></i><span>Image not available</span></div>');
+            $(element).after(fallback);
+            $(element).remove();
+        };
+
+        // Handle alt text image error
+        window.handleAltTextImageError = function(element, fallbackText) {
+            $(element).hide();
+            $(element).next('.alt-text-fallback').show().find('span').text(fallbackText);
+        };
     });
 </script>
 @endpush
