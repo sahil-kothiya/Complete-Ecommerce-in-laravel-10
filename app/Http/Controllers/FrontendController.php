@@ -313,11 +313,13 @@ class FrontendController extends Controller
      */
     private function getHomepageProductsData(string $key, int $ttl)
     {
-        $redisData = RedisHelper::get($key);
-        if ($redisData) {
-            return $redisData;
-        }
+        // Check Redis cache first
+        // $redisData = RedisHelper::get($key);
+        // if ($redisData) {
+        //     return $redisData;
+        // }
 
+        // Query products with optimized eager loading
         $products = Product::select([
             'id',
             'title',
@@ -334,32 +336,75 @@ class FrontendController extends Controller
             ->where('status', 'active')
             ->where('is_featured', true)
             ->with([
-                'images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true),
+                // include product_id so Eloquent can match images back to the parent product
+                'images' => fn($q) => $q->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                    ->where('is_primary', true)
+                    ->orderBy('sort_order')
+                    ->take(1),
                 'cat_info' => fn($q) => $q->select(['id', 'title']),
-                'variants' => fn($q) => $q->where('status', 'active')
-                    ->select(['id', 'product_id', 'price', 'discount', 'stock'])
-                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true)])
+                'variants' => fn($q) => $q->select(['id','product_id','price','discount','stock'])
+                    ->with([
+                        'images' => fn($q) => $q->select(['id','product_variant_id','image_path','is_primary'])->where('is_primary', true),
+                        'primaryImage'
+                    ])
             ])
             ->latest('id')
-            ->limit(350)
+            ->where('id', 891)
+            ->limit(12)
             ->get();
 
+        // Transform products to include discounted price and primary image
         $products->transform(function ($product) {
+            // Select primary image (mimic backend product list logic)
+            $primaryImage = $product->has_variants && $product->variants->count() > 0
+                ? $product->variants->first()->primaryImage
+                : $product->primaryImage;
+
+            // Attach primary image to product for frontend use
+            $product->primary_image = $primaryImage ? [
+                'image_path' => $primaryImage->image_path,
+                'thumbnail_path' => $primaryImage->thumbnail_path,
+                'url' => $primaryImage->url,
+                'thumbnail_url' => $primaryImage->thumbnail_url,
+                'alt_text' => $primaryImage->alt_text ?? $product->title
+            ] : null;
+
+            // Calculate discounted price
             if ($product->has_variants) {
-                $minVariant = $product->variants->sortBy(function ($variant) {
-                    return $variant->discount > 0 ? $variant->price - ($variant->price * $variant->discount / 100) : $variant->price;
-                })->first();
-                $product->discounted_price = $minVariant ? ($minVariant->discount > 0 ? $minVariant->price - ($minVariant->price * $minVariant->discount / 100) : $minVariant->price) : null;
-                $product->images = $minVariant ? $minVariant->images : collect();
+                $activeInStockVariants = $product->variants->where('status', 'active')->where('stock', '>', 0);
+                if ($activeInStockVariants->count() > 0) {
+                    $minPrice = $activeInStockVariants->min(function ($variant) {
+                        return $variant->price * (1 - ($variant->discount ?? 0) / 100);
+                    });
+                    $maxPrice = $activeInStockVariants->max(function ($variant) {
+                        return $variant->price * (1 - ($variant->discount ?? 0) / 100);
+                    });
+                    $product->discounted_price = $minPrice == $maxPrice
+                        ? number_format($minPrice, 2)
+                        : number_format($minPrice, 2) . ' - ' . number_format($maxPrice, 2);
+                    $product->max_discount = $activeInStockVariants->max('discount') ?? 0;
+                } else {
+                    $product->discounted_price = 'Out of Stock';
+                    $product->max_discount = 0;
+                }
             } else {
                 $product->discounted_price = $product->base_discount > 0
-                    ? $product->base_price - ($product->base_price * $product->base_discount / 100)
-                    : $product->base_price;
+                    ? number_format($product->base_price * (1 - $product->base_discount / 100), 2)
+                    : number_format($product->base_price, 2);
+                $product->max_discount = $product->base_discount ?? 0;
             }
+
+            // Calculate stock
+            $product->stock = $product->has_variants
+                ? $product->variants->sum('stock')
+                : $product->base_stock;
+
             return $product;
         });
 
-        RedisHelper::put($key, $products, $ttl);
+        // Cache the transformed data
+        // RedisHelper::put($key, $products, $ttl);
+
         return $products;
     }
 
@@ -474,11 +519,12 @@ class FrontendController extends Controller
             ])
             ->where('products.status', 'active')
             ->with([
-                'images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true),
+                // include product_id so images are properly hydrated back to the product
+                'images' => fn($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary'])->where('is_primary', true),
                 'cat_info' => fn($q) => $q->select(['id', 'title']),
                 'variants' => fn($q) => $q->where('status', 'active')
                     ->select(['id', 'product_id', 'price', 'discount', 'stock'])
-                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true)])
+                    ->with(['images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary'])->where('is_primary', true)])
             ]);
 
         if (!empty($categories)) {
@@ -1172,11 +1218,11 @@ class FrontendController extends Controller
                 'is_featured',
             ])
             ->with([
-                'images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true),
+                'images' => fn($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary'])->where('is_primary', true),
                 'cat_info' => fn($q) => $q->select(['id', 'title']),
                 'variants' => fn($q) => $q->where('status', 'active')
                     ->select(['id', 'product_id', 'price', 'discount', 'stock'])
-                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true)])
+                    ->with(['images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary'])->where('is_primary', true)])
             ])
             ->paginate($perPage);
 
@@ -1234,11 +1280,11 @@ class FrontendController extends Controller
                 'is_featured',
             ])
             ->with([
-                'images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true),
+                'images' => fn($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary'])->where('is_primary', true),
                 'cat_info' => fn($q) => $q->select(['id', 'title']),
                 'variants' => fn($q) => $q->where('status', 'active')
                     ->select(['id', 'product_id', 'price', 'discount', 'stock'])
-                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true)])
+                    ->with(['images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary'])->where('is_primary', true)])
             ])
             ->paginate($perPage);
     }
@@ -1274,7 +1320,7 @@ class FrontendController extends Controller
                         'images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true),
                         'variants' => fn($q) => $q->where('status', 'active')
                             ->select(['id', 'product_id', 'price', 'discount'])
-                            ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true)])
+                            ->with(['images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary'])->where('is_primary', true)])
                     ])
                     ->limit(10)
                     ->get();
@@ -1394,11 +1440,9 @@ class FrontendController extends Controller
                 'variants' => fn($q) => $q->where('status', 'active')
                     ->with([
                         'images' => fn($q) => $q->select(['id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])->orderBy('sort_order'),
-                        'options' => fn($q) => $q->with(['variant_type' => fn($q) => $q->select(['id', 'name', 'display_name'])])
+                        'variantOptions' => fn($q) => $q->with(['variantType' => fn($q) => $q->select(['id', 'name', 'display_name'])])
                     ])
-                    ->select(['id', 'product_id', 'sku', 'price', 'discount', 'stock', 'variant_values']),
-                'variant_types' => fn($q) => $q->with(['options' => fn($q) => $q->where('status', 'active')
-                    ->select(['id', 'variant_type_id', 'value', 'display_value', 'hex_color', 'sort_order'])])
+                    ->select(['id', 'product_id', 'sku', 'price', 'discount', 'stock', 'variant_values'])
             ])
             ->firstOrFail();
 
@@ -1435,11 +1479,11 @@ class FrontendController extends Controller
             ])
             ->where('status', 'active')
             ->with([
-                'images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true),
+                'images' => fn($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary'])->where('is_primary', true),
                 'cat_info' => fn($q) => $q->select(['id', 'title']),
                 'variants' => fn($q) => $q->where('status', 'active')
                     ->select(['id', 'product_id', 'price', 'discount', 'stock'])
-                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'is_primary'])->where('is_primary', true)])
+                    ->with(['images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary'])->where('is_primary', true)])
             ]);
 
         if (!empty($_GET['category'])) {

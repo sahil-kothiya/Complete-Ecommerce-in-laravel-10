@@ -128,7 +128,7 @@
     <section class="product-area section" id="all-products">
         <div class="container">
             <div class="section-title text-center">
-                <h2>All Products</h2> <!-- Removed tabindex -->
+                <h2>All Products</h2>
             </div>
             <div class="row">
                 <div class="col-12">

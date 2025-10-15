@@ -75,10 +75,10 @@ class DiscountService
         $discounts = [];
 
         // 1. Product-level discount
-        if ($product->discount && $product->discount > 0) {
+        if ($product->base_discount && $product->base_discount > 0) {
             $discounts[] = [
                 'type'   => 'percentage',
-                'value'  => $product->discount,
+                'value'  => $product->base_discount,
                 'source' => 'product',
             ];
         }
@@ -106,17 +106,18 @@ class DiscountService
         return $discounts;
     }
 
-    public function applyAllDiscounts(float $basePrice, array $discounts): float
+    public function applyAllDiscounts(float $basePrice = null, array $discounts): float
     {
-        $price = $basePrice;
+        // If basePrice is null, return 0.0
+        $prix = $basePrice ?? 0.0;
 
         // Apply product-level discount first
         foreach ($discounts as $discount) {
             if ($discount['source'] === 'product') {
                 if ($discount['type'] === 'percentage') {
-                    $price -= ($price * $discount['value'] / 100);
+                    $prix -= ($prix * $discount['value'] / 100);
                 } elseif ($discount['type'] === 'amount') {
-                    $price -= $discount['value'];
+                    $prix -= $discount['value'];
                 }
             }
         }
@@ -125,21 +126,22 @@ class DiscountService
         foreach ($discounts as $discount) {
             if ($discount['source'] === 'category') {
                 if ($discount['type'] === 'percentage') {
-                    $price -= ($price * $discount['value'] / 100);
+                    $prix -= ($prix * $discount['value'] / 100);
                 } elseif ($discount['type'] === 'amount') {
-                    $price -= $discount['value'];
+                    $prix -= $discount['value'];
                 }
             }
         }
 
-        return max($price, 0);
+        return max($prix, 0);
     }
 
     public function getCachedDiscountedPrice(Product $product): float
     {
-        // Fallback: return calculated value directly for now
-        return $product->discount > 0
-            ? $product->price - ($product->price * $product->discount / 100)
-            : $product->price;
+        // Use base_price and base_discount, default to 0.0 if base_price is null
+        $basePrice = $product->base_price ?? 0.0;
+        return $product->base_discount > 0
+            ? $basePrice - ($basePrice * $product->base_discount / 100)
+            : $basePrice;
     }
 }

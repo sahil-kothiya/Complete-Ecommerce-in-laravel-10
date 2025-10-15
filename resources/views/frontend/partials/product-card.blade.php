@@ -9,7 +9,29 @@
         <div class="position-relative bg-light" style="aspect-ratio: 1 / 1;">
             <div class="slider-wrapper w-100 h-100" data-slider>
                 <div class="slider-track d-flex h-100">
-                    @foreach($product->images as $index => $img)
+                    @php
+                        // Determine which images to show:
+                        // - If product has variants, prefer the first variant's images (or primaryImage)
+                        // - Otherwise use product images
+                        $images = collect();
+                        if (!empty($product->has_variants) && $product->has_variants && isset($product->variants) && $product->variants->count() > 0) {
+                            $firstVariant = $product->variants->first();
+                            // Prefer a loaded images collection on the variant, otherwise try primaryImage accessor
+                            if (isset($firstVariant->images) && is_countable($firstVariant->images) && count($firstVariant->images) > 0) {
+                                $images = collect($firstVariant->images);
+                            } elseif (isset($firstVariant->primaryImage) && $firstVariant->primaryImage) {
+                                $images = collect([$firstVariant->primaryImage]);
+                            }
+                        }
+
+                        if ($images->isEmpty()) {
+                            if (isset($product->images) && is_countable($product->images) && count($product->images) > 0) {
+                                $images = collect($product->images);
+                            }
+                        }
+                    @endphp
+
+                    @foreach($images as $index => $img)
                     @php
                     $pathInfo = pathinfo($img->image_path);
                     $directory = $pathInfo['dirname'];
@@ -23,11 +45,11 @@
                     $srcset[] = asset($responsivePath) . " {$size}w";
                     }
                     }
-                    $srcset[] = asset($img->image_path) . " 370w";
+                    $srcset[] = asset('storage/' .$img->image_path) . " 370w";
                     $srcsetString = implode(', ', $srcset);
                     @endphp
                     <img
-                        src="{{ asset($img->image_path) }}"
+                        src="{{ asset('storage/' . $img->image_path) }}"
                         srcset="{{ $srcsetString }}"
                         sizes="(max-width: 576px) 280px, (max-width: 768px) 235px, (max-width: 992px) 200px, (max-width: 1200px) 180px, 160px"
                         class="slider-image"

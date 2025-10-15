@@ -92,6 +92,16 @@
                             @error('brand_id')<span class="invalid-feedback d-block">{{ $message }}</span>@enderror
                         </div>
                     </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label for="status">Status <span class="text-danger">*</span></label>
+                            <select name="status" id="status" class="form-control" required tabindex="16">
+                                <option value="active" {{ old('status', $product->status) == 'active' ? 'selected' : '' }}>Active</option>
+                                <option value="inactive" {{ old('status', $product->status) == 'inactive' ? 'selected' : '' }}>Inactive</option>
+                            </select>
+                            @error('status')<span class="invalid-feedback d-block">{{ $message }}</span>@enderror
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -156,16 +166,6 @@
                         <div class="form-group form-check mt-4">
                             <input type="checkbox" name="is_featured" id="is_featured" value="1" class="form-check-input" {{ old('is_featured', $product->is_featured) ? 'checked' : '' }} tabindex="15">
                             <label for="is_featured" class="form-check-label">Featured Product</label>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="form-group">
-                            <label for="status">Status <span class="text-danger">*</span></label>
-                            <select name="status" id="status" class="form-control" required tabindex="16">
-                                <option value="active" {{ old('status', $product->status) == 'active' ? 'selected' : '' }}>Active</option>
-                                <option value="inactive" {{ old('status', $product->status) == 'inactive' ? 'selected' : '' }}>Inactive</option>
-                            </select>
-                            @error('status')<span class="invalid-feedback d-block">{{ $message }}</span>@enderror
                         </div>
                     </div>
                 </div>

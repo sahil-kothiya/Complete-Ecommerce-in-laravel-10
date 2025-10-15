@@ -63,6 +63,30 @@ class ProductVariant extends Model
     }
 
     /**
+     * Accessor: resolve primary image with fallbacks
+     * - If relation is already loaded and present, return it
+     * - Attempt to fetch the primary image from DB
+     * - Fallback to the first image from images() relationship
+     */
+    public function getPrimaryImageAttribute()
+    {
+        // If relation was eager loaded and not null, return it
+        if ($this->relationLoaded('primaryImage') && $this->getRelation('primaryImage')) {
+            return $this->getRelation('primaryImage');
+        }
+
+        // Try to fetch the primary image via the relation query
+        $primary = $this->primaryImage()->first();
+        if ($primary) {
+            return $primary;
+        }
+
+        // Fallback: return first image from images() if available
+        $first = $this->images()->orderByDesc('is_primary')->orderBy('sort_order')->first();
+        return $first;
+    }
+
+    /**
      * Attributes
      */
     public function getDiscountedPriceAttribute()

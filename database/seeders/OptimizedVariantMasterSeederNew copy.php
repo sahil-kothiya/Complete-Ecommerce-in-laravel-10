@@ -11,24 +11,28 @@ use Exception;
 
 class OptimizedVariantMasterSeederNew extends Seeder
 {
+    // Configuration
     protected int $startingProductId;
     protected bool $enableTruncate = false;
-    protected int $targetProducts = 1000;
-    protected int $variantProducts = 900;
-    protected int $variantsPerProduct = 4;
+    protected int $targetProducts = 1; // 1,000 products
+    protected int $variantProducts = 1; // 500 products with variants
+    protected int $variantsPerProduct = 4; // ~4 variants per variant-enabled product
     protected int $batchSize = 500;
     protected int $imageBatchSize = 500;
 
+    // Tracking
     protected int $totalProductsSeeded = 0;
     protected int $totalVariantsSeeded = 0;
     protected int $currentProductId = 0;
     protected float $startTime;
 
+    // Cache
     protected array $cachedImages;
     protected array $cachedCategories = [];
     protected array $cachedBrands = [];
     protected array $cachedVariantOptions = [];
 
+    // Product templates configuration
     protected array $productTemplates = [
         'smartphones' => [
             'names' => ['Premium Smartphone', 'Flagship Phone', 'Pro Smartphone', 'Ultra Phone', 'Elite Smartphone'],
@@ -133,8 +137,8 @@ class OptimizedVariantMasterSeederNew extends Seeder
     ];
 
     protected array $categoryVariantTypes = [
-        'smartphones' => ['color', 'ram', 'storage'],
-        'laptops' => ['ram', 'screen_size', 'storage'],
+        'smartphones' => ['color', 'ram'],
+        'laptops' => ['ram', 'screen_size'],
         'audio' => ['color'],
         'shoes' => ['color', 'size'],
         'women' => ['color', 'size'],
@@ -342,7 +346,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
         $this->startTime = microtime(true);
         $this->logInfo('=== STARTING OPTIMIZED VARIANT SEEDER ===');
         $this->logInfo("Mode: " . ($this->enableTruncate ? 'FRESH' : 'INCREMENTAL'));
-        $this->logInfo("Target: " . number_format($this->targetProducts) . " products");
+        $this->logInfo("Target: " . number_format($this->targetProducts) . " products (10 with variants, 990 without)");
         $this->logInfo("Starting Product ID: " . number_format($this->startingProductId));
 
         try {
@@ -354,12 +358,14 @@ class OptimizedVariantMasterSeederNew extends Seeder
 
             $this->seedVariantTypesAndOptions();
             $this->seedProducts();
+
             $this->logResults();
 
         } catch (Exception $e) {
             try {
                 DB::rollBack();
             } catch (Exception $_) {
+                // Ignore rollback errors
             }
 
             $this->logError("SEEDING FAILED: " . $e->getMessage());
@@ -445,6 +451,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
 
         $now = Carbon::now();
 
+        // Root categories
         $roots = [
             ['title' => 'Electronics', 'slug' => 'electronics', 'summary' => 'Latest electronics'],
             ['title' => 'Fashion', 'slug' => 'fashion', 'summary' => 'Trendy fashion'],
@@ -480,8 +487,10 @@ class OptimizedVariantMasterSeederNew extends Seeder
 
         DB::table('categories')->insert($rootData);
 
+        // Get inserted roots
         $rootCats = collect(DB::table('categories')->where('level', 0)->get())->keyBy('slug');
 
+        // Level 1 categories
         $level1Map = [
             'electronics' => [
                 ['title' => 'Mobiles & Accessories', 'slug' => 'mobiles'],
@@ -540,6 +549,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
 
         DB::table('categories')->insert($level1Data);
 
+        // Level 2 (leaf nodes)
         $level1Cats = collect(DB::table('categories')->where('level', 1)->get())->keyBy('slug');
 
         $level2Map = [
@@ -738,12 +748,17 @@ class OptimizedVariantMasterSeederNew extends Seeder
             return;
         }
 
+        // Distribute 10 variant products across variant-supporting categories
         $variantCategories = ['smartphones', 'laptops', 'audio', 'shoes', 'women', 'kids', 'furniture', 'makeup'];
         $allCategories = array_keys($this->productTemplates);
 
         $variantCats = array_intersect_key($categories, array_flip($variantCategories));
-        $perVariantCat = (int)ceil($this->variantProducts / count($variantCats));
+        $perVariantCat = (int)ceil($this->variantProducts / count($variantCats)); // ~2 products per variant category
 
+        // Distribute 990 non-variant products across all categories
+        $perNonVariantCat = (int)ceil(($this->targetProducts - $this->variantProducts) / count($allCategories)); // ~83 products per category
+
+        // Seed variant-enabled products
         foreach ($variantCats as $slug => $catData) {
             if ($this->totalProductsSeeded >= $this->targetProducts || $this->totalProductsSeeded >= $this->variantProducts) break;
 
@@ -754,8 +769,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
             DB::table('categories')->where('id', $catData['id'])->update(['products_count' => $actualCount]);
         }
 
-        $perNonVariantCat = (int)ceil(($this->targetProducts - $this->variantProducts) / count($allCategories));
-
+        // Seed non-variant products
         foreach ($allCategories as $slug) {
             if ($this->totalProductsSeeded >= $this->targetProducts) break;
 
@@ -809,7 +823,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
                 DB::rollBack();
                 $this->currentProductId += $batchSize;
                 $this->logError("Batch {$b} failed for {$slug}: " . $e->getMessage());
-                $this->logWarning("Skipping {$batchSize} product IDs. Next product ID: {$this->currentProductId}");
+                $this->logWarning("Skipping {$batchSize} product IDs to avoid duplicates. Next product ID: {$this->currentProductId}");
                 continue;
             }
         }
@@ -840,13 +854,13 @@ class OptimizedVariantMasterSeederNew extends Seeder
             $productId = $this->currentProductId + $i;
             $globalIndex = $this->totalProductsSeeded + $i;
 
+            // Generate unique slug
             $nameIdx = $globalIndex % count($template['names']);
             $summaryIdx = $globalIndex % count($template['summaries']);
             $brandIdx = $globalIndex % count($categoryBrands);
             $baseSlug = Str::slug($template['names'][$nameIdx]) . '-' . ($globalIndex + 1) . '-' . $slug;
             $slugSuffix = 1;
             $uniqueSlug = $baseSlug;
-            
             while (DB::table('products')->where('slug', $uniqueSlug)->exists()) {
                 $uniqueSlug = $baseSlug . '-' . $slugSuffix++;
             }
@@ -869,7 +883,6 @@ class OptimizedVariantMasterSeederNew extends Seeder
             ];
 
             if (!$hasVariants) {
-                // Non-variant product (simple product)
                 $price = random_int($template['price_range'][0], $template['price_range'][1]);
                 $discount = random_int(0, 50);
                 $stock = random_int(10, 100);
@@ -880,27 +893,26 @@ class OptimizedVariantMasterSeederNew extends Seeder
                 $productEntry['base_stock'] = $stock;
                 $productEntry['base_sku'] = $sku;
 
-                // Product images: 3 images per product
+                // Images for non-variant product (exactly 3 images)
                 $images = $this->getRandomImages(3);
                 foreach ($images as $idx => $imageName) {
                     $productImagesData[] = [
                         'product_id' => $productId,
                         'image_path' => 'photos/1/Products/' . $imageName,
                         'thumbnail_path' => null,
-                        'is_primary' => $idx === 0 ? 1 : 0,
+                        'is_primary' => $idx === 0,
                         'sort_order' => $idx,
                         'created_at' => $now,
                         'updated_at' => $now,
                     ];
                 }
             } else {
-                // Variant product
                 $productEntry['base_price'] = null;
                 $productEntry['base_discount'] = null;
                 $productEntry['base_stock'] = null;
                 $productEntry['base_sku'] = null;
 
-                // Type selections - link product to variant types
+                // Type selections
                 foreach ($variantTypes as $typeName) {
                     if (isset($this->cachedVariantOptions[$typeName])) {
                         $typeSelectionsData[] = [
@@ -912,7 +924,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
                     }
                 }
 
-                // Generate variant combinations
+                // Generate variants (~4 per product)
                 $combinations = $this->generateVariantCombinations($variantTypes, $this->variantsPerProduct);
 
                 foreach ($combinations as $comboIndex => $combo) {
@@ -937,7 +949,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
                         'updated_at' => $now,
                     ];
 
-                    // Option assignments for variant
+                    // Option assignments
                     foreach ($combo as $typeName => $value) {
                         if (isset($this->cachedVariantOptions[$typeName]['options'][$value])) {
                             $assignmentsData[] = [
@@ -949,14 +961,14 @@ class OptimizedVariantMasterSeederNew extends Seeder
                         }
                     }
 
-                    // Variant images: 3 images per variant
+                    // Images (exactly 3 per variant)
                     $images = $this->getRandomImages(3);
                     foreach ($images as $idx => $imageName) {
                         $variantImagesData[] = [
                             'product_variant_id' => $variantId,
                             'image_path' => 'photos/1/Products/' . $imageName,
                             'thumbnail_path' => null,
-                            'is_primary' => $idx === 0 ? 1 : 0,
+                            'is_primary' => $idx === 0,
                             'sort_order' => $idx,
                             'created_at' => $now,
                             'updated_at' => $now,
@@ -968,38 +980,34 @@ class OptimizedVariantMasterSeederNew extends Seeder
             $productsData[] = $productEntry;
         }
 
-        // Insert products in chunks
+        // Insert in chunks of 500
         foreach (array_chunk($productsData, 500) as $chunk) {
             DB::table('products')->insert($chunk);
         }
 
         if ($hasVariants) {
-            // Insert type selections
             foreach (array_chunk($typeSelectionsData, 500) as $chunk) {
                 DB::table('product_variant_type_selections')->insert($chunk);
             }
 
-            // Insert variants
             foreach (array_chunk($variantsData, 500) as $chunk) {
                 DB::table('product_variants')->insert($chunk);
             }
 
-            // Insert option assignments
             foreach (array_chunk($assignmentsData, 500) as $chunk) {
                 DB::table('product_variant_option_assignments')->insert($chunk);
             }
 
-            // Insert variant images
             foreach (array_chunk($variantImagesData, 500) as $chunk) {
                 DB::table('variant_images')->insert($chunk);
             }
         }
 
-        // Insert product images
         foreach (array_chunk($productImagesData, 500) as $chunk) {
             DB::table('product_images')->insert($chunk);
         }
 
+        // Update counters
         $this->totalProductsSeeded += $batchSize;
         $this->totalVariantsSeeded += $variantCounter;
         $this->currentProductId += $batchSize;
@@ -1196,6 +1204,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
             $this->logWarning("Found {$orphanedProductImages} orphaned product images");
         }
 
+        // Validate minimum requirements
         $variantProducts = DB::table('products')->where('has_variants', true)->count();
         $expectedVariantImages = $counts['variants'] * 3;
         if ($counts['variant_images'] < $expectedVariantImages) {
@@ -1208,10 +1217,12 @@ class OptimizedVariantMasterSeederNew extends Seeder
             $this->logWarning("Product image count less than minimum expected: expected at least {$expectedProductImages}, got {$counts['product_images']}");
         }
 
+        // Validate variant product count
         if ($variantProducts != $this->variantProducts) {
             $this->logWarning("Expected {$this->variantProducts} variant products, found {$variantProducts}");
         }
 
+        // Check each variant product has at least one variant
         $productsWithoutVariants = DB::table('products as p')
             ->leftJoin('product_variants as pv', 'p.id', '=', 'pv.product_id')
             ->where('p.has_variants', true)
@@ -1222,6 +1233,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
             $this->logWarning("Found {$productsWithoutVariants} variant products without variants");
         }
 
+        // Check for duplicate SKUs
         $duplicateSKUs = DB::table('product_variants')
             ->select('sku')
             ->groupBy('sku')

@@ -389,7 +389,7 @@ class ProductController extends Controller
     }
 
     public function update(Request $request, $id)
-    {
+    {   
         $product = Product::with(['images', 'variants', 'variants.images'])->findOrFail($id);
         $requestData = $this->normalizeImageUrls($request->all());
         $request->merge($requestData);
