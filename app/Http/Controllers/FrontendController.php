@@ -336,11 +336,7 @@ class FrontendController extends Controller
             ->where('status', 'active')
             ->where('is_featured', true)
             ->with([
-                // include product_id so Eloquent can match images back to the parent product
-                'images' => fn($q) => $q->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
-                    ->where('is_primary', true)
-                    ->orderBy('sort_order')
-                    ->take(1),
+                'images' => fn($q) => $q->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
                 'cat_info' => fn($q) => $q->select(['id', 'title']),
                 'variants' => fn($q) => $q->select(['id','product_id','price','discount','stock'])
                     ->with([
@@ -349,8 +345,8 @@ class FrontendController extends Controller
                     ])
             ])
             ->latest('id')
-            ->where('id', 891)
-            ->limit(12)
+            // ->where('id', 931)
+            ->limit(60)
             ->get();
 
         // Transform products to include discounted price and primary image
