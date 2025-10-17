@@ -153,11 +153,108 @@ class Product extends Model
 
     public function getVariantTypesAttribute()
     {
-        if (!$this->has_variants) return collect();
-        $optionIds = $this->variants()->with('variantOptions')->get()->pluck('variantOptions.*.id')->flatten()->unique();
-        return ProductVariantType::whereHas('options', fn($q) => $q->whereIn('id', $optionIds))
-            ->with(['options' => fn($q) => $q->whereIn('id', $optionIds)->active()])
-            ->active()->orderBy('sort_order')->get();
+        if (!$this->has_variants) {
+            return collect();
+        }
+
+        // Check if variants are loaded
+        if (!$this->relationLoaded('variants')) {
+            // Load variants with necessary relationships
+            $this->load([
+                'variants.optionAssignments.option.variantType'
+            ]);
+        }
+
+        $variants = $this->variants;
+
+        if ($variants->isEmpty()) {
+            return collect();
+        }
+
+        $typeGroups = collect();
+
+        foreach ($variants as $variant) {
+            // Use optionAssignments to get the options
+            if ($variant->relationLoaded('optionAssignments')) {
+                foreach ($variant->optionAssignments as $assignment) {
+                    if ($assignment->relationLoaded('option') && $assignment->option) {
+                        $option = $assignment->option;
+                        
+                        if ($option->relationLoaded('variantType') && $option->variantType) {
+                            $type = $option->variantType;
+                            
+                            // Initialize type group if not exists
+                            if (!$typeGroups->has($type->id)) {
+                                $typeGroups->put($type->id, [
+                                    'id' => $type->id,
+                                    'name' => $type->name,
+                                    'display_name' => $type->display_name,
+                                    'sort_order' => $type->sort_order ?? 0,
+                                    'options' => collect()
+                                ]);
+                            }
+                            
+                            // Add option if not already present
+                            $existingOptions = $typeGroups[$type->id]['options'];
+                            if (!$existingOptions->contains('id', $option->id)) {
+                                $typeGroups[$type->id]['options']->push($option);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Convert to collection of objects and sort
+        return $typeGroups
+            ->sortBy('sort_order')
+            ->values()
+            ->map(function($type) {
+                return (object) [
+                    'id' => $type['id'],
+                    'name' => $type['name'],
+                    'display_name' => $type['display_name'],
+                    'sort_order' => $type['sort_order'],
+                    'options' => $type['options']->sortBy('sort_order')->values()
+                ];
+            });
+    }
+
+    /**
+     * Alternative method: Get variant types using product_variant_option_assignments
+     * Use this in the controller for better control
+     */
+    public function getVariantTypesViaAssignments()
+    {
+        if (!$this->has_variants) {
+            return collect();
+        }
+
+        // Get all variant option IDs for this product's active variants
+        $optionIds = ProductVariantOptionAssignment::whereHas('variant', function($q) {
+                $q->where('product_id', $this->id)
+                ->where('status', 'active');
+            })
+            ->distinct()
+            ->pluck('variant_option_id');
+
+        if ($optionIds->isEmpty()) {
+            return collect();
+        }
+
+        // Get variant types with their options
+        return ProductVariantType::whereHas('options', function($q) use ($optionIds) {
+                $q->whereIn('id', $optionIds)
+                ->where('status', 'active');
+            })
+            ->with(['options' => function($q) use ($optionIds) {
+                $q->whereIn('id', $optionIds)
+                ->where('status', 'active')
+                ->orderBy('sort_order');
+            }])
+            ->where('status', 'active')
+            ->orderBy('sort_order')
+            ->get();
     }
 
     public function getPriceRangeAttribute()

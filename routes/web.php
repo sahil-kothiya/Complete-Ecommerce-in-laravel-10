@@ -81,6 +81,14 @@ Route::get('/product-detail/{slug}', [FrontendController::class, 'productDetail'
 Route::match(['get', 'post'], '/search', [FrontendController::class, 'productSearch'])->name('product.search');
 Route::get('/autocomplete', [FrontendController::class, 'autocomplete'])->name('autocomplete');
 
+// Routes (web.php or api.php - assuming web.php with prefix if needed)
+Route::get('/product/variant/{variantId}', [FrontendController::class, 'getVariantDetails'])
+    ->name('api.product.variant.details');
+
+// Check variant availability by selected options
+Route::post('/product/{slug}/check-variant', [FrontendController::class, 'checkVariantAvailability'])
+    ->name('api.product.variant.check');
+
 // API Route for JSON Filters (high-perf endpoint)
 Route::get('/api/filters/{path?}', [HighPerformanceFilterController::class, 'getFilterData'])
     ->name('api.filters')

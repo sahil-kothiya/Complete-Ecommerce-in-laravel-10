@@ -37,16 +37,16 @@ class ProductVariant extends Model
         return $this->belongsTo(Product::class);
     }
 
-    public function variantCombinations()
+    public function optionAssignments()
     {
-        return $this->hasMany(ProductVariantCombination::class, 'product_variant_id');
+        return $this->hasMany(ProductVariantOptionAssignment::class, 'product_variant_id');
     }
 
     public function variantOptions()
     {
         return $this->belongsToMany(
             ProductVariantOption::class,
-            'product_variant_combinations',
+            'product_variant_option_assignments',
             'product_variant_id',
             'variant_option_id'
         )->with('variantType');

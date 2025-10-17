@@ -45,36 +45,46 @@
 						<!-- Product Gallery -->
 						<div class="product-gallery">
 							<!-- Main Image Viewer -->
+							@php
+								$mainImagePath = null;
+								if ($product_detail->images->isNotEmpty()) {
+									$mainImagePath = $product_detail->images[0]->image_path;
+									// Ensure the path is served from storage (avoid double-prefix)
+									if ($mainImagePath && strpos($mainImagePath, 'storage/') !== 0) {
+										$mainImagePath = 'storage/' . ltrim($mainImagePath, '/');
+									}
+								}
+							@endphp
 
 							<div class="main-image-container position-relative mb-3" style="display: flex; align-items: center; justify-content: center;">
-								@if($product_detail->images->isNotEmpty())
-								<img src="{{ asset($product_detail->images[0]->image_path) }}"
+								<div id="imageLoadingOverlay" class="loading-overlay d-none position-absolute" style="top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.8); display: flex; align-items: center; justify-content: center; z-index: 10;">
+									<div class="spinner-border text-primary" role="status" style="width: 2rem; height: 2rem;"></div>
+								</div>
+								<img src="{{ $mainImagePath ? asset($mainImagePath) : asset('images/no-image.png') }}"
 									alt="{{$product_detail->title}}"
 									class="main-image img-fluid"
 									id="mainImage"
 									tabindex="15"
-									style="max-height: 500px; object-fit: contain; border-radius: 10px; width: 100%; min-width: 300px; border: 2px solid #eee;">
-								@else
-								<img src="{{ asset('images/no-image.png') }}"
-									alt="No Image"
-									class="main-image img-fluid"
-									id="mainImage"
-									tabindex="15"
-									style="max-height: 500px; object-fit: contain; border-radius: 10px; width: 100%; min-width: 300px; border: 2px solid #eee;">
-								@endif
+									style="max-height: 500px; object-fit: contain; border-radius: 10px; width: 100%; min-width: 300px; border: 2px solid #eee; transition: opacity 0.3s ease;"
+									data-original-src="{{ $mainImagePath ? asset($mainImagePath) : asset('images/no-image.png') }}">
 							</div>
 
 							<!-- Thumbnail Carousel -->
-
 							<div class="thumbnail-carousel mt-2">
-								<div class="thumbnails d-flex flex-row flex-nowrap">
+								<div class="thumbnails d-flex flex-row flex-nowrap" id="thumbnailContainer">
 									@forelse($product_detail->images as $index => $image)
+									@php
+										$imgPath = $image->image_path ?? '';
+										if ($imgPath) {
+											$imgPath = (strpos($imgPath, 'storage/') === 0) ? $imgPath : 'storage/' . ltrim($imgPath, '/');
+										}
+									@endphp
 									<div class="thumbnail-item mx-1" style="flex: 0 0 auto;">
-										<img src="{{ asset($image->image_path) }}"
+										<img src="{{ $imgPath ? asset($imgPath) : asset('images/no-image.png') }}"
 											alt="Thumbnail {{$index + 1}}"
 											tabindex="{{ 16 + $index }}"
 											class="img-fluid thumbnail-image {{ $index == 0 ? 'active' : '' }}"
-											style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px; cursor: pointer; border: 2px solid <?php echo ($index == 0) ? '#2874f0' : '#eee'; ?>;"
+											style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px; cursor: pointer; border: 2px solid {{ $index == 0 ? '#2874f0' : '#eee' }}; transition: all 0.2s ease;"
 											data-index="{{ $index }}">
 									</div>
 									@empty
@@ -83,16 +93,13 @@
 											alt="No Image"
 											tabindex="16"
 											class="img-fluid thumbnail-image active"
-											style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px; cursor: pointer; border: 2px solid #2874f0;"
+											style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px; cursor: pointer; border: 2px solid #2874f0; transition: all 0.2s ease;"
 											data-index="0">
 									</div>
 									@endforelse
 								</div>
 							</div>
 						</div>
-						<!-- Auto Slider Script -->
-
-						<!-- End Product Gallery -->
 					</div>
 					<div class="col-lg-6 col-12">
 						<div class="product-des">
@@ -105,159 +112,99 @@
 										$rate = ceil($product_detail->getReview->avg('rate'));
 										@endphp
 										@for($i = 1; $i <= 5; $i++)
-											@if($rate>= $i)
+											@if($rate >= $i)
 											<li><i class="fa fa-star"></i></li>
 											@else
 											<li><i class="fa fa-star-o"></i></li>
 											@endif
-											@endfor
+										@endfor
 									</ul>
-									<a href="#" class="total-review" tabindex="18">({{$product_detail['getReview']->count()}}) Review</a>
+									<a href="#reviews" class="total-review" tabindex="18">({{$product_detail['getReview']->count()}}) Review</a>
 								</div>
-								@php
-								$originalPrice = $product_detail->price;
-								$discounts = $discountService->getEffectiveDiscounts($product_detail);
-								$discountedPrice = $discountService->applyAllDiscounts($originalPrice, $discounts);
-								$isDiscounted = $discountedPrice < $originalPrice;
-									@endphp
 
+								<!-- Price Display -->
+								<div class="price-container" id="priceContainer">
 									<p class="price" tabindex="19">
-									@if($isDiscounted)
-									<span class="text-danger font-weight-bold"
-										title="@foreach($discounts as $d){{ $d['title'] ?? ucfirst($d['source']) }}: {{ $d['type'] === 'percentage' ? $d['value'].'%' : '$'.number_format($d['value'], 0) }}{{ !$loop->last ? ', ' : '' }}@endforeach">
-										${{ number_format($discountedPrice, 2) }}
-									</span><br>
-									<small><s class="text-muted">${{ number_format($originalPrice, 2) }}</s></small>
-
-									@if(count($discounts))
-									<br>
-									<small class="text-muted">
-										@foreach($discounts as $d)
-										• {{ $d['title'] ?? ucfirst($d['source']) }}:
-										@if($d['type'] === 'percentage')
-										{{ $d['value'] }}% off
-										@elseif($d['type'] === 'amount')
-										${{ number_format($d['value'], 0) }} off
-										@endif
+										<span class="text-danger font-weight-bold" id="displayPrice">
+											${{ number_format($product_detail->discounted_price, 2) }}
+										</span>
+										@if($product_detail->discount_percentage > 0)
 										<br>
-										@endforeach
-									</small>
-									@endif
-									@else
-									<span>${{ number_format($originalPrice, 2) }}</span>
-									@endif
+										<small><s class="text-muted" id="originalPrice">${{ number_format($product_detail->original_price, 2) }}</s></small>
+										<small class="text-success ml-2" id="discountBadge">{{ $product_detail->discount_percentage }}% off</small>
+										@endif
 									</p>
-
-									<p class="description" tabindex="20">{!! $product_detail->summary !!}</p>
-							</div>
-							<!--/ End Description -->
-							<!-- Size -->
-							@if($product_detail->size)
-							<div class="size mt-4">
-								<h4 tabindex="21">Size
-									<a href="#" class="size-guide-link" data-toggle="modal" data-target="#sizeGuideModal">
-										<i class="ti-ruler-alt"></i> Size Guide
-									</a>
-								</h4>
-								<div class="size-selector">
-									@php
-									$sizes = explode(',', $product_detail->size);
-									@endphp
-									@foreach($sizes as $index => $size)
-									<label class="size-option {{ $index == 0 ? 'active' : '' }}">
-										<input type="radio"
-											name="size"
-											value="{{ trim($size) }}"
-											{{ $index == 0 ? 'checked' : '' }}
-											class="d-none size-input"
-											data-size="{{ trim($size) }}">
-										<span tabindex="{{ 22 + $index }}">{{ trim($size) }}</span>
-									</label>
-									@endforeach
-									@error('size')
-									<span class="text-danger size-error">{{ $message }}</span>
-									@enderror
 								</div>
 
-								<!-- Selected size display -->
-								<div class="selected-size-info mt-2">
-									<small class="text-muted">Selected: <strong id="selectedSizeDisplay">{{ trim(explode(',', $product_detail->size)[0]) }}</strong></small>
-								</div>
+								<p class="description" tabindex="20">{!! $product_detail->summary !!}</p>
 							</div>
 
-							<!-- Size Guide Modal (Optional) -->
-							<div class="modal fade" id="sizeGuideModal" tabindex="-1" role="dialog" aria-labelledby="sizeGuideModalLabel">
-								<div class="modal-dialog modal-lg" role="document">
-									<div class="modal-content">
-										<div class="modal-header">
-											<h5 class="modal-title" id="sizeGuideModalLabel">Size Guide</h5>
-											<button type="button" class="close" data-dismiss="modal" aria-label="Close">
-												<span aria-hidden="true">&times;</span>
-											</button>
-										</div>
-										<div class="modal-body">
-											<div class="size-chart">
-												<table class="table table-bordered">
-													<thead class="thead-light">
-														<tr>
-															<th>Size</th>
-															<th>Chest (inches)</th>
-															<th>Waist (inches)</th>
-															<th>Length (inches)</th>
-														</tr>
-													</thead>
-													<tbody>
-														<tr>
-															<td><strong>XS</strong></td>
-															<td>32-34</td>
-															<td>28-30</td>
-															<td>26</td>
-														</tr>
-														<tr>
-															<td><strong>S</strong></td>
-															<td>34-36</td>
-															<td>30-32</td>
-															<td>27</td>
-														</tr>
-														<tr>
-															<td><strong>M</strong></td>
-															<td>36-38</td>
-															<td>32-34</td>
-															<td>28</td>
-														</tr>
-														<tr>
-															<td><strong>L</strong></td>
-															<td>38-40</td>
-															<td>34-36</td>
-															<td>29</td>
-														</tr>
-														<tr>
-															<td><strong>XL</strong></td>
-															<td>40-42</td>
-															<td>36-38</td>
-															<td>30</td>
-														</tr>
-														<tr>
-															<td><strong>XXL</strong></td>
-															<td>42-44</td>
-															<td>38-40</td>
-															<td>31</td>
-														</tr>
-													</tbody>
-												</table>
+							{{-- Updated Variant Selection Section --}}
+							@if($product_detail->has_variants && $product_detail->variants->count() > 0)
+							<div class="variant-selection-container mt-4" id="variantContainer">
+								@php $tabindex = 21; @endphp
+								@foreach($variantTypes as $type)
+								<div class="variant-group mb-3">
+									<h6 class="mb-2">{{ $type->display_name }}</h6>
+									<div class="variant-options d-flex flex-wrap gap-2">
+										@foreach($type->options as $option)
+										@php
+											$isColor = strtolower($type->name) === 'color';
+											$colorCode = $option->hex_color;
+											// Fallback map if no hex_color
+											$fallbackMap = [
+												'red' => '#ff0000', 'black' => '#000000', 'white' => '#ffffff', 'blue' => '#0000ff',
+												'green' => '#00ff00', 'yellow' => '#ffff00', 'pink' => '#ffc0cb', 'gray' => '#808080',
+												'brown' => '#a52a2a', 'nude' => '#e3c7a6', 'coral' => '#ff7f50', 'mauve' => '#ba55d3',
+												// Add more lipstick-specific shades as needed
+											];
+											if (!$colorCode && isset($fallbackMap[strtolower($option->value)])) {
+												$colorCode = $fallbackMap[strtolower($option->value)];
+											}
+										@endphp
+										@if($isColor && $colorCode)
+										{{-- Color Swatch UI --}}
+										<div class="color-swatch position-relative" tabindex="{{$tabindex++}}">
+											<input type="radio" id="color-{{ $type->id }}-{{ $option->id }}" name="{{ $type->name }}" value="{{ $option->value }}" class="sr-only" data-variant-type="{{ $type->name }}" data-variant-value="{{ $option->value }}">
+											<label for="color-{{ $type->id }}-{{ $option->id }}" class="color-swatch-label" style="background-color: {{ $colorCode }}; border: 2px solid #fff;">
+												<span class="sr-only">{{ $option->display_value ?? $option->value }}</span>
+											</label>
+											<div class="color-swatch-checkmark d-none position-absolute">
+												<i class="fa fa-check"></i>
 											</div>
 										</div>
+										@else
+										{{-- Text Button UI (for size, shade, etc.) --}}
+										<button type="button" 
+											class="variant-option-btn btn btn-outline-secondary"
+											data-variant-type="{{ $type->name }}"
+											data-variant-value="{{ $option->value }}"
+											style="min-width: 80px; padding: 8px 16px; border-radius: 4px; font-size: 14px; position: relative; overflow: hidden;"
+											tabindex="{{$tabindex++}}">
+											{{ $option->display_value ?? $option->value }}
+										</button>
+										@endif
+										@endforeach
 									</div>
 								</div>
+								@endforeach
 							</div>
 							@endif
-							<!--/ End Size -->
+
+							<!-- Stock Availability Alert -->
+							<div id="stockAlert" class="alert alert-danger d-none mt-3" role="alert">
+								<i class="fa fa-exclamation-circle"></i> 
+								<span id="stockAlertMessage">This variant is currently out of stock</span>
+							</div>
+
 							<!-- Product Buy -->
 							<div class="product-buy">
-								<form action="{{route('single-add-to-cart')}}" method="POST">
+								<form action="{{route('single-add-to-cart')}}" method="POST" id="addToCartForm">
 									@csrf
-									<input type="hidden" name="size" id="selectedSize" value="{{ $product_detail->size ? explode(',', $product_detail->size)[0] : '' }}">
-									<div class="quantity">
+									<input type="hidden" name="slug" value="{{$product_detail->slug}}">
+									<input type="hidden" name="variant_id" id="selectedVariantId" value="">
+									
+									<div class="quantity" id="quantitySection">
 										<h6 tabindex="32">Quantity:</h6>
 										<div class="input-group">
 											<div class="button minus">
@@ -265,7 +212,6 @@
 													<i class="ti-minus"></i>
 												</button>
 											</div>
-											<input type="hidden" name="slug" value="{{$product_detail->slug}}">
 											<input type="text" name="quant[1]" class="input-number" data-min="1" data-max="1000" value="1" id="quantity" tabindex="34">
 											<div class="button plus">
 												<button type="button" class="btn btn-primary btn-number" data-type="plus" data-field="quant[1]" tabindex="35">
@@ -274,8 +220,9 @@
 											</div>
 										</div>
 									</div>
+									
 									<div class="add-to-cart mt-4">
-										<button type="submit" class="btn" tabindex="36">Add to cart</button>
+										<button type="submit" class="btn" id="addToCartBtn" tabindex="36">Add to cart</button>
 										<a href="{{route('add-to-wishlist',$product_detail->slug)}}" class="btn min" tabindex="37"><i class="ti-heart"></i></a>
 									</div>
 								</form>
@@ -284,13 +231,20 @@
 								@if($product_detail->sub_cat_info)
 								<p class="cat mt-1" tabindex="40">Sub Category: <a href="{{route('product-cat',[$product_detail->cat_info['slug'],$product_detail->sub_cat_info['slug']])}}" tabindex="41">{{$product_detail->sub_cat_info['title']}}</a></p>
 								@endif
-								<p class="availability" tabindex="42">Sku: {{$product_detail->sku ?? 'N/A'}}</p>
-								<p class="availability" tabindex="43">Stock: @if($product_detail->stock > 0)<span class="badge badge-success">{{$product_detail->stock}}</span>@else <span class="badge badge-danger">{{$product_detail->stock}}</span> @endif</p>
+								<p class="availability" tabindex="42">SKU: <span id="displaySku">{{$product_detail->current_sku}}</span></p>
+								<p class="availability" tabindex="43">Stock: <span id="displayStock">
+									@if($product_detail->current_stock > 0)
+									<span class="badge badge-success">{{$product_detail->current_stock}}</span>
+									@else
+									<span class="badge badge-danger">Out of Stock</span>
+									@endif
+								</span></p>
 							</div>
-							<!--/ End Product Buy -->
 						</div>
 					</div>
 				</div>
+
+				<!-- Rest of the page (Reviews, Description tabs) -->
 				<div class="row">
 					<div class="col-12">
 						<div class="product-info">
@@ -301,7 +255,6 @@
 								</ul>
 							</div>
 							<div class="tab-content" id="myTabContent">
-								<!-- Description Tab -->
 								<div class="tab-pane fade show active" id="description" role="tabpanel">
 									<div class="tab-single">
 										<div class="row">
@@ -313,13 +266,10 @@
 										</div>
 									</div>
 								</div>
-								<!--/ End Description Tab -->
-								<!-- Reviews Tab -->
 								<div class="tab-pane fade" id="reviews" role="tabpanel">
 									<div class="tab-single review-panel">
 										<div class="row">
 											<div class="col-12">
-												<!-- Review -->
 												<div class="comment-review">
 													<div class="add-review">
 														<h5 tabindex="47">Add A Review</h5>
@@ -398,7 +348,7 @@
 																		@else
 																		<li><i class="fa fa-star-o"></i></li>
 																		@endif
-																		@endfor
+																	@endfor
 																</ul>
 																<div class="rate-count" tabindex="{{ 65 + $index * 4 }}">(<span>{{$data->rate}}</span>)</div>
 															</div>
@@ -411,7 +361,6 @@
 										</div>
 									</div>
 								</div>
-								<!--/ End Reviews Tab -->
 							</div>
 						</div>
 					</div>
@@ -420,217 +369,1019 @@
 		</div>
 	</div>
 </section>
-<!--/ End Shop Single -->
 
-<x-similar-products-carousel
-	:products="$related_products"
-	title="Similar Products"
-	carousel-id="relatedCarousel"
-	no-products-message="No related products found."
-	starting-tab-index="47"
-	default-background-color="#28a745"
-	default-text-color="white"
-	default-auto-scroll-speed="200"
-	default-scroll-amount="3"
-	default-shimmer="true" />
-
-@if(isset($recent_products) && count($recent_products) > 0)
-	<x-recently-viewed-carousel
-		:products="$recent_products"
-		title="Recently Viewed Products"
-		carousel-id="customRecentCarousel"
-		no-products-message="No recent views yet!"
-		default-background-color="#ff6b35"
-		default-text-color="white"
-		default-auto-scroll-speed="100"
-		default-scroll-amount="10"
-		default-shimmer="false" />    
-@endif
+<!-- Pass variants data to JavaScript -->
+<script>
+	window.productVariants = @json($processedVariants);
+	window.productSlug = "{{ $product_detail->slug }}";
+	window.hasVariants = {{ $product_detail->has_variants ? 'true' : 'false' }};
+</script>
 
 @endsection
+
+@push('styles')
+<style>
+	/* Product Variant Selection Styles - Enhanced Flipkart Style */
+	.variant-selection-container {
+		background: #fff;
+		padding: 15px 0;
+		border-top: 1px solid #f0f0f0;
+		border-bottom: 1px solid #f0f0f0;
+	}
+
+	.variant-group {
+		margin-bottom: 20px;
+	}
+
+	.variant-group h6 {
+		font-size: 14px;
+		font-weight: 600;
+		color: #212121;
+		margin-bottom: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.variant-options {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+	}
+
+	/* Text Button Styles */
+	.variant-option-btn {
+		position: relative;
+		min-width: 80px;
+		padding: 10px 20px;
+		border: 1px solid #c2c2c2;
+		border-radius: 2px;
+		background: #fff;
+		color: #212121;
+		font-size: 14px;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		text-align: center;
+		outline: none;
+		overflow: hidden;
+	}
+
+	.variant-option-btn::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+		transition: left 0.5s;
+	}
+
+	.variant-option-btn:hover:not(.disabled):not(.active)::before {
+		left: 100%;
+	}
+
+	.variant-option-btn:hover:not(.disabled):not(.active) {
+		border-color: #2874f0;
+		box-shadow: 0 2px 4px rgba(40, 116, 240, 0.1);
+		transform: translateY(-1px);
+	}
+
+	.variant-option-btn.active {
+		border: 2px solid #2874f0;
+		background: #e8f0fe;
+		color: #2874f0;
+		font-weight: 600;
+	}
+
+	.variant-option-btn.active::after {
+		content: '';
+		position: absolute;
+		top: -1px;
+		right: -1px;
+		width: 0;
+		height: 0;
+		border-style: solid;
+		border-width: 0 20px 20px 0;
+		border-color: transparent #2874f0 transparent transparent;
+		z-index: 1;
+	}
+
+	.variant-option-btn.active::before {
+		content: '✓';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		color: #2874f0;
+		font-size: 12px;
+		font-weight: bold;
+		z-index: 2;
+		background: #fff;
+		width: 16px;
+		height: 16px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.variant-option-btn.disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+		position: relative;
+		background: #fafafa;
+		color: #878787;
+	}
+
+	.variant-option-btn.disabled::after {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 10%;
+		right: 10%;
+		height: 1px;
+		background: #878787;
+		transform: translateY(-50%);
+	}
+
+	.variant-option-btn:focus {
+		outline: 2px solid #2874f0;
+		outline-offset: 2px;
+	}
+
+	/* Color Swatch Styles */
+	.color-swatch {
+		position: relative;
+		width: 32px;
+		height: 32px;
+	}
+
+	.color-swatch-label {
+		display: block;
+		width: 100%;
+		height: 100%;
+		border-radius: 50%;
+		cursor: pointer;
+		border: 2px solid #fff;
+		box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+		transition: all 0.2s ease;
+		position: relative;
+	}
+
+	.color-swatch input:checked + .color-swatch-label {
+		border-color: #2874f0;
+		box-shadow: 0 0 0 2px #2874f0;
+		transform: scale(1.1);
+	}
+
+	.color-swatch input:checked ~ .color-swatch-checkmark {
+		display: block;
+	}
+
+	.color-swatch-checkmark {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		color: #fff;
+		font-size: 10px;
+		font-weight: bold;
+		z-index: 2;
+	}
+
+	.color-swatch:hover .color-swatch-label:not(.disabled) {
+		transform: scale(1.1);
+		box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+	}
+
+	.color-swatch.disabled .color-swatch-label {
+		opacity: 0.5;
+		cursor: not-allowed;
+		position: relative;
+	}
+
+	.color-swatch.disabled .color-swatch-label::after {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 0;
+		right: 0;
+		height: 1px;
+		background: #fff;
+		transform: translateY(-50%);
+	}
+
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+
+	/* Stock Alert Styles */
+	#stockAlert {
+		background: #fff3cd;
+		border: 1px solid #ffeaa7;
+		border-radius: 4px;
+		padding: 12px 16px;
+		color: #856404;
+		font-size: 14px;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		animation: slideDown 0.3s ease;
+	}
+
+	@keyframes slideDown {
+		from { opacity: 0; transform: translateY(-10px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+
+	#stockAlert i {
+		font-size: 18px;
+		color: #ff6b6b;
+	}
+
+	#stockAlert.d-none {
+		display: none !important;
+	}
+
+	/* Price Display Styles */
+	.price-container {
+		margin: 15px 0;
+	}
+
+	.price-container .price {
+		margin: 0;
+		line-height: 1.4;
+		transition: all 0.3s ease;
+	}
+
+	.price-container .price span {
+		font-size: 28px;
+		font-weight: 500;
+	}
+
+	.price-container .price small {
+		font-size: 16px;
+		margin-left: 8px;
+	}
+
+	.price-container .price .text-success {
+		background: #388e3c;
+		color: white;
+		padding: 2px 8px;
+		border-radius: 2px;
+		font-size: 12px;
+		font-weight: 600;
+		animation: pulse 0.5s ease;
+	}
+
+	@keyframes pulse {
+		0% { transform: scale(1); }
+		50% { transform: scale(1.05); }
+		100% { transform: scale(1); }
+	}
+
+	/* Product Gallery Enhancements */
+	.main-image-container {
+		position: relative;
+		background: #fafafa;
+		padding: 20px;
+		border-radius: 4px;
+		min-height: 400px;
+	}
+
+	.main-image {
+		transition: transform 0.3s ease, opacity 0.3s ease;
+	}
+
+	.main-image.loading {
+		opacity: 0.5;
+	}
+
+	.thumbnail-carousel {
+		overflow-x: auto;
+		scrollbar-width: thin;
+		scrollbar-color: #c2c2c2 #f0f0f0;
+	}
+
+	.thumbnail-carousel::-webkit-scrollbar {
+		height: 6px;
+	}
+
+	.thumbnail-carousel::-webkit-scrollbar-track {
+		background: #f0f0f0;
+		border-radius: 3px;
+	}
+
+	.thumbnail-carousel::-webkit-scrollbar-thumb {
+		background: #c2c2c2;
+		border-radius: 3px;
+	}
+
+	.thumbnail-carousel::-webkit-scrollbar-thumb:hover {
+		background: #a0a0a0;
+	}
+
+	.thumbnail-image {
+		transition: all 0.2s ease;
+	}
+
+	.thumbnail-image:hover {
+		transform: scale(1.05);
+		border-color: #2874f0 !important;
+		box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+	}
+
+	.thumbnail-image.active {
+		box-shadow: 0 2px 8px rgba(40, 116, 240, 0.3);
+	}
+
+	/* Add to Cart Button Styles */
+	.add-to-cart .btn {
+		background: #ff9f00;
+		border: none;
+		color: #fff;
+		padding: 12px 40px;
+		font-size: 16px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		border-radius: 2px;
+		transition: all 0.2s ease;
+		position: relative;
+		overflow: hidden;
+	}
+
+	.add-to-cart .btn::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+		transition: left 0.5s;
+	}
+
+	.add-to-cart .btn:hover:not(:disabled)::before {
+		left: 100%;
+	}
+
+	.add-to-cart .btn:hover:not(:disabled) {
+		background: #e68a00;
+		box-shadow: 0 4px 8px rgba(255, 159, 0, 0.3);
+		transform: translateY(-1px);
+	}
+
+	.add-to-cart .btn:disabled {
+		background: #c2c2c2;
+		cursor: not-allowed;
+		opacity: 0.6;
+	}
+
+	.add-to-cart .btn.min {
+		background: #fff;
+		border: 1px solid #c2c2c2;
+		color: #212121;
+		padding: 12px 16px;
+		margin-left: 10px;
+	}
+
+	.add-to-cart .btn.min:hover {
+		border-color: #ff6b6b;
+		color: #ff6b6b;
+		transform: scale(1.1);
+	}
+
+	/* Quantity Selector Enhancement */
+	.quantity {
+		margin: 20px 0;
+		opacity: 1;
+		transition: opacity 0.3s ease;
+	}
+
+	.quantity.hidden {
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	.quantity h6 {
+		font-size: 14px;
+		font-weight: 600;
+		color: #212121;
+		margin-bottom: 10px;
+	}
+
+	.quantity .input-group {
+		display: inline-flex;
+		align-items: center;
+		border: 1px solid #c2c2c2;
+		border-radius: 2px;
+		overflow: hidden;
+	}
+
+	.quantity .button {
+		margin: 0;
+	}
+
+	.quantity .btn-number {
+		background: #fff;
+		border: none;
+		color: #2874f0;
+		padding: 8px 12px;
+		font-size: 18px;
+		cursor: pointer;
+		transition: background 0.2s;
+	}
+
+	.quantity .btn-number:hover:not(:disabled) {
+		background: #f0f0f0;
+	}
+
+	.quantity .btn-number:disabled {
+		color: #c2c2c2;
+		cursor: not-allowed;
+	}
+
+	.quantity .input-number {
+		width: 60px;
+		text-align: center;
+		border: none;
+		border-left: 1px solid #f0f0f0;
+		border-right: 1px solid #f0f0f0;
+		padding: 8px;
+		font-size: 16px;
+		font-weight: 500;
+		color: #212121;
+	}
+
+	.quantity .input-number:focus {
+		outline: none;
+	}
+
+	/* Product Info Meta */
+	.product-des .cat,
+	.product-des .availability {
+		font-size: 14px;
+		color: #878787;
+		margin: 10px 0;
+		transition: color 0.3s ease;
+	}
+
+	.product-des .cat a {
+		color: #2874f0;
+		text-decoration: none;
+		font-weight: 500;
+	}
+
+	.product-des .cat a:hover {
+		text-decoration: underline;
+	}
+
+	/* Badge Styles */
+	.badge {
+		font-size: 12px;
+		padding: 4px 8px;
+		font-weight: 600;
+		border-radius: 2px;
+		transition: all 0.3s ease;
+	}
+
+	.badge-success {
+		background: #388e3c;
+	}
+
+	.badge-danger {
+		background: #ff6b6b;
+		animation: shake 0.5s ease;
+	}
+
+	@keyframes shake {
+		0%, 100% { transform: translateX(0); }
+		25% { transform: translateX(-5px); }
+		75% { transform: translateX(5px); }
+	}
+
+	/* Responsive Styles */
+	@media (max-width: 991px) {
+		.variant-option-btn {
+			min-width: 70px;
+			padding: 8px 16px;
+			font-size: 13px;
+		}
+		
+		.color-swatch {
+			width: 28px;
+			height: 28px;
+		}
+		
+		.price-container .price span {
+			font-size: 24px;
+		}
+		
+		.main-image-container {
+			min-height: 300px;
+		}
+	}
+
+	@media (max-width: 767px) {
+		.variant-selection-container {
+			padding: 10px 0;
+		}
+		
+		.variant-option-btn {
+			min-width: 60px;
+			padding: 6px 12px;
+			font-size: 12px;
+		}
+		
+		.color-swatch {
+			width: 24px;
+			height: 24px;
+		}
+		
+		.price-container .price span {
+			font-size: 20px;
+		}
+		
+		.add-to-cart .btn {
+			width: 100%;
+			margin-bottom: 10px;
+		}
+		
+		.add-to-cart .btn.min {
+			width: auto;
+			margin-left: 0;
+		}
+	}
+
+	/* Loading Animation */
+	@keyframes shimmer {
+		0% {
+			background-position: -468px 0;
+		}
+		100% {
+			background-position: 468px 0;
+		}
+	}
+
+	.loading-shimmer {
+		animation: shimmer 1.2s infinite;
+		background: linear-gradient(to right, #f0f0f0 8%, #e0e0e0 18%, #f0f0f0 33%);
+		background-size: 800px 104px;
+	}
+</style>
+@endpush
 
 @push('scripts')
 <script>
 	document.addEventListener('DOMContentLoaded', function() {
 		/* ===============================
-			WISHLIST LOGIN PROMPT
-		=============================== */
-		document.querySelectorAll('.wishlist-login-prompt').forEach(btn => {
-			btn.addEventListener('click', function(e) {
-				e.preventDefault();
-				if (typeof $ !== 'undefined' && $('#loginPromptModal').length) {
-					$('#loginPromptModal').modal('show');
+        VARIANT SELECTION SYSTEM (ENHANCED FOR COLOR SWATCHES)
+    ============================== */
+    const variants = window.productVariants || [];
+    const hasVariants = window.hasVariants || false;
+    const productSlug = window.productSlug;
+    
+    let selectedVariantOptions = {};
+    let currentVariant = null;
+    let isUpdating = false;
+    
+    // Initialize variant system
+    if (hasVariants && variants.length > 0) {
+        initializeVariantSystem();
+    }
+    
+    function initializeVariantSystem() {
+        // Handle text buttons
+        const textButtons = document.querySelectorAll('.variant-option-btn');
+        textButtons.forEach(btn => {
+            btn.addEventListener('click', handleVariantSelection);
+        });
+        
+        // Handle color swatches (radio inputs)
+        const colorInputs = document.querySelectorAll('input[type="radio"][data-variant-type]');
+        colorInputs.forEach(input => {
+            input.addEventListener('change', handleVariantSelectionFromInput);
+        });
+        
+        // Pre-select cheapest in-stock variant
+        preselectCheapestVariant();
+    }
+    
+    function handleVariantSelection(e) {
+        if (isUpdating) return;
+        
+        const target = e.currentTarget;
+        const variantType = target.dataset.variantType;
+        const variantValue = target.dataset.variantValue;
+        
+        if (target.classList.contains('disabled')) {
+            return;
+        }
+        
+        // Update selection
+        selectedVariantOptions[variantType] = variantValue;
+        
+        // Update UI for this group
+        document.querySelectorAll(`[data-variant-type="${variantType}"].variant-option-btn`).forEach(b => {
+            b.classList.remove('active');
+        });
+        target.classList.add('active');
+        
+        // Trigger update
+        updateVariantWithLoading();
+    }
+    
+    function handleVariantSelectionFromInput(e) {
+        if (isUpdating) return;
+        
+        const input = e.target;
+        const variantType = input.dataset.variantType || input.name;
+        const variantValue = input.value;
+        
+        const parentSwatch = input.closest('.color-swatch');
+        if (parentSwatch && parentSwatch.classList.contains('disabled')) {
+            return;
+        }
+        
+        // Update selection
+        selectedVariantOptions[variantType] = variantValue;
+        
+        // Trigger update
+        updateVariantWithLoading();
+    }
+    
+    async function updateVariantWithLoading() {
+        isUpdating = true;
+        showLoadingStates();
+        
+        // Client-side match first (partial or full, active only, allow stock=0 for out-of-stock display)
+        let matchingVariant = findMatchingVariant();
+        
+        if (matchingVariant) {
+            currentVariant = matchingVariant;
+            updateProductDisplay(matchingVariant);
+            updateAvailableOptions();
+        } else {
+            // API fallback for exact match
+            try {
+                const response = await fetch(`/product/${productSlug}/check-variant`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    },
+                    body: JSON.stringify({ options: selectedVariantOptions })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentVariant = {
+                        id: data.data.id,
+                        sku: data.data.sku,
+                        price: parseFloat(data.data.price),
+                        discount: data.data.discount,
+                        stock: data.data.stock,
+                        images: data.data.images.map(img => ({ 
+                            image_path: img.image_path,
+                            is_primary: img.is_primary 
+                        }))
+                    };
+                    updateProductDisplay(currentVariant);
+                    updateAvailableOptions();
+                } else {
+                    handleNoVariantFound();
+                }
+            } catch (error) {
+                console.error('Variant check failed:', error);
+                handleNoVariantFound();
+            }
+        }
+        
+        hideLoadingStates();
+        isUpdating = false;
+    }
+    
+    function findMatchingVariant() {
+        return variants.find(v => {
+            if (v.status !== 'active') return false;
+            
+            const variantValues = typeof v.variant_values === 'string' ? JSON.parse(v.variant_values) : v.variant_values;
+            
+            return Object.entries(selectedVariantOptions).every(([type, value]) => {
+                return variantValues[type] === value;
+            });
+        });
+    }
+    
+    function preselectCheapestVariant() {
+        const inStockVariants = variants.filter(v => v.status === 'active' && v.stock > 0);
+        
+        if (inStockVariants.length > 0) {
+            // Sort by discounted price ascending
+            const sortedVariants = [...inStockVariants].sort((a, b) => {
+                const discA = a.price * (1 - (a.discount || 0) / 100);
+                const discB = b.price * (1 - (b.discount || 0) / 100);
+                return discA - discB;
+            });
+            
+            const firstVariant = sortedVariants[0];
+            const variantValues = typeof firstVariant.variant_values === 'string' ? JSON.parse(firstVariant.variant_values) : firstVariant.variant_values;
+            
+            Object.entries(variantValues).forEach(([type, value]) => {
+                selectedVariantOptions[type] = value;
+                
+                // Select text button
+                const btn = document.querySelector(`[data-variant-type="${type}"][data-variant-value="${value}"].variant-option-btn`);
+                if (btn) {
+                    btn.classList.add('active');
+                }
+                
+                // Select color input
+                const input = document.querySelector(`input[data-variant-type="${type}"][value="${value}"]`);
+                if (input) {
+                    input.checked = true;
+                }
+            });
+            
+            currentVariant = firstVariant;
+            updateProductDisplay(firstVariant);
+            updateAvailableOptions();
+        } else {
+            // Fallback to first active variant (even if out of stock)
+            const firstActive = variants.find(v => v.status === 'active');
+            if (firstActive) {
+                // Similar selection logic as above...
+                const variantValues = typeof firstActive.variant_values === 'string' ? JSON.parse(firstActive.variant_values) : firstActive.variant_values;
+                Object.entries(variantValues).forEach(([type, value]) => {
+                    selectedVariantOptions[type] = value;
+                    const btn = document.querySelector(`[data-variant-type="${type}"][data-variant-value="${value}"].variant-option-btn`);
+                    if (btn) btn.classList.add('active');
+                    const input = document.querySelector(`input[data-variant-type="${type}"][value="${value}"]`);
+                    if (input) input.checked = true;
+                });
+                currentVariant = firstActive;
+                updateProductDisplay(firstActive);
+                updateAvailableOptions();
+            }
+        }
+    }
+		
+		function updateProductDisplay(variant) {
+        // Animate price update
+        const priceContainer = document.getElementById('priceContainer');
+        priceContainer.classList.add('loading-shimmer');
+        
+        setTimeout(() => {
+            // Update price
+            const displayPrice = document.getElementById('displayPrice');
+            const originalPriceEl = document.getElementById('originalPrice');
+            const discountBadge = document.getElementById('discountBadge');
+            
+            const price = parseFloat(variant.price);
+            const discount = parseFloat(variant.discount || 0);
+            const discountedPrice = price * (1 - discount / 100);
+            
+            if (displayPrice) {
+                displayPrice.textContent = '$' + discountedPrice.toFixed(2);
+            }
+            
+            if (originalPriceEl && discount > 0) {
+                originalPriceEl.innerHTML = '<s class="text-muted">$' + price.toFixed(2) + '</s>';
+                originalPriceEl.style.display = 'inline';
+            } else if (originalPriceEl) {
+                originalPriceEl.style.display = 'none';
+            }
+            
+            if (discountBadge && discount > 0) {
+                discountBadge.textContent = discount + '% off';
+                discountBadge.style.display = 'inline';
+            } else if (discountBadge) {
+                discountBadge.style.display = 'none';
+            }
+            
+            priceContainer.classList.remove('loading-shimmer');
+        }, 150);
+        
+        // Update SKU
+        const displaySku = document.getElementById('displaySku');
+        if (displaySku) {
+            displaySku.textContent = variant.sku || 'N/A';
+        }
+        
+        // Update stock and cart state
+        const displayStock = document.getElementById('displayStock');
+        const stockAlert = document.getElementById('stockAlert');
+        const addToCartBtn = document.getElementById('addToCartBtn');
+        const quantitySection = document.getElementById('quantitySection');
+        const quantityInput = document.getElementById('quantity');
+        
+        const stock = parseInt(variant.stock || 0);
+        if (stock > 0) {
+            if (displayStock) {
+                displayStock.innerHTML = '<span class="badge badge-success">' + stock + '</span>';
+            }
+            if (stockAlert && !stockAlert.classList.contains('d-none')) {
+                stockAlert.classList.add('d-none');
+            }
+            if (addToCartBtn) {
+                addToCartBtn.disabled = false;
+                addToCartBtn.textContent = 'Add to cart';
+                addToCartBtn.classList.remove('btn-secondary');
+                addToCartBtn.classList.add('btn-warning');
+            }
+            if (quantitySection) {
+                quantitySection.classList.remove('hidden');
+            }
+            if (quantityInput) {
+                quantityInput.setAttribute('data-max', stock);
+                updateQuantityMax();
+            }
+        } else {
+            if (displayStock) {
+                displayStock.innerHTML = '<span class="badge badge-danger">Out of Stock</span>';
+            }
+            if (stockAlert) {
+                stockAlert.classList.remove('d-none');
+                document.getElementById('stockAlertMessage').textContent = 'This variant is currently out of stock';
+            }
+            if (addToCartBtn) {
+                addToCartBtn.disabled = true;
+                addToCartBtn.textContent = 'Out of Stock';
+                addToCartBtn.classList.remove('btn-warning');
+                addToCartBtn.classList.add('btn-secondary');
+            }
+            if (quantitySection) {
+                quantitySection.classList.add('hidden');
+            }
+        }
+        
+        // Update hidden variant ID
+        const variantIdInput = document.getElementById('selectedVariantId');
+        if (variantIdInput) {
+            variantIdInput.value = variant.id;
+        }
+        
+        // Update images with smooth transition
+        updateVariantImages(variant);
+    }
+		
+		function updateVariantImages(variant) {
+			if (!variant.images || variant.images.length === 0) return;
+			
+			const mainImage = document.getElementById('mainImage');
+			const thumbnailContainer = document.getElementById('thumbnailContainer');
+			const imageLoadingOverlay = document.getElementById('imageLoadingOverlay');
+			
+			// Show loading
+			imageLoadingOverlay.classList.remove('d-none');
+			mainImage.classList.add('loading');
+			
+			// Update main image
+			const firstImage = variant.images.find(img => img.is_primary) || variant.images[0];
+			mainImage.src = firstImage.image_path;
+			
+			mainImage.onload = () => {
+				imageLoadingOverlay.classList.add('d-none');
+				mainImage.classList.remove('loading');
+			};
+			
+			mainImage.onerror = () => {
+				imageLoadingOverlay.classList.add('d-none');
+				mainImage.classList.remove('loading');
+				mainImage.src = mainImage.dataset.originalSrc;
+			};
+			
+			// Rebuild thumbnails with fade
+			const newThumbnails = variant.images.map((img, index) => {
+				const thumbDiv = document.createElement('div');
+				thumbDiv.className = 'thumbnail-item mx-1';
+				thumbDiv.style.cssText = 'flex: 0 0 auto; opacity: 0; transition: opacity 0.3s ease;';
+				
+				const thumbImg = document.createElement('img');
+				thumbImg.src = img.image_path;
+				thumbImg.alt = `Thumbnail ${index + 1}`;
+				thumbImg.className = `img-fluid thumbnail-image ${index === 0 ? 'active' : ''}`;
+				thumbImg.style.cssText = `width: 80px; height: 80px; object-fit: cover; border-radius: 5px; cursor: pointer; border: 2px solid ${index === 0 ? '#2874f0' : '#eee'}; transition: all 0.2s ease;`;
+				thumbImg.dataset.index = index;
+				
+				thumbImg.addEventListener('click', function() {
+					document.querySelectorAll('.thumbnail-image').forEach(t => {
+						t.classList.remove('active');
+						t.style.border = '2px solid #eee';
+					});
+					this.classList.add('active');
+					this.style.border = '2px solid #2874f0';
+					if (mainImage) {
+						imageLoadingOverlay.classList.remove('d-none');
+						mainImage.classList.add('loading');
+						mainImage.src = this.src;
+						mainImage.onload = () => {
+							imageLoadingOverlay.classList.add('d-none');
+							mainImage.classList.remove('loading');
+						};
+					}
+				});
+				
+				thumbDiv.appendChild(thumbImg);
+				return thumbDiv;
+			});
+			
+			thumbnailContainer.innerHTML = '';
+			newThumbnails.forEach((thumb, index) => {
+				thumbnailContainer.appendChild(thumb);
+				setTimeout(() => thumb.style.opacity = '1', index * 50);
+			});
+		}
+		
+		function updateAvailableOptions() {
+			const allSelectors = document.querySelectorAll('.variant-option-btn, .color-swatch');
+			
+			allSelectors.forEach(selector => {
+				let variantType, variantValue;
+				if (selector.classList.contains('variant-option-btn')) {
+					variantType = selector.dataset.variantType;
+					variantValue = selector.dataset.variantValue;
 				} else {
-					window.location.href = btn.getAttribute('href');
+					const input = selector.querySelector('input');
+					if (input) {
+						variantType = input.dataset.variantType || input.name;
+						variantValue = input.value;
+					}
+				}
+				
+				if (!variantType || !variantValue) return;
+				
+				// Temp select to check
+				const originalValue = selectedVariantOptions[variantType];
+				selectedVariantOptions[variantType] = variantValue;
+				
+				const tempVariant = findMatchingVariant();
+				
+				// Restore
+				if (originalValue !== undefined) {
+					selectedVariantOptions[variantType] = originalValue;
+				} else {
+					delete selectedVariantOptions[variantType];
+				}
+				
+				if (!tempVariant && !selector.classList.contains('active')) {
+					selector.classList.add('disabled');
+				} else {
+					selector.classList.remove('disabled');
 				}
 			});
-		});
-
-		/* ===============================
-			SIZE SELECTOR
-		=============================== */
-		const sizeOptions = document.querySelectorAll('.size-option');
-		const selectedField = document.getElementById('selectedSize');
-		const sizeDisplay = document.getElementById('selectedSizeDisplay');
-
-		function selectSize(index, value) {
-			sizeOptions.forEach(opt => {
-				opt.classList.remove('active');
-				opt.querySelector('input').checked = false;
-			});
-
-			const selected = sizeOptions[index];
-			selected.classList.add('active');
-			selected.querySelector('input').checked = true;
-
-			if (selectedField) selectedField.value = value;
-			if (sizeDisplay) sizeDisplay.textContent = value;
-
-			// Animation feedback
-			const span = selected.querySelector('span');
-			span.style.transform = 'scale(0.95)';
-			setTimeout(() => span.style.transform = 'scale(1)', 150);
 		}
-
-		sizeOptions.forEach((option, index) => {
-			const input = option.querySelector('input');
-			const span = option.querySelector('span');
-
-			option.addEventListener('click', e => {
-				e.preventDefault();
-				selectSize(index, input.value);
-			});
-
-			span.addEventListener('keydown', e => {
-				if (['Enter', ' '].includes(e.key)) {
-					e.preventDefault();
-					selectSize(index, input.value);
-				}
-				if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(e.key)) {
-					e.preventDefault();
-					let newIndex = index;
-					if (['ArrowRight', 'ArrowDown'].includes(e.key)) newIndex = (index + 1) % sizeOptions.length;
-					if (['ArrowLeft', 'ArrowUp'].includes(e.key)) newIndex = (index - 1 + sizeOptions.length) % sizeOptions.length;
-					sizeOptions[newIndex].querySelector('span').focus();
-				}
-			});
-		});
-
-		// Default selection
-		if (!document.querySelector('.size-option.active') && sizeOptions.length > 0) {
-			selectSize(0, sizeOptions[0].querySelector('input').value);
-		}
-
-		/* ===============================
-			IMAGE THUMBNAILS + AUTO SLIDE
-		=============================== */
-		const mainImage = document.getElementById('mainImage');
-		const thumbnails = Array.from(document.querySelectorAll('.thumbnail-image'));
-		const images = thumbnails.map(t => t.src);
-		let currentIndex = thumbnails.findIndex(t => t.classList.contains('active')) || 0;
-
-		function updateImage() {
-			if (!mainImage) return;
-			mainImage.src = images[currentIndex];
-			thumbnails.forEach((t, i) => {
-				t.classList.toggle('active', i === currentIndex);
-				t.style.border = i === currentIndex ? '2px solid #2874f0' : '2px solid #eee';
-			});
-		}
-
-		thumbnails.forEach((thumb, idx) => {
-			thumb.addEventListener('click', () => {
-				currentIndex = idx;
-				updateImage();
-			});
-		});
-
-		if (images.length > 1) {
-			setInterval(() => {
-				currentIndex = (currentIndex + 1) % images.length;
-				updateImage();
-			}, 3000);
-		}
-
-		updateImage();
-
-		/* ===============================
-			MAIN IMAGE SCROLL + AUTO SLIDE
-		=============================== */
-		const mainImageContainer = document.querySelector('.main-image-scroll-container');
-		const scrollImages = mainImageContainer ? mainImageContainer.querySelectorAll('.main-image') : [];
-		let activeIndex = 0;
-
-		function setActiveImage(index) {
-			scrollImages.forEach((img, i) => {
-				img.style.border = i === index ? '2px solid #2874f0' : '2px solid #eee';
-				img.style.opacity = i === index ? '1' : '0.6';
-			});
-			thumbnails.forEach((thumb, i) => thumb.classList.toggle('active', i === index));
-			activeIndex = index;
-			if (scrollImages[index]) {
-				scrollImages[index].scrollIntoView({
-					behavior: 'smooth',
-					inline: 'center'
-				});
+		
+		function handleNoVariantFound() {
+			const stockAlert = document.getElementById('stockAlert');
+			if (stockAlert) {
+				stockAlert.classList.remove('d-none');
+				document.getElementById('stockAlertMessage').textContent = 'No matching variant available. Please select different options.';
 			}
 		}
-
-		thumbnails.forEach((thumb, i) => {
-			thumb.addEventListener('click', () => setActiveImage(i));
-		});
-
-		if (scrollImages.length > 1 && mainImageContainer) {
-			let autoScrollTimer;
-			const autoScrollDelay = 4000;
-
-			function startAutoScroll() {
-				clearInterval(autoScrollTimer);
-				autoScrollTimer = setInterval(() => {
-					setActiveImage((activeIndex + 1) % scrollImages.length);
-				}, autoScrollDelay);
-			}
-
-			function stopAutoScroll() {
-				clearInterval(autoScrollTimer);
-			}
-
-			mainImageContainer.addEventListener('mouseenter', stopAutoScroll);
-			mainImageContainer.addEventListener('mouseleave', startAutoScroll);
-			startAutoScroll();
-
-			// Drag-to-scroll support
-			let isDown = false,
-				startX = 0,
-				scrollLeft = 0;
-			mainImageContainer.addEventListener('pointerdown', e => {
-				isDown = true;
-				startX = e.clientX;
-				scrollLeft = mainImageContainer.scrollLeft;
-				mainImageContainer.setPointerCapture?.(e.pointerId);
-				mainImageContainer.style.cursor = 'grabbing';
-			});
-			mainImageContainer.addEventListener('pointermove', e => {
-				if (!isDown) return;
-				mainImageContainer.scrollLeft = scrollLeft - (e.clientX - startX);
-			});
-			['pointerup', 'pointercancel', 'pointerleave'].forEach(evt => {
-				mainImageContainer.addEventListener(evt, e => {
-					if (!isDown) return;
-					isDown = false;
-					mainImageContainer.releasePointerCapture?.(e.pointerId);
-					mainImageContainer.style.cursor = 'grab';
-				});
-			});
-			mainImageContainer.style.cursor = 'grab';
+		
+		function showLoadingStates() {
+			const priceContainer = document.getElementById('priceContainer');
+			if (priceContainer) priceContainer.classList.add('loading-shimmer');
+			
+			document.querySelectorAll('.variant-option-btn, .color-swatch').forEach(el => el.style.pointerEvents = 'none');
+		}
+		
+		function hideLoadingStates() {
+			const priceContainer = document.getElementById('priceContainer');
+			if (priceContainer) priceContainer.classList.remove('loading-shimmer');
+			
+			document.querySelectorAll('.variant-option-btn, .color-swatch').forEach(el => el.style.pointerEvents = 'auto');
 		}
 
 		/* ===============================
-			QUANTITY PLUS/MINUS
+			QUANTITY CONTROLS
 		=============================== */
-		const qtyInput = document.querySelector('.input-number');
+		const qtyInput = document.getElementById('quantity');
 		const minusBtn = document.querySelector('.button.minus .btn-number');
 		const plusBtn = document.querySelector('.button.plus .btn-number');
+
+		function updateQuantityMax() {
+			if (!qtyInput || !currentVariant) return;
+			const max = currentVariant.stock;
+			qtyInput.setAttribute('data-max', max);
+			const val = parseInt(qtyInput.value) || 1;
+			if (val > max) {
+				qtyInput.value = max;
+			}
+			updateMinusState();
+		}
 
 		function updateMinusState() {
 			if (minusBtn && qtyInput) {
@@ -651,15 +1402,58 @@
 				}
 			});
 		}
+		
 		if (minusBtn && qtyInput) {
 			minusBtn.addEventListener('click', () => {
 				let min = parseInt(qtyInput.getAttribute('data-min')) || 1;
 				let val = parseInt(qtyInput.value) || 1;
-				if (val > min) qtyInput.value = val - 1;
+				if (val > min) {
+					qtyInput.value = val - 1;
+					updateMinusState();
+				}
+			});
+		}
+		
+		if (qtyInput) {
+			qtyInput.addEventListener('change', function() {
+				let min = parseInt(this.getAttribute('data-min')) || 1;
+				let max = parseInt(this.getAttribute('data-max')) || 1000;
+				let val = parseInt(this.value) || 1;
+				if (val < min) val = min;
+				if (val > max) val = max;
+				this.value = val;
 				updateMinusState();
 			});
 		}
+		
 		updateMinusState();
+		
+		/* ===============================
+			INITIAL IMAGE GALLERY
+		=============================== */
+		const initialMainImage = document.getElementById('mainImage');
+		const initialThumbnails = document.querySelectorAll('.thumbnail-image');
+		
+		initialThumbnails.forEach((thumb) => {
+			thumb.addEventListener('click', function() {
+				initialThumbnails.forEach(t => {
+					t.classList.remove('active');
+					t.style.border = '2px solid #eee';
+				});
+				this.classList.add('active');
+				this.style.border = '2px solid #2874f0';
+				if (initialMainImage) {
+					const loadingOverlay = document.getElementById('imageLoadingOverlay');
+					loadingOverlay.classList.remove('d-none');
+					initialMainImage.classList.add('loading');
+					initialMainImage.src = this.src;
+					initialMainImage.onload = () => {
+						loadingOverlay.classList.add('d-none');
+						initialMainImage.classList.remove('loading');
+					};
+				}
+			});
+		});
 	});
 </script>
 @endpush

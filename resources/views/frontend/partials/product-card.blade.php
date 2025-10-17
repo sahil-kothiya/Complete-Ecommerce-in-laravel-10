@@ -64,8 +64,8 @@
                 </div>
             </div>
 
-            @if($product->discount > 0)
-            <span class="badge badge-primary badge-status">{{ $product->discount }}% Off</span>
+            @if($product->max_discount > 0)
+            <span class="badge badge-primary badge-status">{{ $product->max_discount }}% Off</span>
             @elseif($product->condition === 'new')
             <span class="badge badge-success badge-status">New</span>
             @elseif($product->stock <= 0)
@@ -100,13 +100,18 @@
             @endif
 
             <div class="mb-2 price-container">
-                @if($product->discount > 0)
-                <span class="text-primary font-weight-bold current-price">
-                    ${{ number_format($product->price - ($product->price * $product->discount / 100), 2) }}
-                </span>
-                <small class="text-muted ml-2 original-price"><del>${{ number_format($product->price, 2) }}</del></small>
+                @if($product->discounted_price)
+                    <span class="text-primary font-weight-bold current-price">
+                        ${{ number_format($product->discounted_price, 2) }}
+                    </span>
+                    
+                    @if($product->max_discount > 0)
+                        <small class="text-muted ml-2 original-price">
+                            <del>${{ number_format($product->original_price, 2) }}</del>
+                        </small>
+                    @endif
                 @else
-                <span class="font-weight-bold text-primary current-price">${{ number_format($product->price, 2) }}</span>
+                    <span class="font-weight-bold text-muted current-price">Out of Stock</span>
                 @endif
             </div>
 
