@@ -165,13 +165,7 @@
 										@if($isColor && $colorCode)
 										{{-- Color Swatch UI --}}
 										<div class="color-swatch position-relative" tabindex="{{$tabindex++}}">
-											<input type="radio" 
-												id="color-{{ $type->id }}-{{ $option->id }}" 
-												name="{{ $type->name }}" 
-												value="{{ $option->value }}" 
-												class="sr-only" 
-												data-variant-type="{{ $type->name }}" 
-												data-variant-value="{{ $option->value }}">
+											<input type="radio" id="color-{{ $type->id }}-{{ $option->id }}" name="{{ $type->name }}" value="{{ $option->value }}" class="sr-only" data-variant-type="{{ $type->name }}" data-variant-value="{{ $option->value }}">
 											<label for="color-{{ $type->id }}-{{ $option->id }}" class="color-swatch-label" style="background-color: {{ $colorCode }}; border: 2px solid #fff;">
 												<span class="sr-only">{{ $option->display_value ?? $option->value }}</span>
 											</label>
@@ -533,19 +527,6 @@
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 		transition: all 0.2s ease;
 		position: relative;
-	}
-
-	/* Active/selected swatch visible state */
-	.color-swatch-label.active {
-		border-color: #2874f0;
-		box-shadow: 0 0 0 2px #2874f0;
-		transform: scale(1.08);
-	}
-
-	/* Disabled swatch visual state */
-	.color-swatch-label.disabled {
-		opacity: 0.5;
-		pointer-events: none;
 	}
 
 	.color-swatch input:checked+.color-swatch-label {
@@ -990,8 +971,8 @@
 <script>
 	document.addEventListener('DOMContentLoaded', function() {
 		/* ===============================
-			GLOBAL VARIABLES
-		============================== */
+        GLOBAL VARIABLES - ALL DECLARED AT TOP
+    ============================== */
 		const variants = window.productVariants || [];
 		const hasVariants = window.hasVariants || false;
 		const productSlug = window.productSlug;
@@ -999,41 +980,6 @@
 		let selectedVariantOptions = {};
 		let currentVariant = null;
 		let isUpdating = false;
-
-		// Helper: normalize keys to lowercase for comparisons
-		function normalizeKeys(obj) {
-			const out = {};
-			Object.entries(obj || {}).forEach(([k, v]) => {
-				if (typeof k === 'string') out[k.toLowerCase()] = v;
-				else out[k] = v;
-			});
-			return out;
-		}
-
-		// Normalize a value to a comparable string (trim + lowercase)
-		function normalizeVal(v) {
-			if (v === null || v === undefined) return '';
-			return String(v).trim().toLowerCase();
-		}
-
-		// Normalize an options object: lowercase keys and normalized values
-		function normalizeOptions(obj) {
-			const out = {};
-			Object.entries(obj || {}).forEach(([k, v]) => {
-				if (typeof k === 'string') out[k.toLowerCase()] = normalizeVal(v);
-				else out[k] = normalizeVal(v);
-			});
-			return out;
-		}
-
-		function getVariantValuesNormalized(v) {
-			const raw = typeof v.variant_values === 'string' ? JSON.parse(v.variant_values) : (v.variant_values || {});
-			const norm = {};
-			Object.entries(raw).forEach(([k, val]) => {
-				norm[k.toLowerCase()] = normalizeVal(val);
-			});
-			return norm;
-		}
 
 		// DOM Elements - Quantity Controls
 		const qtyInput = document.getElementById('quantity');
@@ -1056,7 +1002,7 @@
 		const variantIdInput = document.getElementById('selectedVariantId');
 
 		/* ===============================
-			QUANTITY CONTROL FUNCTIONS
+		    QUANTITY CONTROL FUNCTIONS
 		============================== */
 		function updateMinusState() {
 			if (!minusBtn || !qtyInput) return;
@@ -1084,7 +1030,7 @@
 		}
 
 		/* ===============================
-			VARIANT SELECTION SYSTEM
+		    VARIANT SELECTION SYSTEM
 		============================== */
 
 		function handleVariantSelection(e) {
@@ -1098,11 +1044,8 @@
 				return;
 			}
 
-			console.log('Text button clicked:', variantType, variantValue);
-
 			// Update selection
-			// store normalized value
-			selectedVariantOptions[variantType] = normalizeVal(variantValue);
+			selectedVariantOptions[variantType] = variantValue;
 
 			// Update UI for this group
 			document.querySelectorAll(`[data-variant-type="${variantType}"].variant-option-btn`).forEach(b => {
@@ -1114,103 +1057,37 @@
 			updateVariantWithLoading();
 		}
 
-		function handleColorSwatchSelection(e) {
+		function handleVariantSelectionFromInput(e) {
 			if (isUpdating) return;
 
-			// Normalize event-like input so code can handle: real Event, synthetic object, or direct element
-			const ev = e || {};
-			if (typeof ev.preventDefault !== 'function') {
-				ev.preventDefault = function() {};
-			}
-			if (typeof ev.stopPropagation !== 'function') {
-				ev.stopPropagation = function() {};
-			}
-
-			// Resolve input even if event came from label or container or if a synthetic object was passed
-			let input = null;
-			if (ev.target && ev.target.tagName === 'INPUT') input = ev.target;
-			if (!input && ev.currentTarget && ev.currentTarget.querySelector) input = ev.currentTarget.querySelector('input[type="radio"]');
-			if (!input && ev.target && ev.target.closest) input = ev.target.closest('.color-swatch')?.querySelector('input[type="radio"]');
-			// If caller passed the input element directly
-			if (!input && e && e.tagName === 'INPUT') input = e;
-
-			if (!input) {
-				console.log('Color swatch event but no input found', ev);
-				return;
-			}
-
-			const domKey = input.dataset && input.dataset.variantType ? input.dataset.variantType : (input.name || '');
-			const variantType = domKey;
+			const input = e.target;
+			const variantType = input.dataset.variantType || input.name;
 			const variantValue = input.value;
-
-			console.log('handleColorSwatchSelection - resolved input:', input, 'domKey:', domKey, 'variantType:', variantType, 'variantValue:', variantValue, 'checkedBefore:', input.checked);
 
 			const parentSwatch = input.closest('.color-swatch');
 			if (parentSwatch && parentSwatch.classList.contains('disabled')) {
-				ev.preventDefault();
 				return;
 			}
 
-			console.log('Color swatch clicked/resolved:', variantType, variantValue);
-
-			// Update selection with normalized value under the DOM key (keeps keys consistent with other flows)
-			selectedVariantOptions[variantType] = normalizeVal(variantValue);
-			console.log('Selected options after color change (raw):', selectedVariantOptions);
-			console.log('Selected options after color change (normalized payload):', normalizeOptions(selectedVariantOptions));
-
-			// Update UI - remove active state from all swatches in this group
-			document.querySelectorAll(`input[name="${variantType}"]`).forEach(inp => {
-				const swatch = inp.closest('.color-swatch');
-				if (swatch) {
-					const checkmark = swatch.querySelector('.color-swatch-checkmark');
-					const label = swatch.querySelector('.color-swatch-label');
-					if (checkmark) checkmark.classList.add('d-none');
-					if (label) label.classList.remove('active');
-				}
-			});
-
-			// Add active state to selected swatch
-			const selectedSwatch = input.closest('.color-swatch');
-			if (selectedSwatch) {
-				const checkmark = selectedSwatch.querySelector('.color-swatch-checkmark');
-				const label = selectedSwatch.querySelector('.color-swatch-label');
-				if (checkmark) checkmark.classList.remove('d-none');
-				if (label) label.classList.add('active');
-			}
-
+			// Update selection
+			selectedVariantOptions[variantType] = variantValue;
 
 			// Trigger update
 			updateVariantWithLoading();
-
-			console.log('Dispatched updateVariantWithLoading for', selectedVariantOptions);
 		}
 
 		async function updateVariantWithLoading() {
 			isUpdating = true;
 			showLoadingStates();
 
-			console.log('Selected options:', selectedVariantOptions);
-			console.log('Selected options (normalized):', normalizeOptions(selectedVariantOptions));
-
 			// Client-side match first
 			let matchingVariant = findMatchingVariant();
 
-			console.log('Matching variant found:', matchingVariant);
-
 			if (matchingVariant) {
 				currentVariant = matchingVariant;
-				// Make sure option controls (buttons / swatches) reflect this variant
-				applyVariantToUI(matchingVariant);
 				updateProductDisplay(matchingVariant);
 				updateAvailableOptions();
 			} else {
-				// No client-side match — dump normalized selection and variants for debugging
-				try {
-					console.log('No client-side match; normalized selection:', normalizeOptions(selectedVariantOptions));
-					console.log('Variants (normalized values):', variants.map(v => ({ id: v.id, values: getVariantValuesNormalized(v) })));
-				} catch (err) {
-					console.warn('Error dumping normalized variants', err);
-				}
 				// API fallback
 				try {
 					const csrfToken = document.querySelector('meta[name="csrf-token"]');
@@ -1221,33 +1098,24 @@
 							'X-CSRF-TOKEN': csrfToken ? csrfToken.getAttribute('content') : ''
 						},
 						body: JSON.stringify({
-							options: normalizeOptions(selectedVariantOptions)
+							options: selectedVariantOptions
 						})
 					});
 
 					const data = await response.json();
 
 					if (data.success) {
-						// Build a variant-like object from API response and include variant_values if provided
 						currentVariant = {
 							id: data.data.id,
 							sku: data.data.sku,
 							price: parseFloat(data.data.price),
 							discount: data.data.discount,
 							stock: data.data.stock,
-							images: (data.data.images || []).map(img => ({
+							images: data.data.images.map(img => ({
 								image_path: img.image_path,
 								is_primary: img.is_primary
-							})),
-							// Keep any returned variant_values shape for applyVariantToUI to use,
-							// otherwise fall back to the current normalized selection so UI reflects choice
-							variant_values: data.data.variant_values || data.data.variant_values_map || normalizeOptions(selectedVariantOptions)
+							}))
 						};
-
-						console.log('API returned variant (constructed):', currentVariant);
-
-						// Apply UI based on returned variant (and existing selectedVariantOptions)
-						applyVariantToUI(currentVariant);
 						updateProductDisplay(currentVariant);
 						updateAvailableOptions();
 					} else {
@@ -1264,19 +1132,16 @@
 		}
 
 		function findMatchingVariant() {
-			// Compare using normalized keys and values (lowercase, trimmed)
-			const normSelected = normalizeOptions(selectedVariantOptions);
 			return variants.find(v => {
 				if (v.status !== 'active') return false;
 
-				const normVals = getVariantValuesNormalized(v);
-				const allMatch = Object.keys(normSelected).every(key => {
-					return String(normVals[key] || '') === String(normSelected[key] || '');
+				const variantValues = typeof v.variant_values === 'string' ?
+					JSON.parse(v.variant_values) :
+					v.variant_values;
+
+				return Object.entries(selectedVariantOptions).every(([type, value]) => {
+					return variantValues[type] === value;
 				});
-
-				console.log('Checking variant (normalized):', normVals, 'against', normSelected, 'Match:', allMatch);
-
-				return allMatch;
 			});
 		}
 
@@ -1294,56 +1159,34 @@
 				});
 				variantToSelect = sortedVariants[0];
 			} else {
-				// Fallback to first active variant
+				// Fallback to first active variant (even if out of stock)
 				variantToSelect = variants.find(v => v.status === 'active');
 			}
 
 			if (variantToSelect) {
-				const normVals = getVariantValuesNormalized(variantToSelect);
-				console.log('Preselecting variant (normalized):', normVals);
+				const variantValues = typeof variantToSelect.variant_values === 'string' ?
+					JSON.parse(variantToSelect.variant_values) :
+					variantToSelect.variant_values;
 
-				Object.entries(normVals).forEach(([typeLower, value]) => {
-					// Find corresponding DOM element (button or input) ignoring case on variant-type
-					let found = null;
-					// Search buttons
-					document.querySelectorAll('.variant-option-btn').forEach(btn => {
-						const dt = (btn.dataset.variantType || '').toString().toLowerCase();
-						const dv = btn.dataset.variantValue || '';
-						if (dt === typeLower && String(dv) === String(value)) found = btn;
-					});
+				Object.entries(variantValues).forEach(([type, value]) => {
+					selectedVariantOptions[type] = value;
 
-					// Search inputs (color swatches)
-					document.querySelectorAll('input[type="radio"]').forEach(inp => {
-						if (found) return;
-						const dt = (inp.dataset.variantType || inp.name || '').toString().toLowerCase();
-						if (dt === typeLower && String(inp.value) === String(value)) found = inp;
-					});
+					// Select text button
+					const btn = document.querySelector(`[data-variant-type="${type}"][data-variant-value="${value}"].variant-option-btn`);
+					if (btn) {
+						btn.classList.add('active');
+					}
 
-					if (found) {
-						// Determine DOM key name (use dataset.variantType or name)
-						let domKey = found.dataset && found.dataset.variantType ? found.dataset.variantType : (found.name || typeLower);
-						// store normalized value under the DOM key so later matching uses same shape
-						selectedVariantOptions[domKey] = normalizeVal(value);
-
-						if (found.classList && found.classList.contains('variant-option-btn')) {
-							found.classList.add('active');
-						} else if (found.tagName === 'INPUT') {
-							found.checked = true;
-							const swatch = found.closest('.color-swatch');
-							if (swatch) {
-								const checkmark = swatch.querySelector('.color-swatch-checkmark');
-								const label = swatch.querySelector('.color-swatch-label');
-								if (checkmark) checkmark.classList.remove('d-none');
-								if (label) label.classList.add('active');
-							}
-						}
+					// Select color input
+					const input = document.querySelector(`input[data-variant-type="${type}"][value="${value}"]`);
+					if (input) {
+						input.checked = true;
 					}
 				});
 
 				currentVariant = variantToSelect;
-				// Use the same update flow as user-triggered changes so all logic (availability, images, qty) runs
-				console.log('preselectCheapestVariant -> dispatching updateVariantWithLoading');
-				updateVariantWithLoading();
+				updateProductDisplay(variantToSelect);
+				updateAvailableOptions();
 			}
 		}
 
@@ -1418,9 +1261,13 @@
 				if (stock > 0) {
 					addToCartBtn.disabled = false;
 					addToCartBtn.textContent = 'Add to cart';
+					addToCartBtn.classList.remove('btn-secondary');
+					addToCartBtn.classList.add('btn-warning');
 				} else {
 					addToCartBtn.disabled = true;
 					addToCartBtn.textContent = 'Out of Stock';
+					addToCartBtn.classList.remove('btn-warning');
+					addToCartBtn.classList.add('btn-secondary');
 				}
 			}
 
@@ -1515,150 +1362,48 @@
 			});
 		}
 
-		// Apply variant values to UI controls (buttons and swatches)
-		function applyVariantToUI(variant) {
-			if (!variant) return;
-
-			let vals = {};
-			try {
-				vals = typeof variant.variant_values === 'string' ? JSON.parse(variant.variant_values) : (variant.variant_values || {});
-			} catch (e) {
-				vals = variant.variant_values || {};
-			}
-
-			// Normalize and apply
-			Object.entries(vals).forEach(([type, value]) => {
-				const normVal = normalizeVal(value);
-
-				// Clear previous active states for this type
-				document.querySelectorAll('.variant-option-btn').forEach(btn => {
-					if ((btn.dataset.variantType || '').toString().toLowerCase() === type.toString().toLowerCase()) {
-						btn.classList.remove('active');
-					}
-				});
-
-				document.querySelectorAll('input[type="radio"]').forEach(inp => {
-					const inpType = (inp.dataset.variantType || inp.name || '').toString();
-					if (inpType.toLowerCase() === type.toString().toLowerCase()) {
-						inp.checked = false;
-						const sw = inp.closest('.color-swatch');
-						if (sw) {
-							const chk = sw.querySelector('.color-swatch-checkmark');
-							if (chk) chk.classList.add('d-none');
-						}
-					}
-				});
-
-				// Set active on matching controls
-				// Activate matching text buttons and enable them
-				document.querySelectorAll('.variant-option-btn').forEach(btn => {
-					const dt = (btn.dataset.variantType || '').toString();
-					const dv = (btn.dataset.variantValue || '').toString();
-					if (dt.toLowerCase() === type.toString().toLowerCase() && normalizeVal(dv) === normVal) {
-						btn.classList.add('active');
-						btn.classList.remove('disabled');
-						try { btn.removeAttribute('disabled'); } catch (e) {}
-						selectedVariantOptions[dt] = normVal;
-					}
-				});
-
-				// Activate matching inputs/swatches
-				document.querySelectorAll('input[type="radio"]').forEach(inp => {
-					const dt = (inp.dataset.variantType || inp.name || '').toString();
-					const sw = inp.closest('.color-swatch');
-					if (dt.toLowerCase() === type.toString().toLowerCase() && normalizeVal(inp.value) === normVal) {
-						inp.checked = true;
-						// enable input
-						inp.disabled = false;
-						if (sw) {
-							const chk = sw.querySelector('.color-swatch-checkmark');
-							const label = sw.querySelector('.color-swatch-label');
-							if (chk) chk.classList.remove('d-none');
-							if (label) {
-								label.classList.add('active');
-								label.classList.remove('disabled');
-							}
-						}
-						selectedVariantOptions[dt || type] = normVal;
-					}
-				});
-			});
-		}
-
 		function updateAvailableOptions() {
-			// Build normalized set of variant types (lowercased)
-			const allVariantTypes = [...new Set(variants.flatMap(v => {
-				const vals = typeof v.variant_values === 'string' ? JSON.parse(v.variant_values) : (v.variant_values || {});
-				return Object.keys(vals).map(k => k.toString().toLowerCase());
-			}))];
+			const allSelectors = document.querySelectorAll('.variant-option-btn, .color-swatch');
 
-			// Normalize selected options for testing (keys and values)
-			const normSelected = normalizeOptions(selectedVariantOptions);
+			allSelectors.forEach(selector => {
+				let variantType, variantValue;
 
-			function normalizeVal(v) {
-				if (v === null || v === undefined) return '';
-				return String(v).trim().toLowerCase();
-			}
-
-			allVariantTypes.forEach(variantTypeLower => {
-				// Find all elements (buttons and inputs) that correspond to this variantType (case-insensitive)
-				const typeButtons = Array.from(document.querySelectorAll('.variant-option-btn')).filter(btn => ((btn.dataset.variantType || '').toString().toLowerCase() === variantTypeLower));
-				const typeInputs = Array.from(document.querySelectorAll('input[type="radio"]')).filter(inp => ((inp.dataset.variantType || inp.name || '').toString().toLowerCase() === variantTypeLower));
-
-				[...typeButtons, ...typeInputs].forEach(element => {
-					let variantValue = element.tagName === 'INPUT' ? element.value : element.dataset.variantValue;
-					const swatch = element.tagName === 'INPUT' ? element.closest('.color-swatch') : null;
-
-					// If this element is currently selected, ensure it's enabled and skip disabling logic
-					if ((element.tagName === 'INPUT' && element.checked) || (element.classList && element.classList.contains('active'))) {
-						if (swatch) swatch.classList.remove('disabled');
-						if (element.classList) element.classList.remove('disabled');
-						return;
+				if (selector.classList.contains('variant-option-btn')) {
+					variantType = selector.dataset.variantType;
+					variantValue = selector.dataset.variantValue;
+				} else {
+					const input = selector.querySelector('input');
+					if (input) {
+						variantType = input.dataset.variantType || input.name;
+						variantValue = input.value;
 					}
+				}
 
-					// Build a normalized test options object where this variantType is set to this value
-					const testOptions = Object.assign({}, normSelected);
-					// ensure key uses lowercase
-					testOptions[variantTypeLower] = normalizeVal(variantValue);
+				if (!variantType || !variantValue) return;
 
-					// Check if a variant exists for these normalized options
-					const exists = variants.some(v => {
-						if (v.status !== 'active') return false;
-						const vals = getVariantValuesNormalized(v); // keys lowercased, values original
-						// build normalized vals map
-						const normVals = {};
-						Object.entries(vals).forEach(([k, val]) => normVals[k.toLowerCase()] = normalizeVal(val));
-						return Object.keys(testOptions).every(key => {
-							return normVals[key] === testOptions[key];
-						});
-					});
+				// Temporarily select to check availability
+				const originalValue = selectedVariantOptions[variantType];
+				selectedVariantOptions[variantType] = variantValue;
 
-					console.log('updateAvailableOptions - checking', variantTypeLower, variantValue, 'testOptions:', testOptions, 'exists:', exists);
+				const tempVariant = findMatchingVariant();
 
-					if (element.tagName === 'INPUT') {
-						// Disable or enable the input and its visible swatch label
-						element.disabled = !exists;
-						if (swatch) {
-							const label = swatch.querySelector('.color-swatch-label');
-							if (exists) {
-								swatch.classList.remove('disabled');
-								if (label) label.classList.remove('disabled');
-							} else {
-								swatch.classList.add('disabled');
-								if (label) label.classList.add('disabled');
-							}
-						}
-					} else {
-						// For buttons, set disabled attribute and toggle class
-						if (exists) {
-							element.classList.remove('disabled');
-							try { element.removeAttribute('disabled'); } catch (e) {}
-						} else {
-							element.classList.add('disabled');
-							try { element.setAttribute('disabled', 'disabled'); } catch (e) {}
-						}
-					}
-				});
+				// Restore original value
+				if (originalValue !== undefined) {
+					selectedVariantOptions[variantType] = originalValue;
+				} else {
+					delete selectedVariantOptions[variantType];
+				}
+
+				// Update disabled state
+				const isActive = selector.classList.contains('active') ||
+					(selector.classList.contains('color-swatch') &&
+						selector.querySelector('input:checked'));
+
+				if (!tempVariant && !isActive) {
+					selector.classList.add('disabled');
+				} else {
+					selector.classList.remove('disabled');
+				}
 			});
 		}
 
@@ -1676,84 +1421,31 @@
 			if (priceContainer) {
 				priceContainer.classList.add('loading-shimmer');
 			}
+			document.querySelectorAll('.variant-option-btn, .color-swatch').forEach(el => {
+				el.style.pointerEvents = 'none';
+			});
 		}
 
 		function hideLoadingStates() {
 			if (priceContainer) {
 				priceContainer.classList.remove('loading-shimmer');
 			}
+			document.querySelectorAll('.variant-option-btn, .color-swatch').forEach(el => {
+				el.style.pointerEvents = 'auto';
+			});
 		}
 
 		function initializeVariantSystem() {
-			console.log('Initializing variant system with', variants.length, 'variants');
-			try {
-				console.log('Variants (normalized values) at init:', variants.map(v => ({ id: v.id, values: getVariantValuesNormalized(v) })));
-			} catch (err) {
-				console.warn('Could not stringify variants at init', err);
-			}
-
 			// Handle text buttons
 			const textButtons = document.querySelectorAll('.variant-option-btn');
 			textButtons.forEach(btn => {
 				btn.addEventListener('click', handleVariantSelection);
 			});
 
-			// Handle radio inputs (colors, storage, RAM, etc.) - attach change listener to any radio inside variant container
-			const variantContainerEl = document.getElementById('variantContainer');
-			const radioInputs = variantContainerEl ? variantContainerEl.querySelectorAll('input[type="radio"]') : document.querySelectorAll('input[type="radio"][data-variant-type]');
-			radioInputs.forEach(input => {
-				input.addEventListener('change', handleColorSwatchSelection);
-				console.log('Attached change listener to radio input:', input.name || input.dataset.variantType, input.value);
-			});
-
-			// Make the visible swatch clickable (inputs are sr-only). Clicking the swatch will check its radio and trigger change.
-			const swatches = document.querySelectorAll('.color-swatch');
-			swatches.forEach(s => {
-				const inp = s.querySelector('input[type="radio"]');
-				if (!inp) return;
-				s.addEventListener('click', function(ev) {
-					ev.preventDefault();
-					const label = s.querySelector('.color-swatch-label');
-
-					// Determine if this swatch should be interactable:
-					// allow if input is enabled and not disabled OR if the visible label is active (visual selection)
-					const visuallyActive = label && label.classList.contains('active');
-					if ((inp.disabled || s.classList.contains('disabled')) && !inp.checked && !visuallyActive) {
-						// Check if the selectedVariantOptions already contains this value for the DOM key
-						const domKey = inp.dataset && inp.dataset.variantType ? inp.dataset.variantType : (inp.name || '');
-						const selectedForKey = (selectedVariantOptions[domKey] || '').toString();
-						const thisValNorm = (function(v){ return (v===null||v===undefined)?'':String(v).trim().toLowerCase(); })(inp.value);
-
-						const allowIfMatchesSelection = thisValNorm === selectedForKey;
-
-						console.log('Swatch click guard: disabled state:', { inpDisabled: inp.disabled, swatchClasses: s.className, inpChecked: inp.checked, visuallyActive, domKey, thisValNorm, selectedForKey, allowIfMatchesSelection });
-
-						if (!allowIfMatchesSelection) {
-							console.log('Swatch click ignored - disabled:', inp.name || inp.dataset.variantType, inp.value);
-							return;
-						}
-						// else allow through (selection matches current selectedVariantOptions)
-					}
-
-					// If label is active but the radio isn't checked (out-of-sync), check it and dispatch change
-					if (visuallyActive && !inp.checked) {
-						inp.checked = true;
-						const evt = new Event('change', { bubbles: true });
-						inp.dispatchEvent(evt);
-						return;
-					}
-
-					// If input not checked, check and dispatch change for normal flow
-					if (!inp.checked) {
-						inp.checked = true;
-						const evt = new Event('change', { bubbles: true });
-						inp.dispatchEvent(evt);
-					} else {
-						// still call handler to surface logs — provide a safe no-op preventDefault
-						handleColorSwatchSelection({ target: inp, currentTarget: s, preventDefault: function(){}, stopPropagation: function(){} });
-					}
-				});
-				console.log('Attached click listener to swatch for input:', inp.name || inp.dataset.variantType, inp.value);
+			// Handle color swatches
+			const colorInputs = document.querySelectorAll('input[type="radio"][data-variant-type]');
+			colorInputs.forEach(input => {
+				input.addEventListener('change', handleVariantSelectionFromInput);
 			});
 
 			// Pre-select cheapest variant
@@ -1761,7 +1453,7 @@
 		}
 
 		/* ===============================
-			QUANTITY BUTTON EVENT LISTENERS
+		    QUANTITY BUTTON EVENT LISTENERS
 		============================== */
 		if (plusBtn && qtyInput) {
 			plusBtn.addEventListener('click', () => {
@@ -1801,7 +1493,7 @@
 		}
 
 		/* ===============================
-			INITIAL IMAGE GALLERY
+		    INITIAL IMAGE GALLERY
 		============================== */
 		if (mainImage) {
 			const initialThumbnails = document.querySelectorAll('.thumbnail-image');
@@ -1829,7 +1521,7 @@
 		}
 
 		/* ===============================
-			INITIALIZE
+		    INITIALIZE
 		============================== */
 		if (hasVariants && variants.length > 0) {
 			initializeVariantSystem();

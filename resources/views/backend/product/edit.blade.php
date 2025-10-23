@@ -275,7 +275,7 @@
                         </div>
                         <div id="type-selections" class="d-flex flex-wrap gap-3">
                             @if($product->has_variants)
-                            @foreach($product->getVariantTypesAttribute() as $type)
+                            @foreach($product->getVariantTypesOptimized() as $type)
                             <div class="variant-type-group">
                                 <label class="font-weight-bold">{{ $type->display_name }}</label>
                                 <select class="form-control type-select" data-type-id="{{ $type->id }}" multiple name="variant_options[{{ $type->id }}][]">

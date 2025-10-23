@@ -42,48 +42,46 @@ class ProductVariant extends Model
         return $this->hasMany(ProductVariantOptionAssignment::class, 'product_variant_id');
     }
 
+    /**
+     * FIXED: Use correct column name from migration
+     */
     public function variantOptions()
     {
         return $this->belongsToMany(
             ProductVariantOption::class,
             'product_variant_option_assignments',
             'product_variant_id',
-            'variant_option_id'
-        )->with('variantType');
+            'product_variant_option_id' // Corrected from 'variant_option_id'
+        );
     }
 
     public function images()
     {
-        return $this->hasMany(VariantImage::class, 'product_variant_id');
+        return $this->hasMany(VariantImage::class, 'product_variant_id')
+            ->orderByDesc('is_primary')
+            ->orderBy('sort_order');
     }
 
     public function primaryImage()
     {
-        return $this->hasOne(VariantImage::class, 'product_variant_id')->where('is_primary', true);
+        return $this->hasOne(VariantImage::class, 'product_variant_id')
+            ->where('is_primary', true);
     }
 
     /**
      * Accessor: resolve primary image with fallbacks
-     * - If relation is already loaded and present, return it
-     * - Attempt to fetch the primary image from DB
-     * - Fallback to the first image from images() relationship
      */
     public function getPrimaryImageAttribute()
     {
-        // If relation was eager loaded and not null, return it
         if ($this->relationLoaded('primaryImage') && $this->getRelation('primaryImage')) {
             return $this->getRelation('primaryImage');
         }
 
-        // Try to fetch the primary image via the relation query
-        $primary = $this->primaryImage()->first();
-        if ($primary) {
-            return $primary;
+        if ($this->relationLoaded('images') && $this->images->isNotEmpty()) {
+            return $this->images->first();
         }
 
-        // Fallback: return first image from images() if available
-        $first = $this->images()->orderByDesc('is_primary')->orderBy('sort_order')->first();
-        return $first;
+        return $this->primaryImage()->first() ?? $this->images()->first();
     }
 
     /**
@@ -99,8 +97,37 @@ class ProductVariant extends Model
 
     public function getDisplayNameAttribute()
     {
-        $options = $this->variantOptions()->with('variantType')->get();
-        return $options->map(fn($opt) => $opt->display_value)->join(', ');
+        if ($this->relationLoaded('variantOptions') && $this->variantOptions->isNotEmpty()) {
+            return $this->variantOptions
+                ->sortBy(fn($opt) => optional($opt->variantType)->sort_order ?? 999)
+                ->pluck('display_value')
+                ->filter()
+                ->join(', ');
+        }
+
+        // Fallback to variant_values
+        if (is_array($this->variant_values) && !empty($this->variant_values)) {
+            return collect($this->variant_values)
+                ->map(fn($val) => ucfirst($val))
+                ->join(', ');
+        }
+
+        return 'Variant #' . $this->id;
+    }
+
+    /**
+     * Get variant option values as associative array
+     */
+    public function getVariantValuesArrayAttribute()
+    {
+        if ($this->relationLoaded('variantOptions') && $this->variantOptions->isNotEmpty()) {
+            return $this->variantOptions->mapWithKeys(function ($opt) {
+                $typeName = optional($opt->variantType)->name ?? 'unknown';
+                return [$typeName => $opt->value];
+            })->toArray();
+        }
+
+        return is_array($this->variant_values) ? $this->variant_values : [];
     }
 
     /**
@@ -116,11 +143,40 @@ class ProductVariant extends Model
         return $query->where('stock', '>', 0);
     }
 
+    public function scopeWithVariantData($query)
+    {
+        return $query->with([
+            'images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
+            'variantOptions.variantType' => fn($q) => $q->select(['id', 'name', 'display_name', 'sort_order'])
+        ]);
+    }
+
     /**
      * Methods
      */
     public function isInStock()
     {
         return $this->stock > 0 && $this->status === 'active';
+    }
+
+    /**
+     * Get formatted price
+     */
+    public function getFormattedPriceAttribute()
+    {
+        return '$' . number_format($this->discounted_price, 2);
+    }
+
+    /**
+     * Get stock status
+     */
+    public function getStockStatusAttribute()
+    {
+        if ($this->stock > 10) {
+            return 'in_stock';
+        } elseif ($this->stock > 0) {
+            return 'low_stock';
+        }
+        return 'out_of_stock';
     }
 }
