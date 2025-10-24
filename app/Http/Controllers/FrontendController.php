@@ -1740,10 +1740,75 @@ class FrontendController extends Controller
             ->where('has_variants', true)
             ->firstOrFail();
 
+        // If client asked for candidate matches (partial selection), return
+        // all variants that contain the provided option key/value pairs.
+        $options = $request->options ?? [];
+        if ($request->input('mode') === 'candidates') {
+            $variantsQuery = ProductVariant::where('product_id', $product->id)
+                ->where('status', 'active')
+                ->with([
+                    'images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                        ->orderByDesc('is_primary')
+                        ->orderBy('sort_order')
+                ]);
+
+            // Apply JSON containment per option pair
+            foreach ($options as $k => $v) {
+                $variantsQuery->whereJsonContains('variant_values', [$k => $v]);
+            }
+
+            $matched = $variantsQuery->get();
+
+            if ($matched->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No matching variants found for provided options',
+                    'data' => ['variants' => []]
+                ], 404);
+            }
+
+            // Map variants to a lightweight structure
+            $out = $matched->map(function ($variant) {
+                $processedImages = $variant->images->map(function ($img) {
+                    $path = $img->image_path;
+                    if (strpos($path, 'storage/') !== 0) {
+                        $path = 'storage/' . ltrim($path, '/');
+                    }
+                    return [
+                        'image_path' => asset($path),
+                        'is_primary' => $img->is_primary
+                    ];
+                })->toArray();
+
+                // Ensure variant_values is an array
+                $vals = $variant->variant_values;
+                if (is_string($vals)) {
+                    try { $vals = json_decode($vals, true) ?? []; } catch (\Exception $e) { $vals = []; }
+                }
+
+                return [
+                    'id' => $variant->id,
+                    'sku' => $variant->sku,
+                    'price' => (float) $variant->price,
+                    'discount' => (float) ($variant->discount ?? 0),
+                    'stock' => (int) $variant->stock,
+                    'variant_values' => $vals,
+                    'images' => $processedImages
+                ];
+            })->toArray();
+
+            return response()->json([
+                'success' => true,
+                'data' => [ 'variants' => $out ]
+            ]);
+        }
+
+        // Default, backwards-compatible: try to find a single exact variant match
+        // (same behavior as before)
         // Find matching variant
         $variant = ProductVariant::where('product_id', $product->id)
             ->where('status', 'active')
-            ->whereJsonContains('variant_values', $request->options)
+            ->whereJsonContains('variant_values', $options)
             ->with([
                 'images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
                     ->orderByDesc('is_primary')
