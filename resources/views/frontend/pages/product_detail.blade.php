@@ -211,7 +211,7 @@
 									<input type="hidden" name="variant_id" id="selectedVariantId" value="">
 
 									<div class="quantity" id="quantitySection">
-										<h6 tabindex="32">Quantity:</h6>
+										<h6 class="text-center" tabindex="32">Quantity:</h6>
 										<div class="input-group">
 											<div class="button minus">
 												<button type="button" class="btn btn-primary btn-number" disabled="disabled" data-type="minus" data-field="quant[1]" tabindex="33">
@@ -1009,7 +1009,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let selectedVariantOptions = {};
     let currentVariant = null;
     let isUpdating = false;
-    let lastChangedType = null; // Track what was just changed
+    let lastChangedType = null;
 
     // Normalize a value to comparable string
     function normalizeVal(v) {
@@ -1076,43 +1076,33 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     /* ===============================
-        VARIANT SELECTION SYSTEM
+        VARIANT SELECTION HANDLERS
     ============================== */
-
     function handleVariantSelection(e) {
         if (isUpdating) return;
         const target = e.currentTarget;
         const variantType = target.dataset.variantType;
         const variantValue = target.dataset.variantValue;
 
-        
-
-        // Track what was changed
         lastChangedType = variantType.toLowerCase();
-
-        // Update selection
         selectedVariantOptions[variantType] = variantValue;
 
-        // Update UI for this group
         document.querySelectorAll(`[data-variant-type="${variantType}"].variant-option-btn`).forEach(b => {
             b.classList.remove('active');
         });
         target.classList.add('active');
 
-        // Trigger update
         updateVariantWithLoading();
     }
 
     function handleColorSwatchSelection(e) {
         if (isUpdating) return;
 
-        // Prevent default to avoid double-firing
         if (e && e.preventDefault) e.preventDefault();
         if (e && e.stopPropagation) e.stopPropagation();
 
         let input = null;
         
-        // Try to get input from various sources
         if (e.target?.tagName === 'INPUT') {
             input = e.target;
         } else if (e.currentTarget?.tagName === 'INPUT') {
@@ -1124,28 +1114,16 @@ document.addEventListener('DOMContentLoaded', function() {
             if (swatch) input = swatch.querySelector('input[type="radio"]');
         }
         
-		if (!input) {
-			return;
-		}
+        if (!input) return;
 
-        // Enable the input temporarily to allow selection
         input.disabled = false;
-
         const variantType = input.dataset.variantType || input.name;
         const variantValue = input.value;
 
-        
-
-        // Check and set the input
         input.checked = true;
-
-        // Track what was changed
         lastChangedType = variantType.toLowerCase();
-
-        // Update selection
         selectedVariantOptions[variantType] = variantValue;
 
-        // Update UI - remove active from all in this group
         document.querySelectorAll(`input[name="${variantType}"]`).forEach(inp => {
             const swatch = inp.closest('.color-swatch');
             if (swatch) {
@@ -1156,7 +1134,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
 
-        // Add active to selected
         const selectedSwatch = input.closest('.color-swatch');
         if (selectedSwatch) {
             const checkmark = selectedSwatch.querySelector('.color-swatch-checkmark');
@@ -1165,24 +1142,21 @@ document.addEventListener('DOMContentLoaded', function() {
             if (label) label.classList.add('active');
         }
 
-        // Trigger update
         updateVariantWithLoading();
     }
 
-    // Update available options based on current selection
+    /* ===============================
+        UPDATE AVAILABLE OPTIONS
+    ============================== */
     function updateAvailableOptions() {
         const normSelected = normalizeOptions(selectedVariantOptions);
         
-        // Get all variant types
         const allVariantTypes = [...new Set(variants.flatMap(v => {
             const vals = getVariantValuesNormalized(v);
             return Object.keys(vals);
         }))];
 
-        
-
         allVariantTypes.forEach(variantTypeLower => {
-            // Get all buttons/inputs for this type
             const typeButtons = Array.from(document.querySelectorAll('.variant-option-btn'))
                 .filter(btn => (btn.dataset.variantType || '').toLowerCase() === variantTypeLower);
             const typeInputs = Array.from(document.querySelectorAll('input[type="radio"]'))
@@ -1196,28 +1170,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 let exists = false;
 
-                // Different logic based on what type we're checking
                 if (variantTypeLower === 'color') {
-                    // Color: Check if this color exists in any variant with stock
                     exists = variants.some(v => {
                         if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
                         const normVals = getVariantValuesNormalized(v);
                         return normVals.color === normalizeVal(variantValue);
                     });
                 } else if (variantTypeLower === 'storage') {
-                    // Storage: Check if this storage exists with selected color (and optionally RAM)
                     exists = variants.some(v => {
                         if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
                         const normVals = getVariantValuesNormalized(v);
                         
-                        // Must match this storage value
                         if (normVals.storage !== normalizeVal(variantValue)) return false;
-                        
-                        // Must match selected color if any
                         if (normSelected.color && normVals.color !== normSelected.color) return false;
                         
-                        // If RAM is selected by last change (user clicked RAM), also check RAM match
-                        // This ensures proper bi-directional filtering
                         if (lastChangedType === 'ram' && normSelected.ram) {
                             if (normVals.ram !== normSelected.ram) return false;
                         }
@@ -1225,19 +1191,13 @@ document.addEventListener('DOMContentLoaded', function() {
                         return true;
                     });
                 } else if (variantTypeLower === 'ram') {
-                    // RAM: Check if this RAM exists with selected color (and optionally Storage)
                     exists = variants.some(v => {
                         if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
                         const normVals = getVariantValuesNormalized(v);
                         
-                        // Must match this RAM value
                         if (normVals.ram !== normalizeVal(variantValue)) return false;
-                        
-                        // Must match selected color if any
                         if (normSelected.color && normVals.color !== normSelected.color) return false;
                         
-                        // If Storage is selected by last change (user clicked Storage), also check Storage match
-                        // This ensures proper bi-directional filtering
                         if (lastChangedType === 'storage' && normSelected.storage) {
                             if (normVals.storage !== normSelected.storage) return false;
                         }
@@ -1245,7 +1205,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         return true;
                     });
                 } else {
-                    // Other types: Check with color only
                     exists = variants.some(v => {
                         if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
                         const normVals = getVariantValuesNormalized(v);
@@ -1257,9 +1216,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
                 }
 
-                
-
-                // Apply state
                 if (element.tagName === 'INPUT') {
                     element.disabled = !exists;
                     if (swatch) {
@@ -1285,22 +1241,16 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // BI-DIRECTIONAL AUTO-SELECTION: When storage changes, auto-select matching RAM and vice versa
+    /* ===============================
+        AUTO-SELECT MATCHING VARIANT
+    ============================== */
     function autoSelectMatchingVariant() {
         const normSelected = normalizeOptions(selectedVariantOptions);
         
-        // Only auto-select if color is selected
-		if (!normSelected.color) {
-			return null;
-		}
+        if (!normSelected.color) return null;
 
-        
-
-        // Case 1: Storage was changed, auto-select matching RAM
+        // Case 1: Storage changed, auto-select RAM
         if (lastChangedType === 'storage' && normSelected.storage) {
-            
-            
-            // Find variants that match color + storage
             const matchingVariants = variants.filter(v => {
                 if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
                 const normVals = getVariantValuesNormalized(v);
@@ -1308,10 +1258,7 @@ document.addEventListener('DOMContentLoaded', function() {
                        normVals.storage === normSelected.storage;
             });
 
-            
-
             if (matchingVariants.length > 0) {
-                // Sort by price and pick cheapest
                 matchingVariants.sort((a, b) => {
                     const priceA = parseFloat(a.price) * (1 - (parseFloat(a.discount) || 0) / 100);
                     const priceB = parseFloat(b.price) * (1 - (parseFloat(b.discount) || 0) / 100);
@@ -1323,23 +1270,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     ? JSON.parse(selectedVariant.variant_values) 
                     : selectedVariant.variant_values;
 
-                
-
-                // Auto-select RAM and update UI
                 Object.entries(vals).forEach(([type, value]) => {
                     const typeLower = type.toLowerCase();
                     if (typeLower === 'ram') {
-                        
                         selectedVariantOptions[type] = value;
 
-                        // Update UI - deactivate all RAM buttons first
                         document.querySelectorAll('.variant-option-btn').forEach(btn => {
                             if ((btn.dataset.variantType || '').toLowerCase() === 'ram') {
                                 btn.classList.remove('active');
                             }
                         });
 
-                        // Activate the correct RAM button
                         const ramLower = normalizeVal(value);
                         document.querySelectorAll('.variant-option-btn').forEach(btn => {
                             if ((btn.dataset.variantType || '').toLowerCase() === 'ram') {
@@ -1358,11 +1299,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        // Case 2: RAM was changed, auto-select matching Storage
+        // Case 2: RAM changed, auto-select Storage
         if (lastChangedType === 'ram' && normSelected.ram) {
-        
-            
-            // Find variants that match color + RAM
             const matchingVariants = variants.filter(v => {
                 if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
                 const normVals = getVariantValuesNormalized(v);
@@ -1370,10 +1308,7 @@ document.addEventListener('DOMContentLoaded', function() {
                        normVals.ram === normSelected.ram;
             });
 
-            
-
             if (matchingVariants.length > 0) {
-                // Sort by price and pick cheapest
                 matchingVariants.sort((a, b) => {
                     const priceA = parseFloat(a.price) * (1 - (parseFloat(a.discount) || 0) / 100);
                     const priceB = parseFloat(b.price) * (1 - (parseFloat(b.discount) || 0) / 100);
@@ -1385,23 +1320,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     ? JSON.parse(selectedVariant.variant_values) 
                     : selectedVariant.variant_values;
 
-                
-
-                // Auto-select Storage and update UI
                 Object.entries(vals).forEach(([type, value]) => {
                     const typeLower = type.toLowerCase();
                     if (typeLower === 'storage') {
-                        
                         selectedVariantOptions[type] = value;
 
-                        // Update UI - deactivate all storage buttons first
                         document.querySelectorAll('.variant-option-btn').forEach(btn => {
                             if ((btn.dataset.variantType || '').toLowerCase() === 'storage') {
                                 btn.classList.remove('active');
                             }
                         });
 
-                        // Activate the correct Storage button
                         const storageLower = normalizeVal(value);
                         document.querySelectorAll('.variant-option-btn').forEach(btn => {
                             if ((btn.dataset.variantType || '').toLowerCase() === 'storage') {
@@ -1420,10 +1349,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        // Case 3: Only color is selected, auto-select cheapest complete variant
+        // Case 3: Only color selected, auto-select cheapest
         if (normSelected.color && !normSelected.storage && !normSelected.ram) {
-        
-            
             const matchingVariants = variants.filter(v => {
                 if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
                 const normVals = getVariantValuesNormalized(v);
@@ -1442,15 +1369,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     ? JSON.parse(selectedVariant.variant_values) 
                     : selectedVariant.variant_values;
 
-                
-
-                // Auto-select all attributes
                 Object.entries(vals).forEach(([type, value]) => {
                     const typeLower = type.toLowerCase();
                     if (typeLower !== 'color') {
                         selectedVariantOptions[type] = value;
                         
-                        // Update UI
                         const valueLower = normalizeVal(value);
                         document.querySelectorAll('.variant-option-btn').forEach(btn => {
                             if ((btn.dataset.variantType || '').toLowerCase() === typeLower) {
@@ -1474,46 +1397,34 @@ document.addEventListener('DOMContentLoaded', function() {
         return null;
     }
 
+    /* ===============================
+        MAIN UPDATE FUNCTION
+    ============================== */
     async function updateVariantWithLoading() {
         isUpdating = true;
         showLoadingStates();
-
-        console.log('=== UPDATE VARIANT CALLED ===');
-        console.log('Selected options:', selectedVariantOptions);
-        console.log('Last changed type:', lastChangedType);
         
-        const normSelected = normalizeOptions(selectedVariantOptions);
-
-        // STEP 1: Update available options with bi-directional filtering
         updateAvailableOptions();
-
-        // STEP 2: Auto-select matching variant (bi-directional)
         const autoSelected = autoSelectMatchingVariant();
 
-        // STEP 3: Try to find exact match after auto-selection
         let matchingVariant = variants.find(v => {
             if (v.status !== 'active') return false;
             const normVals = getVariantValuesNormalized(v);
             const selectedKeys = Object.keys(normalizeOptions(selectedVariantOptions));
-            const matches = selectedKeys.every(key => 
+            return selectedKeys.every(key => 
                 normVals[key] === normalizeOptions(selectedVariantOptions)[key]
             );
-            console.log('Checking variant:', normVals, 'Matches:', matches);
-            return matches;
         });
 
         if (matchingVariant) {
-            console.log('✓ Full match found:', matchingVariant);
             currentVariant = matchingVariant;
             applyVariantToUI(matchingVariant);
             updateProductDisplay(matchingVariant);
         } else if (autoSelected) {
-            console.log('✓ Using auto-selected variant:', autoSelected);
             currentVariant = autoSelected;
             applyVariantToUI(autoSelected);
             updateProductDisplay(autoSelected);
         } else {
-            console.log('✗ No matching variant found');
             handleNoVariantFound();
         }
 
@@ -1521,8 +1432,10 @@ document.addEventListener('DOMContentLoaded', function() {
         isUpdating = false;
     }
 
+    /* ===============================
+        UPDATE PRODUCT DISPLAY
+    ============================== */
     function updateProductDisplay(variant) {
-        // Price animation
         if (priceContainer) priceContainer.classList.add('loading-shimmer');
 
         setTimeout(() => {
@@ -1564,20 +1477,23 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (stockAlert) {
-            if (stock > 0) {
-                stockAlert.classList.add('d-none');
-            } else {
-                stockAlert.classList.remove('d-none');
-            }
-        }
-
-        if (addToCartBtn) {
-            addToCartBtn.disabled = stock <= 0;
-            addToCartBtn.textContent = stock > 0 ? 'Add to cart' : 'Out of Stock';
+            stockAlert.classList.add('d-none');
         }
 
         if (quantitySection) {
-            quantitySection.classList.toggle('hidden', stock <= 0);
+            quantitySection.style.display = 'block';
+            quantitySection.classList.remove('hidden');
+        }
+        
+        if (addToCartBtn) {
+            addToCartBtn.style.display = 'inline-block';
+            addToCartBtn.disabled = stock <= 0;
+            addToCartBtn.textContent = stock > 0 ? 'Add to cart' : 'Out of Stock';
+        }
+        
+        const wishlistBtn = document.querySelector('.add-to-cart .btn.min');
+        if (wishlistBtn) {
+            wishlistBtn.style.display = 'inline-block';
         }
 
         if (qtyInput && stock > 0) {
@@ -1590,6 +1506,9 @@ document.addEventListener('DOMContentLoaded', function() {
         updateVariantImages(variant);
     }
 
+    /* ===============================
+        UPDATE VARIANT IMAGES
+    ============================== */
     function updateVariantImages(variant) {
         if (!variant.images || variant.images.length === 0 || !mainImage) return;
 
@@ -1639,6 +1558,9 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    /* ===============================
+        APPLY VARIANT TO UI
+    ============================== */
     function applyVariantToUI(variant) {
         if (!variant) return;
         const vals = typeof variant.variant_values === 'string' 
@@ -1649,10 +1571,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const typeLower = type.toLowerCase();
             const valueLower = normalizeVal(value);
 
-            // Update selectedVariantOptions
             selectedVariantOptions[type] = value;
 
-            // Clear previous active states
             document.querySelectorAll('.variant-option-btn').forEach(btn => {
                 if ((btn.dataset.variantType || '').toLowerCase() === typeLower) {
                     btn.classList.remove('active');
@@ -1671,7 +1591,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
 
-            // Set active
             document.querySelectorAll('.variant-option-btn').forEach(btn => {
                 if ((btn.dataset.variantType || '').toLowerCase() === typeLower && 
                     normalizeVal(btn.dataset.variantValue) === valueLower) {
@@ -1693,6 +1612,9 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    /* ===============================
+        PRESELECT CHEAPEST VARIANT
+    ============================== */
     function preselectCheapestVariant() {
         const inStock = variants.filter(v => v.status === 'active' && parseInt(v.stock) > 0);
         const toSelect = inStock.length > 0 ? inStock : variants.filter(v => v.status === 'active');
@@ -1716,7 +1638,6 @@ document.addEventListener('DOMContentLoaded', function() {
             const typeLower = type.toLowerCase();
             const valueLower = normalizeVal(value);
 
-            // Buttons
             document.querySelectorAll('.variant-option-btn').forEach(btn => {
                 if ((btn.dataset.variantType || '').toLowerCase() === typeLower && 
                     normalizeVal(btn.dataset.variantValue) === valueLower) {
@@ -1724,7 +1645,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
 
-            // Radios
             document.querySelectorAll('input[type="radio"]').forEach(inp => {
                 const dt = ((inp.dataset.variantType || inp.name) || '').toLowerCase();
                 if (dt === typeLower && normalizeVal(inp.value) === valueLower) {
@@ -1742,14 +1662,36 @@ document.addEventListener('DOMContentLoaded', function() {
         updateVariantWithLoading();
     }
 
+    /* ===============================
+        HANDLE NO VARIANT FOUND
+    ============================== */
     function handleNoVariantFound() {
         if (stockAlert) {
             stockAlert.classList.remove('d-none');
             const msg = document.getElementById('stockAlertMessage');
             if (msg) msg.textContent = 'No matching variant available.';
         }
+        
+        if (quantitySection) {
+            quantitySection.style.display = 'none';
+        }
+        if (addToCartBtn) {
+            addToCartBtn.style.display = 'none';
+        }
+        
+        const wishlistBtn = document.querySelector('.add-to-cart .btn.min');
+        if (wishlistBtn) {
+            wishlistBtn.style.display = 'none';
+        }
+        
+        if (variantIdInput) {
+            variantIdInput.value = '';
+        }
     }
 
+    /* ===============================
+        LOADING STATES
+    ============================== */
     function showLoadingStates() {
         priceContainer?.classList.add('loading-shimmer');
     }
@@ -1758,49 +1700,56 @@ document.addEventListener('DOMContentLoaded', function() {
         priceContainer?.classList.remove('loading-shimmer');
     }
 
+    /* ===============================
+        INITIALIZE VARIANT SYSTEM
+    ============================== */
     function initializeVariantSystem() {
-        console.log('Initializing with', variants.length, 'variants');
-
-        // Attach button listeners
         document.querySelectorAll('.variant-option-btn').forEach(btn => {
             btn.addEventListener('click', handleVariantSelection);
         });
 
-        // Attach radio listeners (for direct input changes if needed)
         document.querySelectorAll('#variantContainer input[type="radio"]').forEach(inp => {
             inp.addEventListener('change', function(e) {
                 if (isUpdating) return;
-                console.log('Radio input change event:', this.value);
-                handleColorSwatchSelection({ target: this, currentTarget: this.closest('.color-swatch'), preventDefault: () => {}, stopPropagation: () => {} });
+                handleColorSwatchSelection({ 
+                    target: this, 
+                    currentTarget: this.closest('.color-swatch'), 
+                    preventDefault: () => {}, 
+                    stopPropagation: () => {} 
+                });
             });
         });
 
-        // Make swatches clickable - both swatch container and label
         document.querySelectorAll('.color-swatch').forEach(s => {
             const inp = s.querySelector('input[type="radio"]');
             if (!inp) return;
 
-            // Click on swatch container
             s.addEventListener('click', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('Swatch container clicked');
-                handleColorSwatchSelection({ target: inp, currentTarget: this, preventDefault: () => {}, stopPropagation: () => {} });
+                handleColorSwatchSelection({ 
+                    target: inp, 
+                    currentTarget: this, 
+                    preventDefault: () => {}, 
+                    stopPropagation: () => {} 
+                });
             });
 
-            // Click on label
             const label = s.querySelector('.color-swatch-label');
             if (label) {
                 label.addEventListener('click', function(e) {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log('Swatch label clicked');
-                    handleColorSwatchSelection({ target: inp, currentTarget: s, preventDefault: () => {}, stopPropagation: () => {} });
+                    handleColorSwatchSelection({ 
+                        target: inp, 
+                        currentTarget: s, 
+                        preventDefault: () => {}, 
+                        stopPropagation: () => {} 
+                    });
                 });
             }
         });
 
-        // Initial state
         updateAvailableOptions();
         preselectCheapestVariant();
     }
