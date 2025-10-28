@@ -9,8 +9,11 @@ use App\Models\Order;
 use App\Models\Wishlist;
 use App\Models\Shipping;
 use App\Models\Cart;
+use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Services\DiscountService;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
 
 // use Auth;
@@ -131,13 +134,59 @@ class Helper
         return $this->hasOne('App\Models\Product', 'id', 'product_id');
     }
 
+
+   /**
+     * Get all cart items for a user or guest.
+     *
+     * @param string|int|null $user_id User ID (optional, defaults to authenticated user)
+     * @return \Illuminate\Database\Eloquent\Collection|\Illuminate\Support\Collection
+     */
     public static function getAllProductFromCart($user_id = '')
     {
         if (Auth::check()) {
-            if ($user_id == "") $user_id = auth()->user()->id;
-            return Cart::with('product')->where('user_id', $user_id)->where('order_id', null)->get();
+            // Use authenticated user's ID if none provided
+            $user_id = $user_id ?: Auth::user()->id;
+
+            return Cart::with([
+                'product.images' => fn($query) => $query->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
+                'variant.variantOptions.variantType' => fn($query) => $query->select(['id', 'name', 'display_name', 'sort_order']),
+                'variant.images' => fn($query) => $query->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+            ])
+                ->where('user_id', $user_id)
+                ->where('order_id', null) // Only fetch cart items not yet ordered
+                ->get();
         } else {
-            return 0;
+            // Handle guest cart (session-based)
+            $cartItems = Session::get('cart', []);
+
+            if (empty($cartItems)) {
+                return collect(); // Return empty collection for empty guest cart
+            }
+
+            // Fetch products and variants for guest cart items
+            $cartItemsCollection = collect($cartItems)->map(function ($item, $index) {
+                $cart = new Cart();
+                $cart->id = $item['session_key'] ?? 'guest_' . $index; // Use session_key or generate temp ID for JS compatibility
+                $cart->quantity = $item['quantity'] ?? 1;
+                $cart->product_id = $item['product_id'] ?? null;
+                $cart->variant_id = $item['variant_id'] ?? null;
+
+                // Load product and variant relationships
+                $cart->product = Product::with([
+                    'images' => fn($query) => $query->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                ])->find($item['product_id']);
+
+                if ($item['variant_id']) {
+                    $cart->variant = ProductVariant::with([
+                        'variantOptions.variantType' => fn($query) => $query->select(['id', 'name', 'display_name', 'sort_order']),
+                        'images' => fn($query) => $query->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                    ])->find($item['variant_id']);
+                }
+
+                return $cart;
+            });
+
+            return $cartItemsCollection;
         }
     }
 
@@ -292,12 +341,45 @@ class Helper
     public static function getAllProductFromWishlist($user_id = '')
     {
         if (Auth::check()) {
-            if ($user_id == "") $user_id = auth()->user()->id;
-            return Wishlist::with('product')->where('user_id', $user_id)->where('cart_id', null)->get();
-        } else {
-            return 0;
+            $user_id = $user_id ?: auth()->user()->id;
+
+            return Wishlist::with([
+                    'product' => function ($q) {
+                        $q->select('id', 'title', 'slug', 'summary', 'base_price', 'base_discount', 'has_variants', 'status')
+                        ->with([
+                            'images' => function ($query) {
+                                $query->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                                        ->orderByDesc('is_primary')
+                                        ->orderBy('sort_order');
+                            }
+                        ]);
+                    },
+                    'variant' => function ($q) {
+                        $q->select('id', 'product_id', 'sku', 'price', 'discount', 'stock', 'status', 'variant_values')
+                        ->with([
+                            'variantOptions' => function ($query) {
+                                $query->select('product_variant_options.id', 'variant_type_id', 'display_value', 'value', 'sort_order')
+                                        ->orderBy('sort_order');
+                            },
+                            'variantOptions.variantType' => function ($query) {
+                                $query->select('id', 'name', 'display_name', 'sort_order');
+                            },
+                            'images' => function ($query) {
+                                $query->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                                        ->orderByDesc('is_primary')
+                                        ->orderBy('sort_order');
+                            }
+                        ]);
+                    }
+                ])
+                ->where('user_id', $user_id)
+                ->whereNull('cart_id')
+                ->get();
         }
+
+        return collect();
     }
+
     public static function totalWishlistPrice($user_id = '')
     {
         if (Auth::check()) {

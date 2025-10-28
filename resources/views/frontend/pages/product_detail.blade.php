@@ -10,7 +10,7 @@
 <meta property="og:url" content="{{route('product-detail',$product_detail->slug)}}">
 <meta property="og:type" content="article">
 <meta property="og:title" content="{{$product_detail->title}}">
-<meta property="og:image" content="{{$product_detail->photo}}">
+<meta property="og:image" content="{{ asset((strpos($product_detail->photo, 'storage/') === 0) ? $product_detail->photo : 'storage/' . ltrim($product_detail->photo, '/')) }}">
 <meta property="og:description" content="{{$product_detail->description}}">
 @endsection
 
@@ -229,7 +229,7 @@
 
 									<div class="add-to-cart mt-4">
 										<button type="submit" class="btn" id="addToCartBtn" tabindex="36">Add to cart</button>
-										<a href="{{route('add-to-wishlist',$product_detail->slug)}}" class="btn min" tabindex="37"><i class="ti-heart"></i></a>
+										<a href="{{route('add-to-wishlist',$product_detail->slug)}}" class="btn min" tabindex="37"><i class="ti-heart"></i> Add to Wishlist</a>
 									</div>
 								</form>
 
@@ -378,13 +378,13 @@
 
 <!-- Pass variants data to JavaScript -->
 <script>
-	window.productVariants = @json($processedVariants);
+	window.productVariants = @json($processedVariants ?? []);
 	window.productSlug = "{{ $product_detail->slug }}";
 	window.hasVariants = {{ $product_detail->has_variants ? 'true' : 'false' }};
 	// Pass server-side variant type order (fallback ensures order defined on server is used)
 	// JSON is encoded as a string and parsed in JS to avoid Blade parsing edge-cases in various editors
 	try {
-		const serverOrderJson = '{{ addslashes(json_encode($variantTypes->pluck("name")->toArray())) }}';
+		const serverOrderJson = '{{ addslashes(json_encode($variantTypes->pluck("name")->toArray() ?? [])) }}';
 		if (serverOrderJson) {
 			window.variantTypeOrder = JSON.parse(serverOrderJson);
 		}
@@ -1053,6 +1053,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const addToCartBtn = document.getElementById('addToCartBtn');
     const quantitySection = document.getElementById('quantitySection');
     const variantIdInput = document.getElementById('selectedVariantId');
+    const addToCartForm = document.getElementById('addToCartForm');
+    const wishlistBtn = document.querySelector('.add-to-cart .btn.min');
 
     /* ===============================
         QUANTITY CONTROL FUNCTIONS
@@ -1485,13 +1487,12 @@ document.addEventListener('DOMContentLoaded', function() {
             quantitySection.classList.remove('hidden');
         }
         
-        if (addToCartBtn) {
-            addToCartBtn.style.display = 'inline-block';
+		if (addToCartBtn) {
+			addToCartBtn.style.display = 'inline-block';
             addToCartBtn.disabled = stock <= 0;
             addToCartBtn.textContent = stock > 0 ? 'Add to cart' : 'Out of Stock';
         }
         
-        const wishlistBtn = document.querySelector('.add-to-cart .btn.min');
         if (wishlistBtn) {
             wishlistBtn.style.display = 'inline-block';
         }
@@ -1501,7 +1502,9 @@ document.addEventListener('DOMContentLoaded', function() {
             updateQuantityMax();
         }
 
-        if (variantIdInput) variantIdInput.value = variant.id;
+        if (variantIdInput) {
+            variantIdInput.value = variant.id || '';
+        }
 
         updateVariantImages(variant);
     }
@@ -1659,6 +1662,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         currentVariant = variant;
+        if (variantIdInput) variantIdInput.value = variant.id || '';
         updateVariantWithLoading();
     }
 
@@ -1679,7 +1683,6 @@ document.addEventListener('DOMContentLoaded', function() {
             addToCartBtn.style.display = 'none';
         }
         
-        const wishlistBtn = document.querySelector('.add-to-cart .btn.min');
         if (wishlistBtn) {
             wishlistBtn.style.display = 'none';
         }
@@ -1698,6 +1701,42 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function hideLoadingStates() {
         priceContainer?.classList.remove('loading-shimmer');
+    }
+
+    /* ===============================
+        FORM SUBMISSION HANDLER FOR ADD TO CART
+    ============================== */
+    if (addToCartForm) {
+        addToCartForm.addEventListener('submit', function(e) {
+            const variantId = variantIdInput ? variantIdInput.value.trim() : '';
+            const quantity = parseInt(qtyInput.value) || 1;
+            const stock = currentVariant ? parseInt(currentVariant.stock) || 0 : parseInt(document.querySelector('#displayStock .badge')?.textContent) || 0;
+
+			// Client-side submit debug removed
+
+            // Client-side validation for stock
+            if (stock < quantity) {
+                e.preventDefault();
+                if (stockAlert) {
+                    stockAlert.classList.remove('d-none');
+                    document.getElementById('stockAlertMessage').textContent = `Insufficient stock. Only ${stock} available.`;
+                }
+                return false;
+            }
+
+            // Ensure variant_id is empty for non-variant products
+            if (!hasVariants && variantId) {
+                variantIdInput.value = '';
+            }
+
+            // For wishlist, if clicked, update URL with variant_id if applicable (optional enhancement)
+            if (wishlistBtn && currentVariant) {
+                const currentHref = wishlistBtn.getAttribute('href');
+                if (currentHref && !currentHref.includes('variant_id=')) {
+                    wishlistBtn.href = `${currentHref}?variant_id=${currentVariant.id}`;
+                }
+            }
+        });
     }
 
     /* ===============================
@@ -1809,6 +1848,22 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+
+    /* ===============================
+        HANDLE NON-VARIANT PRODUCTS
+    ============================== */
+    if (!hasVariants) {
+        // For non-variant products, ensure variant_id is empty and use base stock/price
+        if (variantIdInput) variantIdInput.value = '';
+        const baseStock = {{ $product_detail->base_stock ?? 0 }};
+        if (addToCartBtn) {
+            addToCartBtn.disabled = baseStock <= 0;
+            addToCartBtn.textContent = baseStock > 0 ? 'Add to cart' : 'Out of Stock';
+        }
+        if (qtyInput) {
+            qtyInput.setAttribute('data-max', baseStock);
+        }
+    }
 
     /* ===============================
         INITIALIZE

@@ -6,7 +6,6 @@ use Illuminate\Http\Request;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Wishlist;
-use Helper;
 
 class WishlistController extends Controller
 {
@@ -17,25 +16,16 @@ class WishlistController extends Controller
         $this->product = $product;
     }
 
-    public function index()
-    {
-        $wishlistItems = Helper::getAllProductFromWishlist();   // same query, but now in the controller
-
-        // dd($wishlistItems);
-        
-        return view('frontend.pages.wishlist', compact('wishlistItems'));
-    }
-
-    public function wishlist(Request $request, $slug)
+    public function wishlist($slug)
     {
         $product = Product::where('slug', $slug)->first();
         if (empty($product)) {
-            session()->flash('error', 'Invalid Product');
+            request()->session()->flash('error', 'Invalid Product');
             return back();
         }
 
         $userId = auth()->user()->id;
-        $variantId = $request->get('variant_id'); // Handle variant from query param (updated in JS)
+        $variantId = request()->get('variant_id'); // Handle variant from query param (updated in JS)
         $isVariantProduct = $product->has_variants && $variantId;
 
         // Determine the target for already exists check and price/stock
@@ -46,7 +36,7 @@ class WishlistController extends Controller
         if ($isVariantProduct) {
             $variant = ProductVariant::find($variantId);
             if (!$variant || $variant->product_id != $product->id || $variant->status !== 'active') {
-                session()->flash('error', 'Invalid Variant');
+                request()->session()->flash('error', 'Invalid Variant');
                 return back();
             }
             $price = $variant->discounted_price;
@@ -68,7 +58,7 @@ class WishlistController extends Controller
         }
 
         if ($alreadyWishlist) {
-            session()->flash('error', 'You already placed this item in wishlist');
+            request()->session()->flash('error', 'You already placed this item in wishlist');
             return back();
         }
 
@@ -85,7 +75,7 @@ class WishlistController extends Controller
 
         $wishlist->save();
 
-        session()->flash('success', 'Product successfully added to wishlist');
+        request()->session()->flash('success', 'Product successfully added to wishlist');
         return back();
     }
 
@@ -94,10 +84,10 @@ class WishlistController extends Controller
         $wishlist = Wishlist::find($request->id);
         if ($wishlist && $wishlist->user_id === auth()->user()->id) { // Security: ensure user owns it
             $wishlist->delete();
-            session()->flash('success', 'Wishlist successfully removed');
+            request()->session()->flash('success', 'Wishlist successfully removed');
             return back();
         }
-        session()->flash('error', 'Error please try again');
+        request()->session()->flash('error', 'Error please try again');
         return back();
     }
 }

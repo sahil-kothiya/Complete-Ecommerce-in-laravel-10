@@ -123,18 +123,19 @@ Route::post('/subscribe', [FrontendController::class, 'subscribe'])->name('subsc
 
 // Cart & Wishlist
 Route::get('/cart', [FrontendController::class, 'cart'])->name('cart');
-Route::get('/wishlist', fn() => view('frontend.pages.wishlist'))->name('wishlist');
 
 Route::middleware('auth')->group(function () {
     Route::get('/add-to-cart/{slug}', [CartController::class, 'addToCart'])->name('add-to-cart');
     Route::post('/add-to-cart', [CartController::class, 'singleAddToCart'])->name('single-add-to-cart');
     Route::get('/checkout', [CartController::class, 'checkout'])->name('checkout');
+
+    Route::get('/wishlist', [WishlistController::class, 'index'])->name('wishlist');
     Route::get('/wishlist/{slug}', [WishlistController::class, 'wishlist'])->name('add-to-wishlist');
+    Route::post('/wishlist-delete/{id}', [WishlistController::class, 'wishlistDelete'])->name('wishlist-delete');
 });
 
-Route::get('/cart-delete/{id}', [CartController::class, 'cartDelete'])->name('cart-delete');
+Route::post('/cart-delete/{id}', [CartController::class, 'cartDelete'])->name('cart-delete');
 Route::post('/cart-update', [CartController::class, 'cartUpdate'])->name('cart.update');
-Route::get('/wishlist-delete/{id}', [WishlistController::class, 'wishlistDelete'])->name('wishlist-delete');
 
 // Orders
 Route::post('/cart/order', [OrderController::class, 'store'])->name('cart.order');

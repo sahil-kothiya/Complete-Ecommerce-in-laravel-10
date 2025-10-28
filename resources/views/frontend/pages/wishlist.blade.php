@@ -1,531 +1,499 @@
 @extends('frontend.layouts.master')
-@section('title','Wishlist Page')
+
+@section('title', 'Wishlist Page')
+
 @section('main-content')
 <!-- Breadcrumbs -->
 <div class="breadcrumbs">
-	<div class="container">
-		<div class="row">
-			<div class="col-12">
-				<div class="bread-inner">
-					<ul class="bread-list">
-						<li><a href="{{('home')}}">Home<i class="ti-arrow-right"></i></a></li>
-						<li class="active"><a href="javascript:void(0);">Wishlist</a></li>
-					</ul>
-				</div>
-			</div>
-		</div>
-	</div>
+    <div class="container">
+        <div class="row">
+            <div class="col-12">
+                <div class="bread-inner">
+                    <ul class="bread-list">
+                        <li><a href="{{ route('home') }}">Home<i class="ti-arrow-right"></i></a></li>
+                        <li class="active"><a href="javascript:void(0);">Wishlist</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 <!-- End Breadcrumbs -->
 
-<!-- Shopping Cart -->
+<!-- Shopping Wishlist -->
 <div class="shopping-cart section">
-	<div class="container">
-		<div class="row">
-			<div class="col-12">
-				<!-- Shopping Summery -->
-				<table class="table shopping-summery">
-					<thead>
-						<tr class="main-hading">
-							<th>PRODUCT</th>
-							<th>NAME</th>
-							<th class="text-center">TOTAL</th>
-							<th class="text-center">ADD TO CART</th>
-							<th class="text-center"><i class="ti-trash remove-icon"></i></th>
-						</tr>
-					</thead>
-					<tbody>
-						@if(Helper::getAllProductFromWishlist())
-						@foreach(Helper::getAllProductFromWishlist() as $key => $wishlist)
-						<tr>
-							@php
-							$images = $wishlist->product->images;
-							$firstImage = $images->first();
-							$imagePath = $firstImage ? $firstImage->image_path : 'default.jpg';
-							@endphp
-							<td class="image product-slider" data-title="No">
-								@php
-								$images = $wishlist->product->images;
-								$firstImage = $images->first();
-								$imagePath = $firstImage ? $firstImage->image_path : 'default.jpg';
-								@endphp
-								<div class="slider-wrapper" data-images="{{ $images->count() }}">
-									<div class="slider-container">
-										@foreach($images as $index => $image)
-										<img src="{{ asset($image->image_path) }}" alt="{{ $wishlist->product['title'] }}" class="slider-img" data-index="{{ $index }}">
-										@endforeach
-									</div>
-									@if($images->count() > 1)
-									<div class="slider-indicators">
-										@foreach($images as $index => $image)
-										<span class="indicator {{ $index == 0 ? 'active' : '' }}" data-index="{{ $index }}"></span>
-										@endforeach
-									</div>
-									@endif
-								</div>
-							</td>
+    <div class="container">
+        <div class="row">
+            <div class="col-12">
+                <table class="table shopping-summery">
+                    <thead>
+                        <tr class="main-hading">
+                            <th>PRODUCT</th>
+                            <th>NAME</th>
+                            <th class="text-center">PRICE</th>
+                            <th class="text-center">ADD TO CART</th>
+                            <th class="text-center"><i class="ti-trash remove-icon"></i></th>
+                        </tr>
+                    </thead>
+                    <tbody id="wishlist-body">
+                        @if($wishlistItems->count() > 0)
+                            @foreach($wishlistItems as $wishlist)
+                                {{--  ←  SAME LOOP AS BEFORE  ←  --}}
+                                @php
+                                    $originalPrice = $wishlist->variant?->price ?? $wishlist->product->base_price ?? 0;
+                                    $discount      = $wishlist->variant?->discount ?? $wishlist->product->base_discount ?? 0;
+                                    $variantDetails = $wishlist->variant?->display_name ?? null;
 
-							<td class="product-des" data-title="Description">
-								<p class="product-name">
-									<a href="{{ route('product-detail', $wishlist->product['slug']) }}">
-										{{ $wishlist->product['title'] }}
-									</a>
-								</p>
-								<p class="product-des">{!! $wishlist['summary'] !!}</p>
-							</td>
-							<td class="total-amount" data-title="Total"><span>${{ $wishlist['amount'] }}</span></td>
-							<td>
-								<a href="{{ route('add-to-cart', $wishlist->product['slug']) }}" class="btn text-white">Add To Cart</a>
-							</td>
-							<td class="action" data-title="Remove">
-								<a href="{{ route('wishlist-delete', $wishlist->id) }}"><i class="ti-trash remove-icon"></i></a>
-							</td>
-						</tr>
-						@endforeach
-						@else
-						<tr>
-							<td class="text-center">
-								There are no any wishlist available.
-								<a href="{{ route('product-grids') }}" style="color:blue;">Continue shopping</a>
-							</td>
-						</tr>
-						@endif
+                                    $discountedPrice = $originalPrice * (1 - $discount / 100);
+                                    $isDiscounted    = $discountedPrice < $originalPrice;
 
+                                    $images = $wishlist->variant?->images->isNotEmpty()
+                                                ? $wishlist->variant->images
+                                                : ($wishlist->product->images ?? collect());
+                                @endphp
 
+                                <tr data-wishlist-id="{{ $wishlist->id }}">
+                                    {{-- IMAGE SLIDER (unchanged) --}}
+                                    <td class="image product-slider" data-title="No">
+                                        <div class="slider-wrapper" data-images="{{ $images->count() }}">
+                                            <div class="slider-container">
+                                                @forelse($images as $index => $image)
+                                                    <img src="{{ $image->url ?? asset('default.jpg') }}"
+                                                         alt="{{ $wishlist->product->title ?? 'Product' }}"
+                                                         class="slider-img" data-index="{{ $index }}"
+                                                         onerror="this.src='{{ asset('default.jpg') }}'">
+                                                @empty
+                                                    <img src="{{ asset('default.jpg') }}"
+                                                         alt="{{ $wishlist->product->title ?? 'Product' }}"
+                                                         class="slider-img" data-index="0">
+                                                @endforelse
+                                            </div>
+                                            @if($images->count() > 1)
+                                                <div class="slider-indicators">
+                                                    @foreach($images as $index => $image)
+                                                        <span class="indicator {{ $index == 0 ? 'active' : '' }}"
+                                                              data-index="{{ $index }}"></span>
+                                                    @endforeach
+                                                </div>
+                                            @endif
+                                        </div>
+                                    </td>
 
-					</tbody>
-				</table>
-				<!--/ End Shopping Summery -->
-			</div>
-		</div>
-	</div>
+                                    {{-- NAME & VARIANT --}}
+                                    <td class="product-des" data-title="Description">
+                                        <p class="product-name">
+                                            <a href="{{ route('product-detail', $wishlist->product->slug ?? '') }}"
+                                               target="_blank">
+                                                {{ $wishlist->product->title ?? 'Product' }}
+                                            </a>
+                                        </p>
+                                        <p class="product-des">{!! $wishlist->product->summary ?? '' !!}</p>
+                                        @if($wishlist->variant && $variantDetails && $variantDetails !== 'Variant #' . $wishlist->variant->id)
+                                            <small class="text-muted">Variant: {{ $variantDetails }}</small>
+                                        @endif
+                                    </td>
+
+                                    {{-- PRICE --}}
+                                    <td class="price text-center" data-title="Price">
+                                        <div class="price-info">
+                                            @if($isDiscounted && $originalPrice > 0)
+                                                <span class="text-danger font-weight-bold">
+                                                    ${{ number_format($discountedPrice, 2) }}
+                                                </span><br>
+                                                <small><del class="text-muted">${{ number_format($originalPrice, 2) }}</del></small>
+                                                <small class="text-success ml-2">{{ $discount }}% off</small>
+                                            @else
+                                                <span>${{ number_format($discountedPrice, 2) }}</span>
+                                            @endif
+                                            <span class="price-tooltip"
+                                                  data-toggle="tooltip"
+                                                  data-placement="top"
+                                                  title="Price may vary due to discounts, variants or stock.">
+                                                <i class="ti-info-alt"></i>
+                                            </span>
+                                        </div>
+                                    </td>
+
+                                    {{-- ADD TO CART --}}
+                                    <td class="text-center" data-title="Add to Cart">
+                                        <form action="{{ route('single-add-to-cart') }}"
+                                              method="POST"
+                                              class="add-to-cart-form d-inline">
+                                            @csrf
+                                            <input type="hidden" name="slug" value="{{ $wishlist->product->slug }}">
+                                            <input type="hidden" name="quant[1]" value="1">
+                                            @if($wishlist->variant_id)
+                                                <input type="hidden" name="variant_id" value="{{ $wishlist->variant_id }}">
+                                            @endif
+                                            <button type="submit" class="btn btn-sm text-white">
+                                                <i class="ti-shopping-cart"></i> Add
+                                            </button>
+                                        </form>
+                                    </td>
+
+                                    {{-- REMOVE --}}
+                                    <td class="action text-center" data-title="Remove">
+                                        <a href="javascript:void(0)"
+                                           class="remove-wishlist-item text-danger"
+                                           data-wishlist-id="{{ $wishlist->id }}"
+                                           data-url="{{ route('wishlist-delete', $wishlist->id) }}">
+                                            <i class="ti-trash remove-icon"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        @else
+                            <tr>
+                                <td colspan="5" class="text-center py-5">
+                                    <p class="lead">Your wishlist is empty.</p>
+                                    <a href="{{ route('product-grids') }}" class="btn">Continue Shopping</a>
+                                </td>
+                            </tr>
+                        @endif
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
-<!--/ End Shopping Cart -->
+<!--/ End Wishlist -->
 
-<!-- Start Shop Services Area  -->
+<!-- Services -->
 <section class="shop-services section">
-	<div class="container">
-		<div class="row">
-			<div class="col-lg-3 col-md-6 col-12">
-				<!-- Start Single Service -->
-				<div class="single-service">
-					<i class="ti-rocket"></i>
-					<h4>Free shiping</h4>
-					<p>Orders over $100</p>
-				</div>
-				<!-- End Single Service -->
-			</div>
-			<div class="col-lg-3 col-md-6 col-12">
-				<!-- Start Single Service -->
-				<div class="single-service">
-					<i class="ti-reload"></i>
-					<h4>Free Return</h4>
-					<p>Within 30 days returns</p>
-				</div>
-				<!-- End Single Service -->
-			</div>
-			<div class="col-lg-3 col-md-6 col-12">
-				<!-- Start Single Service -->
-				<div class="single-service">
-					<i class="ti-lock"></i>
-					<h4>Sucure Payment</h4>
-					<p>100% secure payment</p>
-				</div>
-				<!-- End Single Service -->
-			</div>
-			<div class="col-lg-3 col-md-6 col-12">
-				<!-- Start Single Service -->
-				<div class="single-service">
-					<i class="ti-tag"></i>
-					<h4>Best Peice</h4>
-					<p>Guaranteed price</p>
-				</div>
-				<!-- End Single Service -->
-			</div>
-		</div>
-	</div>
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-3 col-md-6 col-12">
+                <div class="single-service">
+                    <i class="ti-rocket"></i>
+                    <h4>Free Shipping</h4>
+                    <p>Orders over $100</p>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 col-12">
+                <div class="single-service">
+                    <i class="ti-reload"></i>
+                    <h4>Free Return</h4>
+                    <p>Within 30 days</p>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 col-12">
+                <div class="single-service">
+                    <i class="ti-lock"></i>
+                    <h4>Secure Payment</h4>
+                    <p>100% secure</p>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 col-12">
+                <div class="single-service">
+                    <i class="ti-tag"></i>
+                    <h4>Best Price</h4>
+                    <p>Guaranteed</p>
+                </div>
+            </div>
+        </div>
+    </div>
 </section>
-<!-- End Shop Newsletter -->
 
 @include('frontend.layouts.newsletter')
-
-
-
-<!-- Modal -->
-<div class="modal fade" id="exampleModal" tabindex="-1" role="dialog">
-	<div class="modal-dialog" role="document">
-		<div class="modal-content">
-			<div class="modal-header">
-				<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span class="ti-close" aria-hidden="true"></span></button>
-			</div>
-			<div class="modal-body">
-				<div class="row no-gutters">
-					<div class="col-lg-6 col-md-12 col-sm-12 col-xs-12">
-						<!-- Product Slider -->
-						<!-- <div class="product-gallery">
-							<div class="quickview-slider-active">
-								<div class="single-slider">
-									<img src="images/modal1.jpg" alt="#">
-								</div>
-								<div class="single-slider">
-									<img src="images/modal2.jpg" alt="#">
-								</div>
-								<div class="single-slider">
-									<img src="images/modal3.jpg" alt="#">
-								</div>
-								<div class="single-slider">
-									<img src="images/modal4.jpg" alt="#">
-								</div>
-							</div>
-						</div> -->
-						<!-- End Product slider -->
-					</div>
-					<div class="col-lg-6 col-md-12 col-sm-12 col-xs-12">
-						<div class="quickview-content">
-							<h2>Flared Shift Dress</h2>
-							<div class="quickview-ratting-review">
-								<div class="quickview-ratting-wrap">
-									<div class="quickview-ratting">
-										<i class="yellow fa fa-star"></i>
-										<i class="yellow fa fa-star"></i>
-										<i class="yellow fa fa-star"></i>
-										<i class="yellow fa fa-star"></i>
-										<i class="fa fa-star"></i>
-									</div>
-									<a href="#"> (1 customer review)</a>
-								</div>
-								<div class="quickview-stock">
-									<span><i class="fa fa-check-circle-o"></i> in stock</span>
-								</div>
-							</div>
-							<h3>$29.00</h3>
-							<div class="quickview-peragraph">
-								<p>Lorem ipsum dolor sit amet, consectetur adipisicing elit. Mollitia iste laborum ad impedit pariatur esse optio tempora sint ullam autem deleniti nam in quos qui nemo ipsum numquam.</p>
-							</div>
-							<div class="size">
-								<div class="row">
-									<div class="col-lg-6 col-12">
-										<h5 class="title">Size</h5>
-										<select>
-											<option selected="selected">s</option>
-											<option>m</option>
-											<option>l</option>
-											<option>xl</option>
-										</select>
-									</div>
-									<div class="col-lg-6 col-12">
-										<h5 class="title">Color</h5>
-										<select>
-											<option selected="selected">orange</option>
-											<option>purple</option>
-											<option>black</option>
-											<option>pink</option>
-										</select>
-									</div>
-								</div>
-							</div>
-							<div class="quantity">
-								<!-- Input Order -->
-								<div class="input-group">
-									<div class="button minus">
-										<button type="button" class="btn btn-primary btn-number" disabled="disabled" data-type="minus" data-field="quant[1]">
-											<i class="ti-minus"></i>
-										</button>
-									</div>
-									<input type="text" name="quant[1]" class="input-number" data-min="1" data-max="1000" value="1">
-									<div class="button plus">
-										<button type="button" class="btn btn-primary btn-number" data-type="plus" data-field="quant[1]">
-											<i class="ti-plus"></i>
-										</button>
-									</div>
-								</div>
-								<!--/ End Input Order -->
-							</div>
-							<div class="add-to-cart">
-								<a href="#" class="btn">Add to cart</a>
-								<a href="#" class="btn min"><i class="ti-heart"></i></a>
-								<a href="#" class="btn min"><i class="fa fa-compress"></i></a>
-							</div>
-							<div class="default-social">
-								<h4 class="share-now">Share:</h4>
-								<ul>
-									<li><a class="facebook" href="#"><i class="fa fa-facebook"></i></a></li>
-									<li><a class="twitter" href="#"><i class="fa fa-twitter"></i></a></li>
-									<li><a class="youtube" href="#"><i class="fa fa-pinterest-p"></i></a></li>
-									<li><a class="dribbble" href="#"><i class="fa fa-google-plus"></i></a></li>
-								</ul>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-		</div>
-	</div>
-</div>
-<!-- Modal end -->
-
 @endsection
-@push('scripts')
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert.min.js"></script>
-@endpush
+
 @push('styles')
 <style>
-	.slider-wrapper {
-		position: relative;
-		width: 80px;
-		height: 80px;
-		overflow: hidden;
-		border-radius: 4px;
-		cursor: pointer;
-		background: #f8f9fa;
-		border: 1px solid #dee2e6;
-	}
+    .slider-wrapper {
+        position: relative;
+        width: 80px;
+        height: 80px;
+        overflow: hidden;
+        border-radius: 4px;
+        cursor: pointer;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+    }
 
-	.slider-container {
-		position: relative;
-		width: 100%;
-		height: 100%;
-		display: flex;
-		transition: transform 0.3s ease-in-out;
-	}
+    .slider-container {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        transition: transform 0.3s ease-in-out;
+    }
 
-	.slider-img {
-		flex: 0 0 100%;
-		width: 80px;
-		height: 80px;
-		object-fit: cover;
-		display: block;
-	}
+    .slider-img {
+        flex: 0 0 100%;
+        width: 80px;
+        height: 80px;
+        object-fit: cover;
+        display: block;
+    }
 
-	.slider-indicators {
-		position: absolute;
-		bottom: 4px;
-		left: 50%;
-		transform: translateX(-50%);
-		display: flex;
-		gap: 2px;
-		z-index: 10;
-	}
+    .slider-indicators {
+        position: absolute;
+        bottom: 4px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 2px;
+        z-index: 10;
+    }
 
-	.indicator {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.5);
-		cursor: pointer;
-		transition: background 0.3s ease;
-	}
+    .indicator {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.5);
+        cursor: pointer;
+        transition: background 0.3s ease;
+    }
 
-	.indicator.active {
-		background: rgba(255, 255, 255, 0.9);
-	}
+    .indicator.active {
+        background: rgba(255, 255, 255, 0.9);
+    }
 
-	.slider-wrapper:hover .indicator {
-		background: rgba(255, 255, 255, 0.7);
-	}
+    .slider-wrapper:hover .indicator {
+        background: rgba(255, 255, 255, 0.7);
+    }
 
-	.slider-wrapper:hover .indicator.active {
-		background: #fff;
-	}
+    .slider-wrapper:hover .indicator.active {
+        background: #fff;
+    }
 
-	/* Hide indicators if only one image */
-	.slider-wrapper[data-images="1"] .slider-indicators {
-		display: none;
-	}
+    /* Hide indicators if only one image */
+    .slider-wrapper[data-images="1"] .slider-indicators,
+    .slider-wrapper[data-images="0"] .slider-indicators {
+        display: none;
+    }
 
-	li.shipping {
-		display: inline-flex;
-		width: 100%;
-		font-size: 14px;
-	}
+    /* Price Tooltip Styling */
+    .price-info {
+        position: relative;
+    }
 
-	li.shipping .input-group-icon {
-		width: 100%;
-		margin-left: 10px;
-	}
+    .price-tooltip {
+        margin-left: 5px;
+        color: #555;
+        cursor: pointer;
+        font-size: 14px;
+    }
 
-	.input-group-icon .icon {
-		position: absolute;
-		left: 20px;
-		top: 0;
-		line-height: 40px;
-		z-index: 3;
-	}
+    .price-tooltip:hover {
+        color: #007bff;
+    }
 
-	.form-select {
-		height: 30px;
-		width: 100%;
-	}
+    .tooltip-inner {
+        max-width: 250px;
+        background-color: #fff;
+        color: #000;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
 
-	.form-select .nice-select {
-		border: none;
-		border-radius: 0px;
-		height: 40px;
-		background: #f6f6f6 !important;
-		padding-left: 45px;
-		padding-right: 40px;
-		width: 100%;
-	}
+    .bs-tooltip-top .arrow::before {
+        border-top-color: #ccc;
+    }
 
-	.list li {
-		margin-bottom: 0 !important;
-	}
+    .remove-wishlist-item {
+        transition: color 0.2s;
+        font-size: 18px;
+    }
 
-	.list li:hover {
-		background: #F7941D !important;
-		color: white !important;
-	}
+    .remove-wishlist-item:hover {
+        color: #dc3545 !important;
+    }
 
-	.form-select .nice-select::after {
-		top: 14px;
-	}
+    .add-to-cart-form button {
+        background: #F7941D;
+        border: none;
+        padding: 8px 15px;
+        font-size: 13px;
+        transition: all 0.3s;
+    }
+
+    .add-to-cart-form button:hover {
+        background: #e6830b;
+        transform: translateY(-1px);
+    }
+
+    .add-to-cart-form button:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+
+    .product-name a {
+        font-weight: 600;
+        color: #333;
+    }
+
+    .product-name a:hover {
+        color: #F7941D;
+    }
 </style>
 @endpush
+
 @push('scripts')
-<script src="{{asset('frontend/js/nice-select/js/jquery.nice-select.min.js')}}"></script>
-<script src="{{ asset('frontend/js/select2/js/select2.min.js') }}"></script>
-<script>
-	$(document).ready(function() {
-		$("select.select2").select2();
-	});
-	// $('select.nice-select').niceSelect();
-</script>
-<script>
-	$(document).ready(function() {
-		$('.shipping select[name=shipping]').change(function() {
-			let cost = parseFloat($(this).find('option:selected').data('price')) || 0;
-			let subtotal = parseFloat($('.order_subtotal').data('price'));
-			let coupon = parseFloat($('.coupon_price').data('price')) || 0;
-			// alert(coupon);
-			$('#order_total_price span').text('$' + (subtotal + cost - coupon).toFixed(2));
-		});
-
-	});
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-	// Image Slider Functionality
-	$(document).ready(function() {
-		let sliderIntervals = {};
+$(document).ready(function() {
+    console.log('Wishlist page initialized');
 
-		$('.slider-wrapper').each(function() {
-			const wrapper = $(this);
-			const container = wrapper.find('.slider-container');
-			const images = wrapper.find('.slider-img');
-			const indicators = wrapper.find('.indicator');
-			const totalImages = images.length;
+    // Initialize Bootstrap tooltips
+    $('[data-toggle="tooltip"]').tooltip();
 
-			if (totalImages <= 1) return; // Skip if only one image
+    // Image Slider (EXACT MATCH WITH CART)
+    $('.slider-wrapper').each(function() {
+        const wrapper = $(this);
+        const container = wrapper.find('.slider-container');
+        const images = wrapper.find('.slider-img');
+        const indicators = wrapper.find('.indicator');
+        const total = images.length;
+        
+        console.log('Slider initialized with ' + total + ' images');
+        
+        if (total <= 1) return;
 
-			let currentIndex = 0;
+        let current = 0;
+        const show = (i) => {
+            const offset = i * 100;
+            container.css('transform', `translateX(-${offset}%)`);
+            indicators.removeClass('active').eq(i).addClass('active');
+            current = i;
+        };
 
-			function showImage(index) {
-				const translateX = -index * 100;
-				container.css('transform', `translateX(${translateX}%)`);
+        // Click on indicators
+        indicators.on('click', function(e) {
+            e.stopPropagation();
+            show($(this).data('index'));
+        });
 
-				indicators.removeClass('active');
-				indicators.eq(index).addClass('active');
+        // Auto-play on hover
+        let interval;
+        wrapper.on('mouseenter', () => {
+            clearInterval(interval);
+            interval = setInterval(() => {
+                show((current + 1) % total);
+            }, 1500);
+        }).on('mouseleave', () => {
+            clearInterval(interval);
+            show(0);
+        });
 
-				currentIndex = index;
-			}
+        // Touch swipe support
+        let startX = 0;
+        wrapper.on('touchstart', e => {
+            startX = e.originalEvent.touches[0].clientX;
+        });
+        wrapper.on('touchend', e => {
+            const endX = e.originalEvent.changedTouches[0].clientX;
+            const diff = startX - endX;
+            if (Math.abs(diff) > 30) {
+                if (diff > 0) {
+                    show((current + 1) % total);
+                } else {
+                    show((current - 1 + total) % total);
+                }
+            }
+        });
+    });
 
-			function nextImage() {
-				const nextIndex = (currentIndex + 1) % totalImages;
-				showImage(nextIndex);
-			}
+    // Add to Cart with AJAX
+    $('.add-to-cart-form').on('submit', function(e) {
+        e.preventDefault();
+        
+        const form = $(this);
+        const btn = form.find('button');
+        const originalHtml = btn.html();
+        
+        btn.prop('disabled', true).html('<i class="ti-reload"></i> Adding...');
 
-			function prevImage() {
-				const prevIndex = (currentIndex - 1 + totalImages) % totalImages;
-				showImage(prevIndex);
-			}
+        $.ajax({
+            url: form.attr('action'),
+            method: 'POST',
+            data: form.serialize(),
+            success: function(response) {
+                console.log('Add to cart response:', response);
+                
+                if (response.success) {
+                    // Remove the row
+                    form.closest('tr').fadeOut(300, function() {
+                        $(this).remove();
+                        checkEmptyWishlist();
+                    });
+                    swal("Success!", response.success || "Added to cart!", "success");
+                } else {
+                    swal("Error!", response.error || "Failed to add to cart.", "error");
+                    btn.prop('disabled', false).html(originalHtml);
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('AJAX Error:', {xhr, status, error});
+                console.error('Response:', xhr.responseText);
+                swal("Error!", "Network error. Please try again.", "error");
+                btn.prop('disabled', false).html(originalHtml);
+            }
+        });
+    });
 
-			function startAutoSlide() {
-				const wrapperId = wrapper.closest('tr').index();
-				sliderIntervals[wrapperId] = setInterval(nextImage, 1500);
-			}
+    // Remove from Wishlist
+    $('.remove-wishlist-item').on('click', function(e) {
+        e.preventDefault();
+        
+        const url = $(this).data('url');
+        const row = $(this).closest('tr');
 
-			function stopAutoSlide() {
-				const wrapperId = wrapper.closest('tr').index();
-				if (sliderIntervals[wrapperId]) {
-					clearInterval(sliderIntervals[wrapperId]);
-					delete sliderIntervals[wrapperId];
-				}
-			}
+        swal({
+            title: "Remove from wishlist?",
+            text: "This item will be removed from your wishlist.",
+            icon: "warning",
+            buttons: true,
+            dangerMode: true,
+        }).then((willDelete) => {
+            if (willDelete) {
+                $.ajax({
+                    url: url,
+                    method: 'POST',
+                    data: {
+                        _token: $('meta[name="csrf-token"]').attr('content')
+                    },
+                    success: function(response) {
+                        console.log('Remove response:', response);
+                        
+                        if (response.success) {
+                            row.fadeOut(300, function() {
+                                $(this).remove();
+                                checkEmptyWishlist();
+                            });
+                            swal("Removed!", response.success || "Item removed from wishlist.", "success");
+                        } else {
+                            swal("Error!", response.error || "Failed to remove item.", "error");
+                        }
+                    },
+                    error: function(xhr) {
+                        console.error('Remove error:', xhr.responseText);
+                        swal("Error!", "Request failed. Please try again.", "error");
+                    }
+                });
+            }
+        });
+    });
 
-			// Click on indicators to show specific image
-			indicators.on('click', function() {
-				const index = $(this).data('index');
-				showImage(index);
-			});
-
-			// Mouse events for auto-slide
-			wrapper.on('mouseenter', function() {
-				startAutoSlide();
-			});
-
-			wrapper.on('mouseleave', function() {
-				stopAutoSlide();
-				showImage(0); // Return to first image
-			});
-
-			// Touch/swipe support for mobile
-			let startX = 0;
-			let startY = 0;
-			let isSwipe = false;
-
-			wrapper.on('touchstart', function(e) {
-				startX = e.originalEvent.touches[0].clientX;
-				startY = e.originalEvent.touches[0].clientY;
-				isSwipe = false;
-			});
-
-			wrapper.on('touchmove', function(e) {
-				if (!startX || !startY) return;
-
-				const currentX = e.originalEvent.touches[0].clientX;
-				const currentY = e.originalEvent.touches[0].clientY;
-
-				const diffX = startX - currentX;
-				const diffY = startY - currentY;
-
-				if (Math.abs(diffX) > Math.abs(diffY)) {
-					isSwipe = true;
-					e.preventDefault();
-				}
-			});
-
-			wrapper.on('touchend', function(e) {
-				if (!isSwipe) return;
-
-				const currentX = e.originalEvent.changedTouches[0].clientX;
-				const diffX = startX - currentX;
-
-				if (Math.abs(diffX) > 30) { // Minimum swipe distance
-					if (diffX > 0) {
-						nextImage();
-					} else {
-						prevImage();
-					}
-				}
-
-				startX = 0;
-				startY = 0;
-				isSwipe = false;
-			});
-
-			// Keyboard support
-			wrapper.on('keydown', function(e) {
-				if (e.which === 37) { // Left arrow
-					prevImage();
-				} else if (e.which === 39) { // Right arrow
-					nextImage();
-				}
-			});
-
-			// Make wrapper focusable for keyboard events
-			wrapper.attr('tabindex', '0');
-		});
-	});
+    function checkEmptyWishlist() {
+        const remainingItems = $('#wishlist-body tr[data-wishlist-id]').length;
+        console.log('Remaining wishlist items:', remainingItems);
+        
+        if (remainingItems === 0) {
+            $('#wishlist-body').html(`
+                <tr>
+                    <td colspan="5" class="text-center py-5">
+                        <p class="lead">Your wishlist is empty.</p>
+                        <a href="{{ route('product-grids') }}" class="btn">Continue Shopping</a>
+                    </td>
+                </tr>
+            `);
+        }
+    }
+});
 </script>
-
 @endpush
