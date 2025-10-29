@@ -34,7 +34,16 @@ class ProductController extends Controller
     public function store(Request $request)
     {
         Log::debug('Product store - incoming request', $request->only([
-            'title', 'slug', 'cat_id', 'child_cat_id', 'brand_id', 'has_variants', 'base_sku', 'base_price', 'base_stock', 'variants'
+            'title',
+            'slug',
+            'cat_id',
+            'child_cat_id',
+            'brand_id',
+            'has_variants',
+            'base_sku',
+            'base_price',
+            'base_stock',
+            'variants'
         ]));
 
         $rules = [
@@ -106,7 +115,14 @@ class ProductController extends Controller
         Log::info('Product store - validation passed', array_merge(
             ['has_variants' => $request->boolean('has_variants')],
             array_intersect_key($validatedData, array_flip([
-                'title', 'slug', 'cat_id', 'child_cat_id', 'brand_id', 'base_sku', 'base_price', 'base_stock'
+                'title',
+                'slug',
+                'cat_id',
+                'child_cat_id',
+                'brand_id',
+                'base_sku',
+                'base_price',
+                'base_stock'
             ]))
         ));
 
@@ -127,7 +143,9 @@ class ProductController extends Controller
                         Storage::put($webpPath, (string) $image);
                         $webpPaths[] = "products/{$webpFilename}";
                         Log::info('Product store - converted image to webp', [
-                            'original' => $fullPath, 'webp_path' => $webpPath, 'public_path' => end($webpPaths)
+                            'original' => $fullPath,
+                            'webp_path' => $webpPath,
+                            'public_path' => end($webpPaths)
                         ]);
                     } else {
                         Log::warning("Product store - source image not found", ['path' => $fullPath, 'url' => $url]);
@@ -166,7 +184,8 @@ class ProductController extends Controller
         }
 
         Log::debug('Product store - beginning transaction', [
-            'has_variants' => $request->boolean('has_variants'), 'webp_count' => count($webpPaths)
+            'has_variants' => $request->boolean('has_variants'),
+            'webp_count' => count($webpPaths)
         ]);
 
         DB::beginTransaction();
@@ -380,16 +399,29 @@ class ProductController extends Controller
 
     public function edit($id)
     {
-        $product = Product::with(['images', 'variants.images', 'variants.variantOptions.variantType'])->findOrFail($id);
-        $brands = Brand::all();
-        $categories = Category::all();
+        $product = Product::with([
+            'images',
+            'variants.images',
+            'variants.variantOptions.variantType',   // keep the old eager load if you need it elsewhere
+        ])->findOrFail($id);
+
+        // NEW – load **all** types with the “selected” flag
+        $product->loadVariantTypes();
+
+        $brands       = Brand::all();
+        $categories   = Category::all();
         $subcategories = Category::whereNotNull('parent_id')->get();
 
-        return view('backend.product.edit', compact('product', 'brands', 'categories', 'subcategories'));
+        return view('backend.product.edit', compact(
+            'product',
+            'brands',
+            'categories',
+            'subcategories'
+        ));
     }
 
     public function update(Request $request, $id)
-    {   
+    {
         $product = Product::with(['images', 'variants', 'variants.images'])->findOrFail($id);
         $requestData = $this->normalizeImageUrls($request->all());
         $request->merge($requestData);
@@ -865,46 +897,119 @@ class ProductController extends Controller
     {
         $request->validate([
             'selections' => 'required|array',
-            'base_price' => 'nullable|numeric|min:0',
+            'selections.*' => 'required|array|min:1',
+            'product_id' => 'nullable|exists:products,id'
         ]);
 
         $selections = $request->input('selections');
-        $basePrice = $request->input('base_price');
-        $variants = [];
+        $productId = $request->input('product_id');
+        $basePrice = null;
 
-        if (!is_array($selections) || empty($selections)) {
-            return response()->json(['error' => 'Invalid or empty selections provided'], 400);
+        // Get base price from existing product if available
+        if ($productId) {
+            $product = Product::find($productId);
+            $basePrice = $product ? $product->base_price : null;
         }
 
-        $combinations = $this->generateVariantCombinations($selections);
-        foreach ($combinations as $idx => $combo) {
-            $name = implode(' / ', array_map(fn($opt) => $opt['display_value'], $combo));
-            $sku = $this->generateSKU($name, $idx);
-            $variants[] = [
-                'name' => $name,
-                'sku' => $sku,
-                'price' => $basePrice,
-                'discount' => null,
-                'stock' => 10,
-            ];
-        }
+        Log::info('Preview variants request', [
+            'selections' => $selections,
+            'product_id' => $productId,
+            'base_price' => $basePrice
+        ]);
 
-        return response()->json(['variants' => $variants]);
+        try {
+            // Generate all combinations
+            $combinations = $this->generateVariantCombinations($selections);
+
+            Log::info('Generated combinations', [
+                'count' => count($combinations),
+                'sample' => array_slice($combinations, 0, 3)
+            ]);
+
+            $variants = [];
+
+            foreach ($combinations as $idx => $combo) {
+                // Build variant name from combination
+                $displayValues = array_map(function ($opt) {
+                    return $opt['display_value'] ?? $opt['value'] ?? 'Unknown';
+                }, $combo);
+
+                // Sort the values for consistent naming
+                sort($displayValues);
+                $name = implode(' / ', $displayValues);
+
+                // Generate SKU
+                $sku = $this->generateSKU($name, $idx);
+
+                // Prepare variant data
+                $variantData = [
+                    'name' => $name,
+                    'sku' => $sku,
+                    'price' => $basePrice ?? 0,
+                    'discount' => null,
+                    'stock' => 10, // Default stock
+                    'images' => ''
+                ];
+
+                $variants[] = $variantData;
+
+                Log::debug('Variant preview', [
+                    'index' => $idx,
+                    'name' => $name,
+                    'sku' => $sku
+                ]);
+            }
+
+            Log::info('Preview variants completed', [
+                'total_variants' => count($variants)
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'variants' => $variants,
+                'count' => count($variants)
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Preview variants failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate variant preview: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     protected function generateVariantCombinations($selections)
     {
-        $options = [];
+        $optionsByType = [];
+
+        // Load all selected options from database
         foreach ($selections as $typeId => $optionIds) {
+            if (empty($optionIds)) {
+                continue;
+            }
+
             $typeOptions = ProductVariantOption::whereIn('id', $optionIds)
-                ->select('id', 'display_value')
+                ->select('id', 'display_value', 'variant_type_id')
                 ->get()
                 ->toArray();
-            $options[] = $typeOptions;
+
+            if (!empty($typeOptions)) {
+                $optionsByType[] = $typeOptions;
+            }
         }
 
+        if (empty($optionsByType)) {
+            throw new \Exception('No valid variant options found');
+        }
+
+        // Generate cartesian product of all options
         $combinations = [[]];
-        foreach ($options as $typeOptions) {
+
+        foreach ($optionsByType as $typeOptions) {
             $temp = [];
             foreach ($combinations as $combo) {
                 foreach ($typeOptions as $option) {
@@ -919,8 +1024,18 @@ class ProductController extends Controller
 
     protected function generateSKU($name, $index)
     {
+        // Create a slug from the variant name
         $slug = Str::slug($name);
-        return "SKU-{$slug}-{$index}";
+
+        // Truncate if too long
+        if (strlen($slug) > 30) {
+            $slug = substr($slug, 0, 30);
+        }
+
+        // Add index and timestamp component for uniqueness
+        $timestamp = substr(time(), -4);
+
+        return strtoupper("PRE-{$slug}-{$timestamp}-{$index}");
     }
 
     public function destroy($id)

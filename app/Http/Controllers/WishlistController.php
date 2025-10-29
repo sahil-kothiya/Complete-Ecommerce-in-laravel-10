@@ -20,9 +20,6 @@ class WishlistController extends Controller
     public function index()
     {
         $wishlistItems = Helper::getAllProductFromWishlist();   // same query, but now in the controller
-
-        // dd($wishlistItems);
-        
         return view('frontend.pages.wishlist', compact('wishlistItems'));
     }
 
@@ -89,15 +86,94 @@ class WishlistController extends Controller
         return back();
     }
 
-    public function wishlistDelete(Request $request)
+    public function wishlistDelete($id)
     {
-        $wishlist = Wishlist::find($request->id);
+        $wishlist = Wishlist::find($id);
         if ($wishlist && $wishlist->user_id === auth()->user()->id) { // Security: ensure user owns it
             $wishlist->delete();
+            
+            if (request()->ajax() || request()->wantsJson()) {
+                return response()->json([
+                    'success' => 'Wishlist successfully removed'
+                ]);
+            }
+            
             session()->flash('success', 'Wishlist successfully removed');
             return back();
         }
+        
+        if (request()->ajax() || request()->wantsJson()) {
+            return response()->json([
+                'error' => 'Error please try again'
+            ], 400);
+        }
+        
         session()->flash('error', 'Error please try again');
         return back();
+    }
+
+    public function toggle(Request $request, $slug) {
+        $product = Product::where('slug', $slug)->first();
+        if (empty($product)) {
+            return response()->json(['success' => false, 'message' => 'Invalid Product'], 404);
+        }
+
+        $userId = auth()->id();
+        $variantId = $request->get('variant_id');
+        $isVariantProduct = $product->has_variants && $variantId;
+
+        if ($isVariantProduct) {
+            $variant = ProductVariant::find($variantId);
+            if (!$variant || $variant->product_id != $product->id || $variant->status !== 'active') {
+                return response()->json(['success' => false, 'message' => 'Invalid Variant'], 400);
+            }
+
+            $existing = Wishlist::where('user_id', $userId)
+                ->whereNull('cart_id')
+                ->where('product_id', $product->id)
+                ->where('variant_id', $variantId)
+                ->first();
+        } else {
+            $existing = Wishlist::where('user_id', $userId)
+                ->whereNull('cart_id')
+                ->where('product_id', $product->id)
+                ->whereNull('variant_id')
+                ->first();
+        }
+
+        if ($existing) {
+            $existing->delete();
+            $added = false;
+        } else {
+            $price = $isVariantProduct
+                ? $variant->discounted_price
+                : ($product->base_price - ($product->base_price * $product->base_discount / 100));
+
+            $wishlist = new Wishlist;
+            $wishlist->user_id = $userId;
+            $wishlist->product_id = $product->id;
+            $wishlist->variant_id = $isVariantProduct ? $variantId : null;
+            $wishlist->price = $price;
+            $wishlist->quantity = 1;
+            $wishlist->amount = $price * $wishlist->quantity;
+            $wishlist->save();
+
+            $added = true;
+        }
+
+        return response()->json([
+            'success' => true,
+            'action' => $added ? 'added' : 'removed',
+            'cart_count' => Helper::getAllProductFromCart()->count(),
+            'wishlist_count' => Helper::getAllProductFromWishlist()->count()
+        ]);
+    }
+
+    public function check(Request $request) {
+        $inWishlist = Wishlist::where('product_slug', $request->slug)
+            ->where('variant_id', $request->variant_id)
+            ->where('user_id', auth()->id())
+            ->exists();
+        return response()->json(['in_wishlist' => $inWishlist]);
     }
 }

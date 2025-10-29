@@ -11,9 +11,21 @@ use Illuminate\Support\Facades\DB;
 class Product extends Model
 {
     protected $fillable = [
-        'title', 'slug', 'summary', 'description', 'cat_id', 'child_cat_id', 
-        'base_price', 'brand_id', 'base_discount', 'status', 'base_sku', 
-        'base_stock', 'is_featured', 'condition', 'has_variants'
+        'title',
+        'slug',
+        'summary',
+        'description',
+        'cat_id',
+        'child_cat_id',
+        'base_price',
+        'brand_id',
+        'base_discount',
+        'status',
+        'base_sku',
+        'base_stock',
+        'is_featured',
+        'condition',
+        'has_variants'
     ];
 
     protected $casts = [
@@ -155,7 +167,7 @@ class Product extends Model
         }
 
         $variants = $this->inStockVariants;
-        
+
         if ($variants->isEmpty()) {
             return null;
         }
@@ -171,61 +183,75 @@ class Product extends Model
         return '$' . number_format($min, 2) . ' - $' . number_format($max, 2);
     }
 
+    public function loadVariantTypes(): void
+    {
+        // 1. Load ALL variant types (global)
+        $typeIds = ProductVariantType::query()
+            ->orderBy('sort_order')
+            ->pluck('id');
+
+        // 2. Load all options for those types
+        $options = ProductVariantOption::whereIn('variant_type_id', $typeIds)
+            ->orderBy('sort_order')
+            ->get()
+            ->groupBy('variant_type_id');
+
+        // 3. Get IDs of options already used in any variant of this product
+        $selectedOptionIds = $this->variants()
+            ->with('variantOptions')
+            ->get()
+            ->pluck('variantOptions.*.id')
+            ->flatten()
+            ->unique()
+            ->all();
+
+        // 4. Build final collection with 'selected' flag
+        $types = ProductVariantType::whereIn('id', $typeIds)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(function ($type) use ($options, $selectedOptionIds) {
+                $typeOptions = $options->get($type->id, collect());
+
+                $type->options = $typeOptions->map(function ($opt) use ($selectedOptionIds) {
+                    $opt->selected = in_array($opt->id, $selectedOptionIds);
+                    return $opt;
+                })->values();
+
+                return $type;
+            });
+
+        $this->setRelation('variantTypes', $types);
+    }
+
     /**
-     * Get variant types efficiently (use in controller with eager loading)
+     * ----------------------------------------------------------------------
+     * 2. ACCESSOR – use `$product->variantTypes` in Blade / API
+     * ----------------------------------------------------------------------
+     */
+    public function getVariantTypesAttribute(): \Illuminate\Support\Collection
+    {
+        // If we already loaded them via loadVariantTypes() just return
+        if ($this->relationLoaded('variantTypes')) {
+            return $this->getRelation('variantTypes');
+        }
+
+        // Fallback – load on-the-fly (still only 2 queries)
+        $this->loadVariantTypes();
+        return $this->getRelation('variantTypes');
+    }
+
+    /**
+     * ----------------------------------------------------------------------
+     * 3. (Optional) Old method – kept for backward compatibility
+     * ----------------------------------------------------------------------
      */
     public function getVariantTypesOptimized()
     {
-        if (!$this->has_variants) {
-            return collect();
-        }
-
-        // Requires variants.variantOptions.variantType to be eager loaded
-        if (!$this->relationLoaded('variants')) {
-            return collect();
-        }
-
-        $typeMap = [];
-        
-        foreach ($this->variants as $variant) {
-            if (!$variant->relationLoaded('variantOptions')) {
-                continue;
-            }
-
-            foreach ($variant->variantOptions as $option) {
-                $type = $option->variantType;
-                
-                if (!isset($typeMap[$type->id])) {
-                    $typeMap[$type->id] = [
-                        'id' => $type->id,
-                        'name' => $type->name,
-                        'display_name' => $type->display_name,
-                        'sort_order' => $type->sort_order,
-                        'options' => []
-                    ];
-                }
-                
-                if (!isset($typeMap[$type->id]['options'][$option->id])) {
-                    $typeMap[$type->id]['options'][$option->id] = $option;
-                }
-            }
-        }
-        
-        return collect($typeMap)
-            ->sortBy('sort_order')
-            ->values()
-            ->map(function($type) {
-                return (object) [
-                    'id' => $type['id'],
-                    'name' => $type['name'],
-                    'display_name' => $type['display_name'],
-                    'sort_order' => $type['sort_order'],
-                    'options' => collect($type['options'])
-                        ->sortBy('sort_order')
-                        ->values()
-                ];
-            });
+        // Just delegate to the new accessor
+        return $this->variantTypes;
     }
+
+
 
     /**
      * Get cheapest in-stock variant
@@ -291,7 +317,7 @@ class Product extends Model
     public function getVariantsJsonAttribute()
     {
         $key = "product_variants:{$this->id}";
-        
+
         if (RedisHelper::has($key)) {
             return RedisHelper::get($key);
         }
@@ -310,7 +336,7 @@ class Product extends Model
 
         $json = $variants->toJson();
         RedisHelper::put($key, $json, 3600);
-        
+
         return $json;
     }
 

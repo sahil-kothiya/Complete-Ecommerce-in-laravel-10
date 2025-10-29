@@ -146,7 +146,7 @@
                             <tr>
                                 <td colspan="5" class="text-center py-5">
                                     <p class="lead">Your wishlist is empty.</p>
-                                    <a href="{{ route('product-grids') }}" class="btn">Continue Shopping</a>
+                                    <a href="{{ route('home') }}" class="btn">Continue Shopping</a>
                                 </td>
                             </tr>
                         @endif
@@ -332,8 +332,9 @@
 @endpush
 
 @push('scripts')
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert.min.js"></script>
 
 <script>
 $(document).ready(function() {
@@ -408,73 +409,82 @@ $(document).ready(function() {
         
         btn.prop('disabled', true).html('<i class="ti-reload"></i> Adding...');
 
+        $.ajaxSetup({
+            headers: {
+                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+            }
+        });
+
         $.ajax({
             url: form.attr('action'),
             method: 'POST',
             data: form.serialize(),
-            success: function(response) {
+            success: function(response, textStatus, xhr) {
+                console.log('Add to cart response status:', textStatus);
                 console.log('Add to cart response:', response);
                 
-                if (response.success) {
-                    // Remove the row
-                    form.closest('tr').fadeOut(300, function() {
-                        $(this).remove();
-                        checkEmptyWishlist();
-                    });
-                    swal("Success!", response.success || "Added to cart!", "success");
-                } else {
-                    swal("Error!", response.error || "Failed to add to cart.", "error");
-                    btn.prop('disabled', false).html(originalHtml);
-                }
+                // Always remove the row on successful POST (status 200), assuming add was successful
+                form.closest('tr').fadeOut(300, function() {
+                    $(this).remove();
+                    checkEmptyWishlist();
+                });
             },
             error: function(xhr, status, error) {
                 console.error('AJAX Error:', {xhr, status, error});
                 console.error('Response:', xhr.responseText);
-                swal("Error!", "Network error. Please try again.", "error");
+                let errorMsg = 'Network error. Please try again.';
+                try {
+                    const errResponse = JSON.parse(xhr.responseText);
+                    errorMsg = errResponse.error || errorMsg;
+                } catch (e) {
+                    // Ignore JSON parse error, treat as general error
+                }
+                swal("Error!", errorMsg, "error");
                 btn.prop('disabled', false).html(originalHtml);
             }
         });
     });
 
-    // Remove from Wishlist
+    // Remove from Wishlist (no confirmation, no success alert)
     $('.remove-wishlist-item').on('click', function(e) {
         e.preventDefault();
         
         const url = $(this).data('url');
         const row = $(this).closest('tr');
 
-        swal({
-            title: "Remove from wishlist?",
-            text: "This item will be removed from your wishlist.",
-            icon: "warning",
-            buttons: true,
-            dangerMode: true,
-        }).then((willDelete) => {
-            if (willDelete) {
-                $.ajax({
-                    url: url,
-                    method: 'POST',
-                    data: {
-                        _token: $('meta[name="csrf-token"]').attr('content')
-                    },
-                    success: function(response) {
-                        console.log('Remove response:', response);
-                        
-                        if (response.success) {
-                            row.fadeOut(300, function() {
-                                $(this).remove();
-                                checkEmptyWishlist();
-                            });
-                            swal("Removed!", response.success || "Item removed from wishlist.", "success");
-                        } else {
-                            swal("Error!", response.error || "Failed to remove item.", "error");
-                        }
-                    },
-                    error: function(xhr) {
-                        console.error('Remove error:', xhr.responseText);
-                        swal("Error!", "Request failed. Please try again.", "error");
-                    }
-                });
+        $.ajaxSetup({
+            headers: {
+                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+            }
+        });
+
+        $.ajax({
+            url: url,
+            method: 'POST',
+            dataType: 'json',
+            success: function(response) {
+                console.log('Remove response:', response);
+                
+                if (response.success) {
+                    // Just remove the row silently, no alert
+                    row.fadeOut(300, function() {
+                        $(this).remove();
+                        checkEmptyWishlist();
+                    });
+                } else {
+                    swal("Error!", response.error || "Failed to remove item.", "error");
+                }
+            },
+            error: function(xhr) {
+                console.error('Remove error:', xhr.responseText);
+                let errorMsg = 'Request failed. Please try again.';
+                try {
+                    const errResponse = JSON.parse(xhr.responseText);
+                    errorMsg = errResponse.error || errorMsg;
+                } catch (e) {
+                    // Ignore JSON parse error
+                }
+                swal("Error!", errorMsg, "error");
             }
         });
     });

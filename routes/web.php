@@ -123,6 +123,8 @@ Route::post('/subscribe', [FrontendController::class, 'subscribe'])->name('subsc
 
 // Cart & Wishlist
 Route::get('/cart', [FrontendController::class, 'cart'])->name('cart');
+Route::post('/wishlist/toggle/{slug}', [WishlistController::class, 'toggle'])->name('wishlist.toggle');
+Route::get('/wishlist/check', [WishlistController::class, 'check']);
 
 Route::middleware('auth')->group(function () {
     Route::get('/add-to-cart/{slug}', [CartController::class, 'addToCart'])->name('add-to-cart');

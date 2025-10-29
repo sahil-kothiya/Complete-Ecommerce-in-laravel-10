@@ -229,7 +229,7 @@
 
 									<div class="add-to-cart mt-4">
 										<button type="submit" class="btn" id="addToCartBtn" tabindex="36">Add to cart</button>
-										<a href="{{route('add-to-wishlist',$product_detail->slug)}}" class="btn min" tabindex="37"><i class="ti-heart"></i> Add to Wishlist</a>
+										<a href="{{route('add-to-wishlist',$product_detail->slug)}}" class="btn min" id="wishlistBtn" tabindex="37"><i class="ti-heart"></i> Add to Wishlist</a>
 									</div>
 								</form>
 
@@ -1054,7 +1054,22 @@ document.addEventListener('DOMContentLoaded', function() {
     const quantitySection = document.getElementById('quantitySection');
     const variantIdInput = document.getElementById('selectedVariantId');
     const addToCartForm = document.getElementById('addToCartForm');
-    const wishlistBtn = document.querySelector('.add-to-cart .btn.min');
+    const wishlistBtn = document.getElementById('wishlistBtn');
+
+    /* ===============================
+        UPDATE WISHLIST HREF WITH VARIANT ID
+    ============================== */
+    function updateWishlistHref() {
+        if (!wishlistBtn || !currentVariant) return;
+
+        let currentHref = wishlistBtn.getAttribute('href');
+        const separator = currentHref.includes('?') ? '&' : '?';
+        const newHref = currentHref.includes('variant_id=') 
+            ? currentHref.replace(/variant_id=\d+/, `variant_id=${currentVariant.id}`) 
+            : `${currentHref}${separator}variant_id=${currentVariant.id}`;
+
+        wishlistBtn.href = newHref;
+    }
 
     /* ===============================
         QUANTITY CONTROL FUNCTIONS
@@ -1430,6 +1445,9 @@ document.addEventListener('DOMContentLoaded', function() {
             handleNoVariantFound();
         }
 
+        // Update wishlist href after variant is set
+        updateWishlistHref();
+
         hideLoadingStates();
         isUpdating = false;
     }
@@ -1690,6 +1708,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (variantIdInput) {
             variantIdInput.value = '';
         }
+
+        // Reset wishlist href to base (no variant_id)
+        if (wishlistBtn) {
+            let currentHref = wishlistBtn.getAttribute('href');
+            const baseHref = currentHref.split('?')[0].split('&')[0]; // Remove query params
+            wishlistBtn.href = baseHref;
+        }
     }
 
     /* ===============================
@@ -1729,13 +1754,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 variantIdInput.value = '';
             }
 
-            // For wishlist, if clicked, update URL with variant_id if applicable (optional enhancement)
-            if (wishlistBtn && currentVariant) {
-                const currentHref = wishlistBtn.getAttribute('href');
-                if (currentHref && !currentHref.includes('variant_id=')) {
-                    wishlistBtn.href = `${currentHref}?variant_id=${currentVariant.id}`;
-                }
-            }
+            // Update wishlist href before submit (in case user clicks wishlist after)
+            updateWishlistHref();
         });
     }
 
@@ -1862,6 +1882,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (qtyInput) {
             qtyInput.setAttribute('data-max', baseStock);
+        }
+
+        // Ensure wishlist href has no variant_id for non-variants
+        if (wishlistBtn) {
+            let currentHref = wishlistBtn.getAttribute('href');
+            const baseHref = currentHref.split('?')[0].split('&')[0]; // Remove query params
+            wishlistBtn.href = baseHref;
         }
     }
 

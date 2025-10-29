@@ -275,16 +275,24 @@
                         </div>
                         <div id="type-selections" class="d-flex flex-wrap gap-3">
                             @if($product->has_variants)
-                            @foreach($product->getVariantTypesOptimized() as $type)
-                            <div class="variant-type-group">
-                                <label class="font-weight-bold">{{ $type->display_name }}</label>
-                                <select class="form-control type-select" data-type-id="{{ $type->id }}" multiple name="variant_options[{{ $type->id }}][]">
-                                    @foreach($type->options as $option)
-                                    <option value="{{ $option->id }}" {{ $product->variants->pluck('variantOptions')->flatten()->pluck('id')->contains($option->id) ? 'selected' : '' }}>{{ $option->display_value }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            @endforeach
+                                @foreach($product->variantTypes as $type)
+                                    <div class="variant-type-group">
+                                        <label class="font-weight-bold">{{ $type->display_name }}</label>
+
+                                        <select class="form-control type-select"
+                                                data-type-id="{{ $type->id }}"
+                                                multiple
+                                                name="variant_options[{{ $type->id }}][]">
+
+                                            @foreach($type->options as $option)
+                                                <option value="{{ $option->id }}"
+                                                        {{ $option->selected ? 'selected' : '' }}>
+                                                    {{ $option->display_value }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                @endforeach
                             @endif
                         </div>
                     </div>
@@ -484,7 +492,7 @@
         $('#lfm').filemanager('image');
         $('.lfm-variant').each(function() { $(this).filemanager('image'); });
 
-        // Initialize Select2 for existing variant type selects
+        // Initialize Select2
         $('.type-select').each(function() {
             const typeId = $(this).data('type-id');
             $(this).select2({
@@ -521,7 +529,6 @@
             }
         });
 
-        // Initialize variant state
         if ($('#has_variants').is(':checked')) {
             $('#has_variants').trigger('change');
         }
@@ -534,82 +541,412 @@
                     html += `
                         <div class="variant-type-group">
                             <label class="font-weight-bold">${type.display_name}</label>
-                            <select class="form-control type-select" data-type-id="${type.id}" multiple name="variant_options[${type.id}][]"></select>
+                            <select class="form-control type-select" data-type-id="${type.id}" multiple name="variant_options[${type.id}][]">
+                                <option value="">Select Options</option>`;
+                    type.options.forEach(opt => {
+                        html += `<option value="${opt.id}" ${opt.selected ? 'selected' : ''}>${opt.display_value}</option>`;
+                    });
+                    html += `</select>
                         </div>`;
                 });
                 $('#type-selections').html(html);
                 $('.type-select').each(function() {
-                    const typeId = $(this).data('type-id');
                     $(this).select2({
                         placeholder: `Select ${$(this).prev().text()} options`,
                         allowClear: true,
                         width: '100%',
                         dropdownParent: $('#variants-panel')
                     });
-                    $.get(`/admin/variant-options/${typeId}/api`, function(options) {
-                        let optHtml = '<option value="">Select Options</option>';
-                        options.forEach(opt => {
-                            optHtml += `<option value="${opt.id}">${opt.display_value}</option>`;
-                        });
-                        $(`select[data-type-id="${typeId}"]`).html(optHtml).trigger('change');
-                    }).fail(() => showNotification('Failed to load variant options.', 'error'));
                 });
             }).fail(() => showNotification('Failed to load variant types.', 'error'));
         });
 
-        // Generate variant preview
-        $('#generate-preview').click(function() {
-            const selections = {};
-            $('.type-select').each(function() {
-                const selected = $(this).val() || [];
-                if (selected.length) selections[$(this).data('type-id')] = selected;
+        // ============================================================
+        // FULLY DYNAMIC VARIANT GENERATION
+        // Works with ANY variant types from database
+        // Validates cross-contamination automatically
+        // ============================================================
+        $('#generate-preview').click(function () {
+            console.log('%c🔄 GENERATE PREVIEW CLICKED', 'color:#2196F3;font-weight:bold;font-size:14px');
+
+            // 1. Collect ALL variant type data dynamically
+            const variantTypes = [];
+            const allTypeOptions = new Map(); // typeId → all available options
+            const optionToTypes = new Map(); // optionText → [typeIds that have this option]
+            
+            $('.type-select').each(function () {
+                const $select = $(this);
+                const typeId = $select.data('type-id');
+                const typeName = $select.prev('label').text().trim();
+                const selectedIds = $select.val() || [];
+                
+                // Skip if nothing selected
+                if (selectedIds.length === 0) {
+                    console.log(`%c⊘ Skipping "${typeName}" (no options selected)`, 
+                            'color:#9E9E9E;font-style:italic');
+                    return;
+                }
+                
+                // Collect ALL available options for this type
+                const allOptions = [];
+                $select.find('option').each(function() {
+                    const optId = $(this).val();
+                    const optText = $(this).text().trim().toLowerCase();
+                    
+                    if (optId && optId !== 'Select Options' && optText) {
+                        allOptions.push({
+                            id: optId,
+                            text: $(this).text().trim(), // Keep original case
+                            textLower: optText,
+                            selected: selectedIds.includes(optId)
+                        });
+                        
+                        // Track which types have this option (for cross-validation)
+                        if (!optionToTypes.has(optText)) {
+                            optionToTypes.set(optText, []);
+                        }
+                        optionToTypes.get(optText).push({
+                            typeId: typeId,
+                            typeName: typeName
+                        });
+                    }
+                });
+                
+                allTypeOptions.set(typeId, allOptions);
+                
+                variantTypes.push({
+                    id: typeId,
+                    name: typeName,
+                    selectedIds: selectedIds,
+                    allOptions: allOptions
+                });
             });
-            if (!Object.keys(selections).length) {
-                showNotification('Please select at least one variant type and option.', 'error');
+
+            if (variantTypes.length === 0) {
+                showNotification('Please select at least one variant type with options.', 'error');
                 return;
             }
+
+            console.log(`%c📦 Active Variant Types: ${variantTypes.map(t => t.name).join(', ')}`, 
+                        'color:#9C27B0;font-weight:bold');
+
+            // 2. Build option ID to text mapping
+            const optionMap = new Map();
+            allTypeOptions.forEach((options, typeId) => {
+                options.forEach(opt => {
+                    optionMap.set(opt.id, opt.text);
+                });
+            });
+
+            // 3. CROSS-VALIDATION: Remove options that appear in multiple variant types
+            console.groupCollapsed('%c🔍 Cross-Validation Check', 'color:#FF9800;font-weight:bold');
+            
+            const validatedTypes = variantTypes.map(type => {
+                const validIds = [];
+                const invalidIds = [];
+                
+                type.selectedIds.forEach(optId => {
+                    const optText = optionMap.get(optId).toLowerCase();
+                    const appearingInTypes = optionToTypes.get(optText) || [];
+                    
+                    // Check if this option appears in OTHER variant types
+                    const otherTypes = appearingInTypes.filter(t => t.typeId !== type.id);
+                    
+                    if (otherTypes.length > 0) {
+                        invalidIds.push({
+                            id: optId,
+                            text: optionMap.get(optId),
+                            conflictsWith: otherTypes.map(t => t.typeName).join(', ')
+                        });
+                        
+                        console.warn(
+                            `⚠️ "${type.name}" option "${optionMap.get(optId)}" ` +
+                            `also exists in: ${otherTypes.map(t => t.typeName).join(', ')}`
+                        );
+                    } else {
+                        validIds.push(optId);
+                    }
+                });
+                
+                return {
+                    ...type,
+                    validIds: validIds,
+                    invalidIds: invalidIds
+                };
+            });
+            
+            console.groupEnd();
+
+            // 4. Show validation summary
+            const totalInvalid = validatedTypes.reduce((sum, t) => sum + t.invalidIds.length, 0);
+            if (totalInvalid > 0) {
+                console.log(`%c🚫 Filtered ${totalInvalid} conflicting option(s)`, 
+                        'color:#F44336;font-weight:bold');
+                validatedTypes.forEach(type => {
+                    if (type.invalidIds.length > 0) {
+                        console.log(
+                            `   ${type.name}: ${type.invalidIds.map(i => i.text).join(', ')} ` +
+                            `(conflicts with other types)`
+                        );
+                    }
+                });
+            }
+
+            // 5. Build arrays for cartesian product
+            const combinationArrays = [];
+            const typeSequence = [];
+            
+            validatedTypes.forEach(type => {
+                if (type.validIds.length > 0) {
+                    combinationArrays.push(type.validIds);
+                    typeSequence.push(type.name);
+                }
+            });
+
+            if (combinationArrays.length === 0) {
+                showNotification('No valid variant options after filtering conflicts.', 'error');
+                return;
+            }
+
+            console.log(`%c🔗 Generation Sequence: ${typeSequence.join(' → ')}`, 
+                        'color:#2196F3;font-weight:bold;font-size:13px');
+
+            // 6. Generate all combinations
+            const allCombinations = cartesianProduct(combinationArrays);
+            console.log(`%c🔢 Generated ${allCombinations.length} combinations`, 
+                        'color:#4CAF50;font-weight:bold');
+
+            // 7. Get existing variant names (saved + new)
+            const existingVariantNames = new Set();
+            
+            $('#variant-preview tbody tr[data-variant-id]').each(function () {
+                const name = $(this).find('td:first').text().trim();
+                if (name) existingVariantNames.add(name);
+            });
+            
+            $('#variant-preview tbody tr[data-new-variant]').each(function () {
+                const name = $(this).attr('data-new-variant');
+                if (name) existingVariantNames.add(name);
+            });
+
+            console.log(`%c📋 Existing variants: ${existingVariantNames.size}`, 
+                        'color:#FF9800;font-weight:bold');
+
+            // 8. Process combinations
+            const newCombinations = [];
+            const ignoredCombinations = [];
+
+            allCombinations.forEach(combo => {
+                // Map option IDs to display text in EXACT selection order
+                const displayValues = combo.map(optId => optionMap.get(optId));
+                
+                const variantName = displayValues.join(', ');
+                const slugName = displayValues
+                    .map(v => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
+                    .join('-');
+
+                if (existingVariantNames.has(variantName)) {
+                    ignoredCombinations.push({
+                        name: variantName,
+                        reason: 'Already exists',
+                        combo: displayValues
+                    });
+                } else {
+                    newCombinations.push({
+                        combo,
+                        name: variantName,
+                        slugName,
+                        displayValues
+                    });
+                    existingVariantNames.add(variantName);
+                }
+            });
+
+            // 9. Log ignored variants
+            if (ignoredCombinations.length > 0) {
+                console.groupCollapsed(`%c🚫 IGNORED (${ignoredCombinations.length})`, 
+                                    'color:#F44336;font-weight:bold');
+                ignoredCombinations.forEach((item, i) => {
+                    console.log(`${i + 1}. "${item.name}" → ${item.reason}`);
+                });
+                console.groupEnd();
+            }
+
+            if (newCombinations.length === 0) {
+                showNotification('All combinations already exist or were filtered.', 'info');
+                return;
+            }
+
+            // 10. Get product slug
+            const productSlug = $('#slug').val().trim() || 'product';
+
+            // 11. Build selections object for server
+            const selectionsForServer = {};
+            validatedTypes.forEach(type => {
+                if (type.validIds.length > 0) {
+                    selectionsForServer[type.id] = type.validIds;
+                }
+            });
+
+            // 12. Send to server
             $.post('{{ route("product.preview-variants") }}', {
                 _token: '{{ csrf_token() }}',
-                selections: selections
-            }, function(response) {
-                let html = `
-                    <table class="table table-bordered table-hover">
-                        <thead class="thead-light">
-                            <tr>
-                                <th>Variant Name</th>
-                                <th>SKU <span class="text-danger">*</span></th>
-                                <th>Price (NRS) <span class="text-danger">*</span></th>
-                                <th>Discount (%)</th>
-                                <th>Stock <span class="text-danger">*</span></th>
-                                <th>Images <span class="text-danger">*</span></th>
-                            </tr>
-                        </thead>
-                        <tbody>`;
-                response.variants.forEach((variant, idx) => {
-                    html += `
-                        <tr>
-                            <td>${variant.name}</td>
-                            <td><input type="text" name="new_variants[${idx}][sku]" value="${variant.sku || ''}" class="form-control" required></td>
-                            <td><input type="number" name="new_variants[${idx}][price]" step="0.01" min="0" value="${variant.price || ''}" class="form-control" required></td>
-                            <td><input type="number" name="new_variants[${idx}][discount]" min="0" max="100" value="${variant.discount || ''}" class="form-control"></td>
-                            <td><input type="number" name="new_variants[${idx}][stock]" min="0" value="${variant.stock || ''}" class="form-control" required></td>
+                selections: selectionsForServer,
+                product_id: '{{ $product->id }}'
+            })
+            .done(function (response) {
+                if (!response.variants || !Array.isArray(response.variants)) {
+                    showNotification('Invalid server response.', 'error');
+                    return;
+                }
+
+                const serverVariantMap = {};
+                response.variants.forEach(v => { 
+                    if (v.name) serverVariantMap[v.name] = v; 
+                });
+
+                let newVariantIndex = $('#variant-preview tbody tr').length;
+
+                // Create table if needed
+                if ($('#variant-preview table').length === 0) {
+                    $('#variant-preview').html(`
+                        <table class="table table-bordered table-hover">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th>Variant Name</th>
+                                    <th>SKU <span class="text-danger">*</span></th>
+                                    <th>Price (NRS) <span class="text-danger">*</span></th>
+                                    <th>Discount (%)</th>
+                                    <th>Stock <span class="text-danger">*</span></th>
+                                    <th>Images <span class="text-danger">*</span></th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    `);
+                }
+
+                // Add new rows
+                newCombinations.forEach(item => {
+                    const serverData = serverVariantMap[item.name] || {};
+                    const autoSku = serverData.sku || `${productSlug}-${item.slugName}`.toUpperCase();
+
+                    const rowHtml = `
+                        <tr data-new-variant="${item.name}">
+                            <td><strong>${item.name}</strong></td>
+                            <td>
+                                <input type="text" name="new_variants[${newVariantIndex}][sku]" 
+                                    value="${autoSku}" class="form-control" required>
+                            </td>
+                            <td>
+                                <input type="number" name="new_variants[${newVariantIndex}][price]" 
+                                    step="0.01" min="0" value="${serverData.price || ''}" 
+                                    class="form-control" placeholder="0.00" required>
+                            </td>
+                            <td>
+                                <input type="number" name="new_variants[${newVariantIndex}][discount]" 
+                                    min="0" max="100" value="${serverData.discount || ''}" 
+                                    class="form-control" placeholder="0">
+                            </td>
+                            <td>
+                                <input type="number" name="new_variants[${newVariantIndex}][stock]" 
+                                    min="0" value="${serverData.stock || ''}" 
+                                    class="form-control" placeholder="0" required>
+                            </td>
                             <td>
                                 <div class="input-group">
-                                    <input type="text" name="new_variants[${idx}][images]" id="variant-images-new-${idx}" class="form-control" readonly required>
+                                    <input type="text" name="new_variants[${newVariantIndex}][images]" 
+                                        id="variant-images-new-${newVariantIndex}" 
+                                        class="form-control" readonly required>
                                     <div class="input-group-append">
-                                        <a class="btn btn-primary lfm-variant" data-input="variant-images-new-${idx}" data-preview="variant-holder-new-${idx}"><i class="fa fa-picture-o"></i> Choose</a>
+                                        <a class="btn btn-primary lfm-variant" 
+                                        data-input="variant-images-new-${newVariantIndex}" 
+                                        data-preview="variant-holder-new-${newVariantIndex}">
+                                            <i class="fa fa-picture-o"></i> Choose
+                                        </a>
                                     </div>
                                 </div>
-                                <div id="variant-holder-new-${idx}" class="mt-2 d-flex flex-wrap gap-2"></div>
+                                <div id="variant-holder-new-${newVariantIndex}" class="mt-2 d-flex flex-wrap gap-2"></div>
+                            </td>
+                            <td>
+                                <button type="button" class="btn btn-danger btn-sm remove-new-variant-btn">
+                                    <i class="fa fa-trash"></i>
+                                </button>
                             </td>
                         </tr>`;
+                    
+                    $('#variant-preview tbody').append(rowHtml);
+                    newVariantIndex++;
                 });
-                html += `</tbody></table>`;
-                $('#variant-preview').append(html);
+
                 $('.lfm-variant').filemanager('image');
-            }).fail(() => showNotification('Failed to generate variants.', 'error'));
+
+                console.log(`%c✅ SUCCESS: ${newCombinations.length} variants added!`, 
+                        'color:#4CAF50;font-weight:bold;font-size:14px');
+                
+                const summary = [
+                    `${newCombinations.length} variant(s) created`,
+                    totalInvalid > 0 ? `${totalInvalid} conflict(s) filtered` : null
+                ].filter(Boolean).join(', ');
+                
+                showNotification(summary, 'success');
+            })
+            .fail(function (xhr) {
+                console.error('❌ AJAX Error:', xhr.responseJSON || xhr);
+                showNotification(
+                    xhr.responseJSON?.message || 'Failed to generate variants.', 
+                    'error'
+                );
+            });
         });
 
+        // Cartesian Product Helper
+        function cartesianProduct(arrays) {
+            if (arrays.length === 0) return [[]];
+            
+            return arrays.reduce((acc, curr) => {
+                const result = [];
+                acc.forEach(a => {
+                    curr.forEach(c => {
+                        result.push([...a, c]);
+                    });
+                });
+                return result;
+            }, [[]]);
+        }
+
+        console.log('✅ Fully dynamic variant generation loaded (works with ANY variant types)');
+
+        // Remove new variant
+        $(document).on('click', '.remove-new-variant-btn', function() {
+            const $row = $(this).closest('tr');
+            const name = $row.find('td:first').text().trim();
+            if (confirm(`Remove variant "${name}"?`)) {
+                $row.fadeOut(300, () => $row.remove());
+                showNotification('Variant removed.', 'info');
+            }
+        });
+
+        // ============================================================
+        // CARTESIAN PRODUCT HELPER (if not already defined)
+        // ============================================================
+        if (typeof cartesianProduct === 'undefined') {
+            function cartesianProduct(arrays) {
+                if (arrays.length === 0) return [[]];
+                
+                return arrays.reduce((acc, curr) => {
+                    const result = [];
+                    acc.forEach(a => {
+                        curr.forEach(c => {
+                            result.push([...a, c]);
+                        });
+                    });
+                    return result;
+                }, [[]]);
+            }
+            console.log('cartesianProduct function defined');
+        }
         // Delete variant
         $(document).on('click', '.delete-variant-btn', function() {
             const variantId = $(this).data('variant-id');
@@ -654,7 +991,7 @@
 
             $container.addClass('deleting');
             $.ajax({
-                url: `/admin/product/variant/${variantId}/image/${imageId}/delete`,
+                url: `/admin/product/product/variant/${variantId}/image/${imageId}/delete`,
                 type: 'DELETE',
                 headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
                 success: function(response) {
