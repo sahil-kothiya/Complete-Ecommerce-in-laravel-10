@@ -340,7 +340,7 @@ class ProductController extends Controller
             ]);
 
             foreach ($combinations[$index]['values'] ?? [] as $typeId => $optionId) {
-                $variant->variantCombinations()->create(['variant_option_id' => $optionId]);
+                $variant->optionAssignments()->create(['variant_option_id' => $optionId]);
             }
 
             foreach ($webpPaths as $imgIndex => $path) {
@@ -740,7 +740,7 @@ class ProductController extends Controller
 
                 if (isset($combinations[$index]['values'])) {
                     foreach ($combinations[$index]['values'] as $typeId => $optionId) {
-                        $variant->variantCombinations()->create(['variant_option_id' => $optionId]);
+                        $variant->optionAssignments()->create(['variant_option_id' => $optionId]);
                     }
                 }
 
@@ -919,7 +919,7 @@ class ProductController extends Controller
 
         try {
             // Generate all combinations
-            $combinations = $this->generateVariantCombinations($selections);
+            $combinations = $this->generateoptionAssignments($selections);
 
             Log::info('Generated combinations', [
                 'count' => count($combinations),
@@ -982,7 +982,7 @@ class ProductController extends Controller
         }
     }
 
-    protected function generateVariantCombinations($selections)
+    protected function generateoptionAssignments($selections)
     {
         $optionsByType = [];
 

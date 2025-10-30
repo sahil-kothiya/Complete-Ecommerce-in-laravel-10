@@ -194,8 +194,7 @@
                                         class="image-preview"
                                         alt="{{ $image->alt_text ?? 'Product Image' }}"
                                         data-is-primary="{{ $image->is_primary ? 'true' : 'false' }}"
-                                        data-fallback-text="{{ $image->alt_text ?? $product->title . ' - Product Image' }}"
-                                        onerror="handleImageError(this)">
+                                        data-fallback-text="{{ $image->alt_text ?? $product->title . ' - Product Image' }}">
                                     <button type="button" class="btn btn-danger btn-sm delete-image-btn"
                                         data-image-id="{{ $image->id }}"
                                         data-product-id="{{ $product->id }}"
@@ -234,7 +233,7 @@
                                     <img src="{{ Storage::url($image->image_path) }}"
                                         class="alt-text-preview mr-3"
                                         alt="{{ $image->alt_text ?? 'Product Image Preview' }}"
-                                        onerror="handleAltTextImageError(this, '{{ $image->alt_text ?? $product->title . ' - Product Image' }}')">
+                                        >
                                     <div class="alt-text-fallback d-none"><i class="fa fa-image"></i><span>Image not available</span></div>
                                     <div class="flex-fill">
                                         <label class="font-weight-bold">Alt Text for Image {{ $index + 1 }} {{ $image->is_primary ? '<span class="badge badge-success badge-sm ml-1">Primary</span>' : '' }}</label>
@@ -340,8 +339,7 @@
                                                         class="image-preview"
                                                         alt="{{ $image->alt_text ?? 'Variant Image' }}"
                                                         data-is-primary="{{ $image->is_primary ? 'true' : 'false' }}"
-                                                        data-fallback-text="{{ $image->alt_text ?? $variant->display_name . ' - Variant Image' }}"
-                                                        onerror="handleImageError(this)">
+                                                        data-fallback-text="{{ $image->alt_text ?? $variant->display_name . ' - Variant Image' }}">
                                                     <button type="button" class="btn btn-danger btn-sm delete-variant-image-btn"
                                                         data-image-id="{{ $image->id }}"
                                                         data-variant-id="{{ $variant->id }}"
@@ -468,11 +466,7 @@
 <script src="/vendor/laravel-filemanager/js/stand-alone-button.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
-    $.ajaxSetup({
-        headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') }
-    });
-
-    $(document).ready(function() {
+    $(document).ready(function() {       
         // Initialize Summernote
         $('.summernote').summernote({
             height: 200,
@@ -534,32 +528,86 @@
         }
 
         // Load variant types
-        $('#load-types').click(function() {
-            $.get('{{ route("variant-type.api") }}', function(types) {
-                let html = '';
-                types.forEach(type => {
-                    html += `
-                        <div class="variant-type-group">
-                            <label class="font-weight-bold">${type.display_name}</label>
-                            <select class="form-control type-select" data-type-id="${type.id}" multiple name="variant_options[${type.id}][]">
-                                <option value="">Select Options</option>`;
-                    type.options.forEach(opt => {
-                        html += `<option value="${opt.id}" ${opt.selected ? 'selected' : ''}>${opt.display_value}</option>`;
-                    });
-                    html += `</select>
-                        </div>`;
+$('#load-types').click(function() {
+    const $btn = $(this).prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Loading...');
+
+    $.get('{{ route("variant-type.api") }}')
+        .done(function(response) {
+            console.log('Variant types API response:', response);
+
+            // === SAFETY CHECKS ===
+            if (!response || typeof response !== 'object') {
+                showNotification('Invalid response from server.', 'error');
+                return;
+            }
+
+            let types = [];
+            if (Array.isArray(response)) {
+                types = response;
+            } else if (response.data && Array.isArray(response.data)) {
+                types = response.data;
+            } else if (response.types && Array.isArray(response.types)) {
+                types = response.types;
+            } else {
+                showNotification('No variant types found in response.', 'error');
+                console.warn('Unexpected response structure:', response);
+                return;
+            }
+
+            if (types.length === 0) {
+                showNotification('No variant types available.', 'info');
+                $('#type-selections').html('<p class="text-muted">No variant types defined yet.</p>');
+                return;
+            }
+
+            // === BUILD HTML ===
+            let html = '';
+            types.forEach(type => {
+                if (!type.id || !type.display_name) {
+                    console.warn('Skipping invalid type:', type);
+                    return;
+                }
+
+                html += `
+                    <div class="variant-type-group">
+                        <label class="font-weight-bold">${type.display_name}</label>
+                        <select class="form-control type-select" data-type-id="${type.id}" multiple name="variant_options[${type.id}][]">
+                            <option value="">Select Options</option>`;
+
+                (type.options || []).forEach(opt => {
+                    if (opt.id && opt.display_value) {
+                        const selected = opt.selected ? 'selected' : '';
+                        html += `<option value="${opt.id}" ${selected}>${opt.display_value}</option>`;
+                    }
                 });
-                $('#type-selections').html(html);
-                $('.type-select').each(function() {
-                    $(this).select2({
-                        placeholder: `Select ${$(this).prev().text()} options`,
-                        allowClear: true,
-                        width: '100%',
-                        dropdownParent: $('#variants-panel')
-                    });
+
+                html += `</select>
+                    </div>`;
+            });
+
+            $('#type-selections').html(html);
+
+            // === INIT SELECT2 ===
+            $('.type-select').each(function() {
+                $(this).select2({
+                    placeholder: `Select ${$(this).prev().text()} options`,
+                    allowClear: true,
+                    width: '100%',
+                    dropdownParent: $('#variants-panel')
                 });
-            }).fail(() => showNotification('Failed to load variant types.', 'error'));
+            });
+
+            showNotification(`Loaded ${types.length} variant type(s).`, 'success');
+        })
+        .fail(function(xhr) {
+            console.error('Failed to load variant types:', xhr.responseText);
+            const msg = xhr.responseJSON?.message || 'Failed to load variant types.';
+            showNotification(msg, 'error');
+        })
+        .always(function() {
+            $btn.prop('disabled', false).html('Load Variant Types');
         });
+});
 
         // ============================================================
         // FULLY DYNAMIC VARIANT GENERATION
@@ -832,49 +880,48 @@
                     const serverData = serverVariantMap[item.name] || {};
                     const autoSku = serverData.sku || `${productSlug}-${item.slugName}`.toUpperCase();
 
-                    const rowHtml = `
-                        <tr data-new-variant="${item.name}">
-                            <td><strong>${item.name}</strong></td>
-                            <td>
-                                <input type="text" name="new_variants[${newVariantIndex}][sku]" 
-                                    value="${autoSku}" class="form-control" required>
-                            </td>
-                            <td>
-                                <input type="number" name="new_variants[${newVariantIndex}][price]" 
-                                    step="0.01" min="0" value="${serverData.price || ''}" 
-                                    class="form-control" placeholder="0.00" required>
-                            </td>
-                            <td>
-                                <input type="number" name="new_variants[${newVariantIndex}][discount]" 
-                                    min="0" max="100" value="${serverData.discount || ''}" 
-                                    class="form-control" placeholder="0">
-                            </td>
-                            <td>
-                                <input type="number" name="new_variants[${newVariantIndex}][stock]" 
-                                    min="0" value="${serverData.stock || ''}" 
-                                    class="form-control" placeholder="0" required>
-                            </td>
-                            <td>
-                                <div class="input-group">
-                                    <input type="text" name="new_variants[${newVariantIndex}][images]" 
-                                        id="variant-images-new-${newVariantIndex}" 
-                                        class="form-control" readonly required>
-                                    <div class="input-group-append">
-                                        <a class="btn btn-primary lfm-variant" 
-                                        data-input="variant-images-new-${newVariantIndex}" 
-                                        data-preview="variant-holder-new-${newVariantIndex}">
-                                            <i class="fa fa-picture-o"></i> Choose
-                                        </a>
-                                    </div>
-                                </div>
-                                <div id="variant-holder-new-${newVariantIndex}" class="mt-2 d-flex flex-wrap gap-2"></div>
-                            </td>
-                            <td>
-                                <button type="button" class="btn btn-danger btn-sm remove-new-variant-btn">
-                                    <i class="fa fa-trash"></i>
-                                </button>
-                            </td>
-                        </tr>`;
+                    // Small helper to escape values inserted into HTML fragments
+                    function escapeHtml(str) {
+                        return String(str === undefined || str === null ? '' : str)
+                            .replace(/&/g, '&amp;')
+                            .replace(/</g, '&lt;')
+                            .replace(/>/g, '&gt;')
+                            .replace(/"/g, '&quot;')
+                            .replace(/'/g, '&#39;');
+                    }
+    
+                    var rowHtml = '';
+                    rowHtml += '<tr data-new-variant="' + escapeHtml(item.name) + '">';
+                    rowHtml += '    <td><strong>' + escapeHtml(item.name) + '</strong></td>';
+                    rowHtml += '    <td>';
+                    rowHtml += '        <input type="text" name="new_variants[' + newVariantIndex + '][sku]" value="' + escapeHtml(autoSku) + '" class="form-control" required>';
+                    rowHtml += '    </td>';
+                    rowHtml += '    <td>';
+                    rowHtml += '        <input type="number" name="new_variants[' + newVariantIndex + '][price]" step="0.01" min="0" value="' + escapeHtml(serverData.price || '') + '" class="form-control" placeholder="0.00" required>';
+                    rowHtml += '    </td>';
+                    rowHtml += '    <td>';
+                    rowHtml += '        <input type="number" name="new_variants[' + newVariantIndex + '][discount]" min="0" max="100" value="' + escapeHtml(serverData.discount || '') + '" class="form-control" placeholder="0">';
+                    rowHtml += '    </td>';
+                    rowHtml += '    <td>';
+                    rowHtml += '        <input type="number" name="new_variants[' + newVariantIndex + '][stock]" min="0" value="' + escapeHtml(serverData.stock || '') + '" class="form-control" placeholder="0" required>';
+                    rowHtml += '    </td>';
+                    rowHtml += '    <td>';
+                    rowHtml += '        <div class="input-group">';
+                    rowHtml += '            <input type="text" name="new_variants[' + newVariantIndex + '][images]" id="variant-images-new-' + newVariantIndex + '" class="form-control" readonly required>';
+                    rowHtml += '            <div class="input-group-append">';
+                    rowHtml += '                <a class="btn btn-primary lfm-variant" data-input="variant-images-new-' + newVariantIndex + '" data-preview="variant-holder-new-' + newVariantIndex + '">';
+                    rowHtml += '                    <i class="fa fa-picture-o"></i> Choose';
+                    rowHtml += '                </a>';
+                    rowHtml += '            </div>';
+                    rowHtml += '        </div>';
+                    rowHtml += '        <div id="variant-holder-new-' + newVariantIndex + '" class="mt-2 d-flex flex-wrap gap-2"></div>';
+                    rowHtml += '    </td>';
+                    rowHtml += '    <td>';
+                    rowHtml += '        <button type="button" class="btn btn-danger btn-sm remove-new-variant-btn">';
+                    rowHtml += '            <i class="fa fa-trash"></i>';
+                    rowHtml += '        </button>';
+                    rowHtml += '    </td>';
+                    rowHtml += '</tr>';
                     
                     $('#variant-preview tbody').append(rowHtml);
                     newVariantIndex++;
@@ -991,7 +1038,7 @@
 
             $container.addClass('deleting');
             $.ajax({
-                url: `/admin/product/product/variant/${variantId}/image/${imageId}/delete`,
+                url: `/admin/product/variant/${variantId}/image/${imageId}/delete`,
                 type: 'DELETE',
                 headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
                 success: function(response) {
@@ -1430,19 +1477,6 @@
             const index = $(this).data('index') || $(this).data('existing-id');
             updateCharCount(index);
         });
-
-        // Handle image error
-        window.handleImageError = function(element) {
-            const fallback = $('<div class="image-not-found"><i class="fa fa-image"></i><span>Image not available</span></div>');
-            $(element).after(fallback);
-            $(element).remove();
-        };
-
-        // Handle alt text image error
-        window.handleAltTextImageError = function(element, fallbackText) {
-            $(element).hide();
-            $(element).next('.alt-text-fallback').show().find('span').text(fallbackText);
-        };
     });
 </script>
 @endpush

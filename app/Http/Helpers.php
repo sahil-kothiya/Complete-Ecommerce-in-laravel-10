@@ -10,10 +10,12 @@ use App\Models\Wishlist;
 use App\Models\Shipping;
 use App\Models\Cart;
 use App\Models\Product;
+use App\Models\ProductImage;
 use App\Models\ProductVariant;
 use App\Services\DiscountService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 // use Auth;
@@ -387,6 +389,28 @@ class Helper
             return Wishlist::where('user_id', $user_id)->where('cart_id', null)->sum('amount');
         } else {
             return 0;
+        }
+    }
+
+    private function cleanupOldVariants(Product $product)
+    {
+        if ($product->getOriginal('has_variants')) {
+            foreach ($product->variants as $variant) {
+                foreach ($variant->images as $img) {
+                    Storage::delete('public/' . $img->image_path);
+                }
+                $variant->delete();
+            }
+        }
+    }
+
+    private function cleanupOldProductImages(Product $product)
+    {
+        if (!$product->getOriginal('has_variants')) {
+            foreach ($product->images as $img) {
+                Storage::delete('public/' . $img->image_path);
+            }
+            ProductImage::where('product_id', $product->id)->delete();
         }
     }
 
