@@ -671,7 +671,7 @@
 
 	.price-container .price .text-success {
 		background: #388e3c;
-		color: white;
+		color: white !important;
 		padding: 2px 8px;
 		border-radius: 2px;
 		font-size: 12px;

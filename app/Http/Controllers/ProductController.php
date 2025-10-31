@@ -339,8 +339,11 @@ class ProductController extends Controller
                 'status' => 'active',
             ]);
 
+            // 🔥 FIX: Use correct column name from migration
             foreach ($combinations[$index]['values'] ?? [] as $typeId => $optionId) {
-                $variant->optionAssignments()->create(['variant_option_id' => $optionId]);
+                $variant->optionAssignments()->create([
+                    'product_variant_option_id' => $optionId  // ✅ Changed from 'variant_option_id'
+                ]);
             }
 
             foreach ($webpPaths as $imgIndex => $path) {
@@ -738,9 +741,12 @@ class ProductController extends Controller
                     'status' => 'active',
                 ]);
 
+                // 🔥 FIX: Use correct column name
                 if (isset($combinations[$index]['values'])) {
                     foreach ($combinations[$index]['values'] as $typeId => $optionId) {
-                        $variant->optionAssignments()->create(['variant_option_id' => $optionId]);
+                        $variant->optionAssignments()->create([
+                            'product_variant_option_id' => $optionId  // ✅ Changed from 'variant_option_id'
+                        ]);
                     }
                 }
 

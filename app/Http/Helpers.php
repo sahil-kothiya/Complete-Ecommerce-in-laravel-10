@@ -382,14 +382,22 @@ class Helper
         return collect();
     }
 
-    public static function totalWishlistPrice($user_id = '')
+    // public static function totalWishlistPrice($user_id = '')
+    // {
+    //     if (Auth::check()) {
+    //         if ($user_id == "") $user_id = auth()->user()->id;
+    //         return Wishlist::where('user_id', $user_id)->where('cart_id', null)->sum('amount');
+    //     } else {
+    //         return 0;
+    //     }
+    // }
+
+    public static function totalWishlistPrice()
     {
-        if (Auth::check()) {
-            if ($user_id == "") $user_id = auth()->user()->id;
-            return Wishlist::where('user_id', $user_id)->where('cart_id', null)->sum('amount');
-        } else {
-            return 0;
-        }
+        return Helper::getAllProductFromWishlist()->sum(function ($item) {
+            return $item->variant ? $item->variant->discounted_price : 
+                ($item->price ?? $item->product->base_price * (1 - ($item->product->base_discount ?? 0)/100));
+        });
     }
 
     private function cleanupOldVariants(Product $product)

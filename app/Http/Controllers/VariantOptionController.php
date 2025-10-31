@@ -20,6 +20,7 @@ class VariantOptionController extends Controller
     }
 
     public function store(Request $request) {
+        // dd($request->all());
         $validated = $request->validate([
             'variant_type_id' => 'required|exists:product_variant_types,id',
             'value' => 'required|string|unique:product_variant_options,value',

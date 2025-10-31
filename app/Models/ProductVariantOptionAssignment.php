@@ -11,7 +11,7 @@ class ProductVariantOptionAssignment extends Model
 
     protected $table = 'product_variant_option_assignments';
 
-    protected $fillable = ['product_variant_id', 'variant_option_id'];
+    protected $fillable = ['product_variant_id', 'product_variant_option_id'];
 
     public $timestamps = false;
 
@@ -22,6 +22,6 @@ class ProductVariantOptionAssignment extends Model
 
     public function option()
     {
-        return $this->belongsTo(ProductVariantOption::class, 'variant_option_id');
+        return $this->belongsTo(ProductVariantOption::class, 'product_variant_option_id');
     }
 }

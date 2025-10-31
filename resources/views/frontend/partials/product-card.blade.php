@@ -2,75 +2,130 @@
 <div class="product-card-container mb-4 isotope-item category-{{ $product->cat_id }} px-3"
     data-product-id="{{ $product->id }}"
     data-product-brand="{{ $product->brand->slug ?? '' }}"
-    data-product-price="{{ $product->price }}"
-    data-product-discount="{{ $product->discount }}"
+    data-product-price="{{ $product->discounted_price ?? $product->base_price }}"
+    data-product-discount="{{ $product->max_discount ?? 0 }}"
     data-product-rating="{{ $product->rating_average ?? 0 }}">
     <div class="card h-100 border-0 d-flex flex-column product-card shadow-sm rounded">
         <div class="position-relative bg-light" style="aspect-ratio: 1 / 1;">
             <div class="slider-wrapper w-100 h-100" data-slider>
                 <div class="slider-track d-flex h-100">
                     @php
-                        // Determine which images to show:
-                        // - If product has variants, prefer the first variant's images (or primaryImage)
-                        // - Otherwise use product images
+                        // -----------------------------------------------------------------
+                        // 1. Build a collection of images that will be rendered in the slider
+                        // -----------------------------------------------------------------
                         $images = collect();
-                        if (!empty($product->has_variants) && $product->has_variants && isset($product->variants) && $product->variants->count() > 0) {
-                            $firstVariant = $product->variants->first();
-                            // Prefer a loaded images collection on the variant, otherwise try primaryImage accessor
-                            if (isset($firstVariant->images) && is_countable($firstVariant->images) && count($firstVariant->images) > 0) {
-                                $images = collect($firstVariant->images);
-                            } elseif (isset($firstVariant->primaryImage) && $firstVariant->primaryImage) {
-                                $images = collect([$firstVariant->primaryImage]);
+
+                        // ---------- WITH VARIANTS ----------
+                        if ($product->has_variants && $product->variants && $product->variants->count()) {
+                            // Get the first active in-stock variant, or just first variant
+                            $activeInStockVariants = $product->variants->where('status', 'active')->where('stock', '>', 0);
+                            $firstVariant = $activeInStockVariants->first() ?? $product->variants->first();
+
+                            if ($firstVariant) {
+                                // a) Prefer the eager-loaded `images` relationship
+                                if ($firstVariant->relationLoaded('images') && $firstVariant->images && $firstVariant->images->count()) {
+                                    $images = $firstVariant->images;
+                                }
+                                // b) Fallback to the accessor `primaryImage` (single image)
+                                elseif (isset($firstVariant->primaryImage) && $firstVariant->primaryImage) {
+                                    $images = collect([$firstVariant->primaryImage]);
+                                }
                             }
                         }
 
+                        // ---------- WITHOUT VARIANTS ----------
                         if ($images->isEmpty()) {
-                            if (isset($product->images) && is_countable($product->images) && count($product->images) > 0) {
-                                $images = collect($product->images);
+                            // a) Prefer eager-loaded `images` relationship
+                            if ($product->relationLoaded('images') && $product->images && $product->images->count()) {
+                                $images = $product->images;
                             }
+                            // b) Fallback to accessor `primaryImage`
+                            elseif (isset($product->primaryImage) && $product->primaryImage) {
+                                $images = collect([$product->primaryImage]);
+                            }
+                            // c) Check for primary_image array (set by controller)
+                            elseif (isset($product->primary_image) && $product->primary_image) {
+                                $images = collect([(object)[
+                                    'image_path' => $product->primary_image['image_path'],
+                                    'thumbnail_path' => $product->primary_image['thumbnail_path'] ?? $product->primary_image['image_path'],
+                                    'alt_text' => $product->primary_image['alt_text'] ?? $product->title,
+                                ]]);
+                            }
+                        }
+
+                        // If still empty → show a placeholder
+                        if ($images->isEmpty()) {
+                            $images = collect([(object)[
+                                'image_path' => 'images/no-image.png',
+                                'alt_text' => $product->title,
+                            ]]);
                         }
                     @endphp
 
                     @foreach($images as $index => $img)
-                    @php
-                    $pathInfo = pathinfo($img->image_path);
-                    $directory = $pathInfo['dirname'];
-                    $filename = $pathInfo['filename'];
-                    $extension = $pathInfo['extension'];
-                    $srcset = [];
-                    $sizes = [160, 235, 320, 480];
-                    foreach ($sizes as $size) {
-                    $responsivePath = "{$directory}/{$filename}_{$size}x{$size}.webp";
-                    if (file_exists(public_path($responsivePath))) {
-                    $srcset[] = asset($responsivePath) . " {$size}w";
-                    }
-                    }
-                    $srcset[] = asset('storage/' .$img->image_path) . " 370w";
-                    $srcsetString = implode(', ', $srcset);
-                    @endphp
-                    <img
-                        src="{{ asset('storage/' . $img->image_path) }}"
-                        srcset="{{ $srcsetString }}"
-                        sizes="(max-width: 576px) 280px, (max-width: 768px) 235px, (max-width: 992px) 200px, (max-width: 1200px) 180px, 160px"
-                        class="slider-image"
-                        alt="{{ $product->title }}"
-                        loading="lazy"
-                        width="235"
-                        height="235"
-                        decoding="async"
-                        fetchpriority="low"
-                        onerror="this.src='{{ asset('images/no-image.png') }}';">
+                        @php
+                            // Clean and normalize the image path
+                            $imagePath = $img->image_path;
+                            
+                            // Remove 'storage/' prefix if it exists (we'll add it back)
+                            $imagePath = preg_replace('#^storage/#', '', $imagePath);
+                            
+                            // Get path components
+                            $pathInfo = pathinfo($imagePath);
+                            $directory = $pathInfo['dirname'];
+                            $filename = $pathInfo['filename'];
+                            $extension = $pathInfo['extension'] ?? 'webp';
+                            
+                            // Build srcset for responsive images
+                            $srcset = [];
+                            
+                            // Check if responsive versions exist
+                            foreach ([160, 235, 320, 480] as $size) {
+                                $responsivePath = "storage/{$directory}/{$filename}_{$size}x{$size}.webp";
+                                if (file_exists(public_path($responsivePath))) {
+                                    $srcset[] = asset($responsivePath) . " {$size}w";
+                                }
+                            }
+                            
+                            // Add original image as fallback
+                            $originalPath = "storage/{$imagePath}";
+                            $srcset[] = asset($originalPath) . " 370w";
+                            
+                            $srcsetString = implode(', ', $srcset);
+                            
+                            // Default image src
+                            $imgSrc = asset($originalPath);
+                            
+                            // Use thumbnail if available
+                            if (isset($img->thumbnail_path) && $img->thumbnail_path) {
+                                $thumbnailPath = preg_replace('#^storage/#', '', $img->thumbnail_path);
+                                $imgSrc = asset("storage/{$thumbnailPath}");
+                            }
+                        @endphp
+
+                        <img
+                            src="{{ $imgSrc }}"
+                            srcset="{{ $srcsetString }}"
+                            sizes="(max-width: 576px) 280px, (max-width: 768px) 235px, (max-width: 992px) 200px, (max-width: 1200px) 180px, 160px"
+                            class="slider-image"
+                            alt="{{ $img->alt_text ?? $product->title }}"
+                            loading="{{ $index === 0 ? 'eager' : 'lazy' }}"
+                            width="235"
+                            height="235"
+                            decoding="async"
+                            fetchpriority="{{ $index === 0 ? 'high' : 'low' }}"
+                            onerror="this.src='{{ asset('images/no-image.png') }}';">
                     @endforeach
                 </div>
             </div>
 
-            @if($product->max_discount > 0)
-            <span class="badge badge-primary badge-status">{{ $product->max_discount }}% Off</span>
+            @if(isset($product->max_discount) && $product->max_discount > 0)
+                <span class="badge badge-primary badge-status">{{ $product->max_discount }}% Off</span>
             @elseif($product->condition === 'new')
-            <span class="badge badge-success badge-status">New</span>
-            @elseif($product->stock <= 0)
+                <span class="badge badge-success badge-status">New</span>
+            @elseif(($product->stock ?? 0) <= 0)
                 <span class="badge badge-danger badge-status">Sold Out</span>
-                @endif
+            @endif
         </div>
 
         <div class="card-body d-flex flex-column px-3 py-2">
@@ -81,31 +136,31 @@
             </h6>
 
             <!-- Brand Display -->
-            @if($product->brand)
-            <small class="text-muted mb-1">
-                <i class="fa fa-tag"></i> {{ $product->brand->title }}
-            </small>
+            @if(isset($product->brand))
+                <small class="text-muted mb-1">
+                    <i class="fa fa-tag"></i> {{ $product->brand->title }}
+                </small>
             @endif
 
             <!-- Rating Display -->
-            @if($product->rating_average > 0)
-            <div class="mb-1">
-                <small class="text-warning">
-                    @for($i = 1; $i <= 5; $i++)
-                        <i class="fa fa-star{{ $i <= $product->rating_average  ? '' : '-o' }}"></i>
+            @if(isset($product->rating_average) && $product->rating_average > 0)
+                <div class="mb-1">
+                    <small class="text-warning">
+                        @for($i = 1; $i <= 5; $i++)
+                            <i class="fa fa-star{{ $i <= $product->rating_average ? '' : '-o' }}"></i>
                         @endfor
                         <span class="text-muted">({{ $product->rating_count ?? 0 }})</span>
-                </small>
-            </div>
+                    </small>
+                </div>
             @endif
 
             <div class="mb-2 price-container">
-                @if($product->discounted_price)
+                @if(isset($product->discounted_price) && $product->discounted_price)
                     <span class="text-primary font-weight-bold current-price">
                         ${{ number_format($product->discounted_price, 2) }}
                     </span>
                     
-                    @if($product->max_discount > 0)
+                    @if(isset($product->max_discount) && $product->max_discount > 0 && isset($product->original_price))
                         <small class="text-muted ml-2 original-price">
                             <del>${{ number_format($product->original_price, 2) }}</del>
                         </small>
@@ -116,14 +171,15 @@
             </div>
 
             @php
-            $inWishlist = Helper::isProductInWishlist($product->slug);
+                $productStock = $product->stock ?? 0;
+                $inWishlist = class_exists('Helper') ? Helper::isProductInWishlist($product->slug) : false;
             @endphp
 
             <div class="mt-auto">
                 <a href="{{ route('add-to-cart', $product->slug) }}"
-                    class="btn btn-sm btn-block btn-dark text-uppercase mb-3 text-center {{ $product->stock <= 0 ? 'disabled' : '' }}">
+                    class="btn btn-sm btn-block btn-dark text-uppercase mb-3 text-center {{ $productStock <= 0 ? 'disabled' : '' }}">
                     <i class="ti-shopping-cart mr-1"></i>
-                    {{ $product->stock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
+                    {{ $productStock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
                 </a>
 
                 <div class="d-flex justify-content-between align-items-center small text-muted px-1">

@@ -12,8 +12,8 @@ use Exception;
 class OptimizedVariantMasterSeederNew extends Seeder
 {
     // Configuration
-    protected int $targetProducts = 100;
-    protected int $variantProducts = 95; // 95% variants as requested
+    protected int $targetProducts = 1000;
+    protected int $variantProducts = 800;
     protected int $variantsPerProduct = 4;
     protected int $batchSize = 500;
     protected bool $enableTruncate = false;
@@ -26,86 +26,85 @@ class OptimizedVariantMasterSeederNew extends Seeder
     protected float $startTime;
 
     // Cached data
-    protected array $cachedNormalImages;
-    protected array $cachedVariantImages;
+    protected array $cachedImages;
     protected array $cachedCategories = [];
     protected array $cachedBrands = [];
     protected array $cachedVariantOptions = [];
     protected array $existingCodes = [];
 
-    // Product templates with dollar price ranges
+    // Product templates
     protected array $productTemplates = [
         'smartphones' => [
             'names' => ['Premium Smartphone', 'Flagship Phone', 'Pro Smartphone', 'Ultra Phone', 'Elite Smartphone'],
             'summaries' => ['Latest technology for seamless connectivity.', 'High-performance device for work and play.'],
             'description' => 'Designed for the tech-savvy user with cutting-edge features and superior performance.',
-            'price_range' => [199, 1499] // Dollars
+            'price_range' => [20000, 100000]
         ],
         'laptops' => [
             'names' => ['Gaming Laptop', 'Business Laptop', 'Ultrabook', 'Workstation', 'Pro Laptop'],
             'summaries' => ['Powerful computing for professionals.', 'Ideal for gaming and productivity.'],
             'description' => 'Crafted for professionals and gamers with high performance and reliability.',
-            'price_range' => [299, 2499] // Dollars
+            'price_range' => [30000, 150000]
         ],
         'audio' => [
             'names' => ['Wireless Headphones', 'Bluetooth Speaker', 'Gaming Headset', 'Studio Monitors', 'Earbuds'],
             'summaries' => ['Immersive sound for music lovers.', 'Crystal-clear audio for all your needs.'],
             'description' => 'Experience superior sound quality with advanced audio technology.',
-            'price_range' => [19, 299] // Dollars
+            'price_range' => [1000, 20000]
         ],
         'shoes' => [
             'names' => ['Running Shoes', 'Casual Sneakers', 'Formal Shoes', 'Sports Shoes', 'Canvas Shoes'],
             'summaries' => ['Classic design with modern comfort.', 'Durable footwear for all occasions.'],
             'description' => 'Crafted for the modern individual who values quality, style, and comfort.',
-            'price_range' => [29, 199] // Dollars
+            'price_range' => [2000, 15000]
         ],
         'women' => [
             'names' => ['Designer Dress', 'Casual Top', 'Formal Blouse', 'Summer Dress', 'Party Wear'],
             'summaries' => ['Elegant and comfortable for everyday wear.', 'Perfect for both casual and formal occasions.'],
             'description' => 'Designed specifically for women who appreciate style, comfort, and elegance.',
-            'price_range' => [19, 99] // Dollars
+            'price_range' => [1500, 8000]
         ],
         'kids' => [
             'names' => ['Kids T-Shirt', 'Shorts', 'Jacket', 'Dress', 'Casual Wear'],
             'summaries' => ['Fun and durable clothing for kids.', 'Comfortable fit for active children.'],
             'description' => 'Made for kids with comfort, durability, and fun designs in mind.',
-            'price_range' => [9, 49] // Dollars
+            'price_range' => [500, 3000]
         ],
         'furniture' => [
             'names' => ['Modern Sofa', 'Dining Table', 'Office Chair', 'Bookshelf', 'Coffee Table'],
             'summaries' => ['Stylish addition to any home.', 'Durable and comfortable furniture.'],
             'description' => 'Transform your living space with elegant designs and premium materials.',
-            'price_range' => [49, 999] // Dollars
+            'price_range' => [5000, 50000]
         ],
         'kitchen_appliances' => [
             'names' => ['Mixer Grinder', 'Toaster', 'Blender', 'Coffee Maker', 'Food Processor'],
             'summaries' => ['Modern appliances for easy cooking.', 'Enhance your kitchen experience.'],
             'description' => 'Simplify your cooking with innovative appliances and modern technology.',
-            'price_range' => [29, 299] // Dollars
+            'price_range' => [2000, 25000]
         ],
         'gym_equipment' => [
             'names' => ['Treadmill', 'Dumbbell Set', 'Yoga Mat', 'Exercise Bike', 'Weight Bench'],
             'summaries' => ['Build your strength with quality gear.', 'Perfect for home workouts.'],
             'description' => 'Built for fitness enthusiasts to achieve their health and fitness goals.',
-            'price_range' => [19, 999] // Dollars
+            'price_range' => [1000, 100000]
         ],
         'outdoor_sports' => [
             'names' => ['Camping Tent', 'Hiking Backpack', 'Sports Shoes', 'Water Bottle', 'Sleeping Bag'],
             'summaries' => ['Gear for your next adventure.', 'Durable equipment for outdoor activities.'],
             'description' => 'Gear up for outdoor adventures with reliable and durable equipment.',
-            'price_range' => [9, 299] // Dollars
+            'price_range' => [500, 30000]
         ],
         'skin_care' => [
             'names' => ['Face Moisturizer', 'Cleanser', 'Sunscreen', 'Face Mask', 'Serum'],
             'summaries' => ['Gentle care for all skin types.', 'Premium skincare for daily use.'],
             'description' => 'Nourish your skin with high-quality ingredients and advanced formulations.',
-            'price_range' => [5, 49] // Dollars
+            'price_range' => [300, 5000]
         ],
         'makeup' => [
             'names' => ['Lipstick', 'Foundation', 'Eyeliner', 'Mascara', 'Blush'],
             'summaries' => ['Enhance your beauty with quality cosmetics.', 'Professional makeup for any occasion.'],
             'description' => 'Achieve a flawless look with professional-grade cosmetics and beauty products.',
-            'price_range' => [5, 39] // Dollars
+            'price_range' => [200, 3000]
         ]
     ];
 
@@ -154,74 +153,23 @@ class OptimizedVariantMasterSeederNew extends Seeder
         'makeup' => ['color'],
     ];
 
-    // Normal product images from provided list
-    protected array $normalImages = [
-        "product_6889f81c5163c_1.webp", "product_6889f81c59696_2.webp", "product_6889f81c616e8_3.webp",
-        "product_6889f81c6a225_4.webp", "product_6889f9113eecd_0.webp", "product_6889f980ae308_0.webp",
-        "product_6889fd3e6fc02_0.webp", "product_6889ff20a3003_0.webp", "product_6889ff20ab21f_1.webp",
-        "product_6889ff20b31b8_2.webp", "product_688a005542712_0.webp", "product_688a0088c4999_0.webp",
-        "product_688a01254a8de_0.webp", "product_688a02ff4c13c_0.webp", "product_688a03fbc0e23_0.webp",
-        "product_688aefd6b5d92_0.webp", "product_688b3bcfd79b9_0.webp", "product_688b3d8672a03_0.webp",
-        "product_688b4fa2cea02_0.webp", "product_688b4fa2d7cae_1.webp", "product_688b51b8ae4fd_0.webp",
-        "product_688b5e59765d5_0.webp", "product_688b603325c06_0.webp", "product_688c3b3d8cd70_0.webp",
-        "product_688c51f279b9c_0.webp", "product_688c9e1305a57_0.webp", "product_688c9e130e22d_1.webp",
-        "product_68909d01452d4_0.webp", "product_68909d014e1e4_1.webp", "product_68909d015694f_2.webp",
-        "product_68909d015f199_3.webp", "product_68909d0168d61_4.webp", "product_68909d0170766_5.webp",
-        "product_68909d017985c_6.webp", "product_6892df81c7fe4_0.webp", "product_6892df81d0732_1.webp",
-        "product_6892fe3b5293e_0.webp", "product_6892fe3b5ba1b_1.webp", "product_6892fea723299_0.webp",
-        "product_6892fea72bb51_1.webp", "product_6892ffc4a0ae1_0.webp", "product_6892ffc4a8cea_1.webp",
-        "product_6892ffc4afd6d_2.webp", "product_6893008bb8af3_0.webp", "product_6893008bc2ce2_1.webp",
-        "product_6893008bcb95a_2.webp", "product_689300d5e7a6b_0.webp", "product_689300d5f0a7f_1.webp",
-        "product_689300d604793_2.webp", "product_6893012f60da8_0.webp", "product_6893012f69029_1.webp",
-        "product_6893012f70d3d_2.webp", "product_68e8d66387660_0.webp", "product_68e8d79a74aad_0.webp",
-        "product_6901faebb109b_0.webp", "product_6901fe4b2da2d_0.webp", "product_69020083e3b75_0.webp",
-        "product_690200b244587_0.webp", "product_690200b24efd9_1.webp", "product_690200b258067_2.webp",
-        "product_690200b260592_3.webp", "product_690200b26771a_4.webp", "product_690200b270dd5_5.webp",
-        "product_690200b27a849_6.webp", "product_690200b282a87_7.webp", "product_690200b28ab7d_8.webp",
-        "product_690200b292edf_9.webp", "product_690200b29bf1e_10.webp", "product_690200b2a5137_11.webp",
-        "product_690200b2add93_12.webp", "product_690200b2b62ac_13.webp", "product_690200b2be15d_14.webp",
-        "product_690200b2c79a1_15.webp", "product_690200b2cfbe7_16.webp", "product_690200b2d807d_17.webp",
-        "product_690200b2dfc85_18.webp", "product_690200b2e7ceb_19.webp", "product_690200b2f080e_20.webp",
-        "product_690200b304657_21.webp", "product_690200b30c797_22.webp", "product_690200b3148d2_23.webp",
-        "product_690200b31d457_24.webp", "product_6902e66def238_0.webp"
-    ];
-
-    // Variant images from provided list
-    protected array $variantImagesList = [
-        "variant_68e8c67d53c28_0.webp", "variant_68e8c73e05444_0.webp", "variant_68e8c824a9cf7_0.webp",
-        "variant_68e8ca99af65f_0.webp", "variant_68e8cdbf8f7b7_0.webp", "variant_68e8cf3d223f7_0.webp",
-        "variant_68e8cfdb27714_0.webp", "variant_68e8d02251456_0.webp", "variant_68e8d04846afc_0.webp",
-        "variant_68e8d10d7ef24_0.webp", "variant_68e8d2a66ff27_0.webp", "variant_68e8d3848c5eb_0.webp",
-        "variant_68e8d467679cf_0.webp", "variant_68e8d46771062_1.webp", "variant_68e8d46779626_2.webp",
-        "variant_68e8d53a7c3af_0.webp", "variant_68ec8d7cd47f3_1.webp", "variant_68ececa9e9fb8_0.webp",
-        "variant_68ececa9f2ee2_1.webp", "variant_68ececaa11db9_0.webp", "variant_68ececaa1abba_1.webp",
-        "variant_68ececaa2565a_2.webp", "variant_68ececaa33d4d_0.webp", "variant_68ececaa42765_0.webp",
-        "variant_68ececaa4bcec_1.webp", "variant_68edfabeda8af_0.webp", "variant_6901f4c839cad_0.webp",
-        "variant_6901f4c841ab6_1.webp", "variant_6901f4c849376_2.webp", "variant_6901f4c85d109_0.webp",
-        "variant_6901f4c864a76_1.webp", "variant_6901f4c86c824_2.webp", "variant_6901f4c876678_3.webp",
-        "variant_6901f4c87e9c8_4.webp", "variant_6901f4c88c5aa_0.webp", "variant_6901f4c893147_1.webp",
-        "variant_6901f4c89e529_0.webp", "variant_6901f4c8a616e_1.webp", "variant_6901f4c8addeb_2.webp",
-        "variant_690201b061c8f_0.webp", "variant_690201d1267f3_0.webp", "variant_6902021a2cec0_0.webp",
-        "variant_69020281e822d_0.webp", "variant_690202b9629f4_0.webp", "variant_690204516e31f_0.webp",
-        "variant_6902e6f9d2fd1_0.webp", "variant_6902eba45bd69_0.webp", "variant_69031fe530b80_0.webp",
-        "variant_69031fe53b9d9_1.webp", "variant_69031fe544ce7_2.webp", "variant_69031fe55ae68_0.webp",
-        "variant_69031fe563f1f_1.webp", "variant_69031fe56d523_2.webp", "variant_69031fe578027_0.webp",
-        "variant_69031fe58009a_1.webp", "variant_69031fe583d0a_2.webp", "variant_69031fe58a6f3_3.webp",
-        "variant_69031fe59a6a3_0.webp", "variant_69031fe5a3ed3_1.webp", "variant_69031fe5ad104_2.webp",
-        "variant_69031fe5b625a_3.webp", "variant_69031fe5bee4e_4.webp", "variant_69031fe5c8cde_5.webp",
-        "variant_69031fe5da70e_0.webp", "variant_69031fe5e39e9_1.webp", "variant_69031fe5ed204_2.webp",
-        "variant_69031fe6021ae_3.webp", "variant_69031fe60a53c_4.webp", "variant_69031fe62229e_0.webp",
-        "variant_69031fe62bd58_1.webp", "variant_69031fe6372d0_0.webp", "variant_69031fe64056a_1.webp",
-        "variant_69031fe64bbeb_2.webp", "variant_69031fe654739_3.webp", "variant_69031fe65dde7_4.webp",
-        "variant_69031fe667054_5.webp"
+    protected array $images = [
+        "00497a4a-3fc5-47c9-93ba-842393d35f46.webp", "00846c49-7137-4af6-8317-f1a7d578d8c2.webp",
+        "0156bece-7587-4bb4-bf9c-00d0168d6656.webp", "021a2a91-7595-4999-9fd7-22465f160c43.webp",
+        "0237a1ac-b56e-4c15-9789-8ddc9bd7f064.webp", "04cd210b-b297-48df-8813-bb4b1ff5c6c8.webp",
+        "05331b5f-664e-42ee-9e50-877bf1377ecc.webp", "059926d6-36fc-4a13-8f0c-b3b45e1233de.webp",
+        "0707c8a3-4490-47cd-9cda-fcfde0f06cef.webp", "07a0fd0b-a61f-4b2f-bc7a-94de73e74837.webp",
+        "08e639f0-fbd4-4fdd-858d-97028cacb2e6.webp", "095e4164-fc6a-496a-82be-1a4329dde539.webp",
+        "1409e8df-fafa-4aee-b2f6-7219ff79f065.webp", "1417dd87-781e-4a1e-95db-4e8c1211c79d.webp",
+        "14cb9bfb-418c-4d22-857b-65d9da9cb0df.webp", "1508966f-1038-476f-919d-4b5dd1666d90.webp",
+        "15408c36-b7df-4f2a-815a-fc3bc09358b6.webp", "17151bee-8464-4457-9f79-9a060665e86e.webp",
     ];
 
     public function __construct()
     {
         $lastId = DB::table('products')->max('id');
         $this->startingProductId = $lastId ? $lastId + 1 : 1;
-        $this->cachedNormalImages = $this->normalImages;
-        $this->cachedVariantImages = $this->variantImagesList;
+        $this->cachedImages = $this->images;
     }
 
     public function run(): void
@@ -817,8 +765,8 @@ class OptimizedVariantMasterSeederNew extends Seeder
                 $now
             );
 
-            // Always add product-level images (min 3 as requested)
-            $images = $this->getRandomNormalImages(3);
+            // Always add product-level images for proper syncing (representative images for variant products)
+            $images = $this->getRandomImages(3);
             foreach ($images as $idx => $imageName) {
                 $productImagesData[] = $this->buildImageEntry(
                     $productId,
@@ -874,8 +822,8 @@ class OptimizedVariantMasterSeederNew extends Seeder
                         }
                     }
 
-                    // Build variant-specific images (min 3 as requested)
-                    $variantImages = $this->getRandomVariantImages(3);
+                    // Build variant-specific images (in addition to product-level images)
+                    $variantImages = $this->getRandomImages(3);
                     foreach ($variantImages as $idx => $imageName) {
                         $variantImagesData[] = $this->buildVariantImageEntry(
                             $variantId,
@@ -945,7 +893,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
         ];
 
         if (!$hasVariants) {
-            // Add base price/stock for non-variant products (in dollars)
+            // Add base price/stock for non-variant products
             $price = random_int($template['price_range'][0], $template['price_range'][1]);
             $discount = random_int(0, 50);
             $stock = random_int(10, 100);
@@ -1006,7 +954,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
     ): array {
         return [
             'product_id' => $productId,
-            'image_path' => 'products/' . $imageName,
+            'image_path' => 'photos/1/Products/' . $imageName,
             'thumbnail_path' => null,
             'is_primary' => $index === 0,
             'sort_order' => $index,
@@ -1026,7 +974,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
     ): array {
         return [
             'product_variant_id' => $variantId,
-            'image_path' => 'products/variants/' . $imageName,
+            'image_path' => 'photos/1/Products/' . $imageName,
             'thumbnail_path' => null,
             'is_primary' => $index === 0,
             'sort_order' => $index,
@@ -1208,21 +1156,12 @@ class OptimizedVariantMasterSeederNew extends Seeder
     }
 
     /**
-     * Get random normal images
+     * Get random images
      */
-    protected function getRandomNormalImages(int $count = 3): array
+    protected function getRandomImages(int $count = 3): array
     {
-        $count = min($count, count($this->cachedNormalImages));
-        return collect($this->cachedNormalImages)->random($count)->values()->toArray();
-    }
-
-    /**
-     * Get random variant images
-     */
-    protected function getRandomVariantImages(int $count = 3): array
-    {
-        $count = min($count, count($this->cachedVariantImages));
-        return collect($this->cachedVariantImages)->random($count)->values()->toArray();
+        $count = min($count, count($this->cachedImages));
+        return collect($this->cachedImages)->random($count)->values()->toArray();
     }
 
     /**

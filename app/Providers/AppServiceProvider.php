@@ -232,25 +232,6 @@ class AppServiceProvider extends ServiceProvider
 
         $result = [];
 
-        // Handle wishlist count
-        if ($cachedCounts[$wishlistKey] !== null) {
-            $result['wishlistCount'] = $cachedCounts[$wishlistKey];
-        } else {
-            $result['wishlistCount'] = Cache::remember(
-                $wishlistKey,
-                $ttl['wishlist'],
-                function () use ($userId, $wishlistKey, $ttl) {
-                    $count = Wishlist::where('user_id', $userId)
-                        ->whereNull('cart_id')
-                        ->count();
-
-                    // Store in Redis too
-                    RedisHelper::put($wishlistKey, $count, $ttl['wishlist']);
-                    return $count;
-                }
-            );
-        }
-
         // Handle cart count
         if ($cachedCounts[$cartKey] !== null) {
             $result['cartCount'] = $cachedCounts[$cartKey];

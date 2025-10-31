@@ -305,6 +305,116 @@ class FrontendController extends Controller
         return $banners;
     }
 
+    private function getHomepageProductsData(string $key, int $ttl)
+    {
+        // Query products with optimized eager loading
+        $products = Product::select([
+            'id',
+            'title',
+            'slug',
+            'base_price',
+            'base_discount',
+            'base_stock',
+            'has_variants',
+            'cat_id',
+            'condition',
+            'summary',
+            'is_featured'
+        ])
+            ->where('status', 'active')
+            ->where('is_featured', true)
+            ->with([
+                'images' => fn($q) => $q->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
+                'cat_info' => fn($q) => $q->select(['id', 'title']),
+                'variants' => fn($q) => $q->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
+                    ->with([
+                        'images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                            ->where('is_primary', true),
+                    ])
+            ])
+            ->latest('id')
+            ->limit(60)
+            ->get();
+
+        // Transform products to include discounted price and primary image
+        $products->transform(function ($product) {
+            // Select primary image based on product type
+            if ($product->has_variants && $product->variants->count() > 0) {
+                // For variant products, get first active in-stock variant's image
+                $activeInStockVariants = $product->variants->where('status', 'active')->where('stock', '>', 0);
+                
+                if ($activeInStockVariants->count() > 0) {
+                    $firstVariant = $activeInStockVariants->first();
+                    $primaryImage = $firstVariant->images->first();
+                } else {
+                    // Fallback to first variant if no stock
+                    $primaryImage = $product->variants->first()?->images->first();
+                }
+            } else {
+                // For simple products, use product's primary image
+                $primaryImage = $product->images->where('is_primary', true)->first() 
+                    ?? $product->images->first();
+            }
+
+            // Process image path
+            if ($primaryImage) {
+                $imagePath = $primaryImage->image_path;
+                $thumbnailPath = $primaryImage->thumbnail_path ?? $primaryImage->image_path;
+                
+                // Ensure proper storage path
+                if (strpos($imagePath, 'storage/') !== 0) {
+                    $imagePath = 'storage/' . ltrim($imagePath, '/');
+                }
+                if (strpos($thumbnailPath, 'storage/') !== 0) {
+                    $thumbnailPath = 'storage/' . ltrim($thumbnailPath, '/');
+                }
+                
+                $product->primary_image = [
+                    'image_path' => $imagePath,
+                    'thumbnail_path' => $thumbnailPath,
+                    'url' => asset($imagePath),
+                    'thumbnail_url' => asset($thumbnailPath),
+                    'alt_text' => $product->title
+                ];
+            } else {
+                $product->primary_image = null;
+            }
+
+            // Calculate discounted price
+            if ($product->has_variants) {
+                $activeInStockVariants = $product->variants->where('status', 'active')->where('stock', '>', 0);
+
+                if ($activeInStockVariants->count() > 0) {
+                    $firstVariant = $activeInStockVariants->first();
+
+                    $product->original_price = $firstVariant->price;
+                    $product->discounted_price = $firstVariant->price * (1 - ($firstVariant->discount ?? 0) / 100);
+                    $product->max_discount = $firstVariant->discount ?? 0;
+                } else {
+                    $product->original_price = null;
+                    $product->discounted_price = null;
+                    $product->max_discount = 0;
+                }
+            } else {
+                // Simple product (no variants)
+                $product->original_price = $product->base_price;
+                $product->discounted_price = $product->base_discount > 0
+                    ? $product->base_price * (1 - $product->base_discount / 100)
+                    : $product->base_price;
+                $product->max_discount = $product->base_discount ?? 0;
+            }
+
+            // Calculate stock
+            $product->stock = $product->has_variants
+                ? $product->variants->sum('stock')
+                : $product->base_stock;
+
+            return $product;
+        });
+
+        return $products;
+    }
+
     /**
      * Fetch homepage products data with caching.
      *
@@ -312,7 +422,7 @@ class FrontendController extends Controller
      * @param int $ttl Time to live
      * @return \Illuminate\Support\Collection
      */
-    private function getHomepageProductsData(string $key, int $ttl)
+    private function getHomepageProductsDataOLD(string $key, int $ttl)
     {
         // Check Redis cache first
         // $redisData = RedisHelper::get($key);
@@ -484,6 +594,243 @@ class FrontendController extends Controller
         return self::PRODUCT_GRIDS_CACHE_PREFIX . md5(json_encode($params));
     }
 
+    private function fetchOptimizedProductGridsData(Request $request, array $ttl)
+    {
+        $show = $request->input('show', 12);
+        $sortBy = $request->input('sortBy', 'latest');
+        $query = $request->input('query', '');
+        $categories = $request->input('category', []);
+        $brands = $request->input('brand', []);
+        $priceRange = $request->input('price_range', '');
+        $minRatings = $request->input('min_rating', []);
+        $minDiscounts = $request->input('min_discount', []);
+
+        $productsQuery = Product::query()
+            ->select([
+                'products.id',
+                'products.title',
+                'products.slug',
+                'products.base_price',
+                'products.base_discount',
+                'products.base_stock',
+                'products.has_variants',
+                'products.cat_id',
+                'products.condition',
+                'products.is_featured',
+                'products.status',
+            ])
+            ->where('products.status', 'active')
+            ->with([
+                'images' => fn($q) => $q->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                    ->where('is_primary', true),
+                'cat_info' => fn($q) => $q->select(['id', 'title']),
+                'variants' => fn($q) => $q->where('status', 'active')
+                    ->select(['id', 'product_id', 'price', 'discount', 'stock'])
+                    ->with([
+                        'images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                            ->where('is_primary', true)
+                    ])
+            ]);
+
+        // Apply filters (categories, brands, price, ratings, discounts)
+        if (!empty($categories)) {
+            $productsQuery->whereIn('cat_id', Category::whereIn('slug', $categories)->pluck('id'));
+        }
+        if (!empty($brands)) {
+            $productsQuery->whereIn('brand_id', Brand::whereIn('slug', $brands)->pluck('id'));
+        }
+
+        if ($priceRange) {
+            [$minPrice, $maxPrice] = explode('-', $priceRange);
+            $productsQuery->where(function ($query) use ($minPrice, $maxPrice) {
+                $query->where(function ($q) use ($minPrice, $maxPrice) {
+                    $q->where('has_variants', false)
+                        ->whereRaw('
+                        CASE 
+                            WHEN base_discount > 0 THEN 
+                                base_price - (base_price * base_discount / 100)
+                            ELSE 
+                                base_price 
+                        END BETWEEN ? AND ?', [(float)$minPrice, (float)$maxPrice]);
+                })
+                    ->orWhere(function ($q) use ($minPrice, $maxPrice) {
+                        $q->where('has_variants', true)
+                            ->whereHas('variants', function ($subQuery) use ($minPrice, $maxPrice) {
+                                $subQuery->where('status', 'active')
+                                    ->whereRaw('
+                                    CASE 
+                                        WHEN discount > 0 THEN 
+                                            price - (price * discount / 100)
+                                        ELSE 
+                                            price 
+                                    END BETWEEN ? AND ?', [(float)$minPrice, (float)$maxPrice]);
+                            });
+                    });
+            });
+        }
+
+        if (!empty($minRatings)) {
+            $productsQuery->whereRaw('
+                products.id IN (
+                    SELECT product_id 
+                    FROM product_reviews 
+                    WHERE product_reviews.product_id = products.id 
+                    GROUP BY product_id 
+                    HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
+                )', [min(array_map('intval', $minRatings))]);
+        }
+
+        if (!empty($minDiscounts)) {
+            $validDiscounts = array_filter(array_map('intval', $minDiscounts), fn($d) => $d >= 0 && $d <= 100);
+            if (!empty($validDiscounts)) {
+                $productsQuery->where(function ($query) use ($validDiscounts) {
+                    $query->where('has_variants', false)
+                        ->whereIn('base_discount', $validDiscounts)
+                        ->orWhere(function ($q) use ($validDiscounts) {
+                            $q->where('has_variants', true)
+                                ->whereHas('variants', fn($subQuery) => $subQuery->whereIn('discount', $validDiscounts));
+                        });
+                });
+            }
+        }
+
+        if ($query) {
+            $productsQuery->where('title', 'ILIKE', "%{$query}%");
+        }
+
+        // Apply sorting
+        if ($sortBy === 'price_low_high') {
+            $productsQuery->orderByRaw('
+                CASE 
+                    WHEN has_variants = false THEN 
+                        CASE 
+                            WHEN base_discount > 0 THEN 
+                                base_price - (base_price * base_discount / 100)
+                            ELSE 
+                                base_price 
+                        END
+                    ELSE 
+                        (SELECT MIN(
+                            CASE 
+                                WHEN discount > 0 THEN 
+                                    price - (price * discount / 100)
+                                ELSE 
+                                    price 
+                            END
+                        ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
+                END ASC
+            ');
+        } elseif ($sortBy === 'price_high_low') {
+            $productsQuery->orderByRaw('
+                CASE 
+                    WHEN has_variants = false THEN 
+                        CASE 
+                            WHEN base_discount > 0 THEN 
+                                base_price - (base_price * base_discount / 100)
+                            ELSE 
+                                base_price 
+                        END
+                    ELSE 
+                        (SELECT MAX(
+                            CASE 
+                                WHEN discount > 0 THEN 
+                                    price - (price * discount / 100)
+                                ELSE 
+                                    price 
+                            END
+                        ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
+                END DESC
+            ');
+        } else {
+            $productsQuery->latest('id');
+        }
+
+        $products = $productsQuery->paginate($show);
+        $products->setPath('/product-grids');
+        $products->appends($request->except('page'));
+
+        // Transform products to add image paths and pricing
+        $products->getCollection()->transform(function ($product) {
+            // Handle primary image for display
+            if ($product->has_variants && $product->variants->count() > 0) {
+                $activeInStockVariants = $product->variants->where('status', 'active')->where('stock', '>', 0);
+                
+                if ($activeInStockVariants->count() > 0) {
+                    $firstVariant = $activeInStockVariants->first();
+                    $primaryImage = $firstVariant->images->first();
+                } else {
+                    $primaryImage = $product->variants->first()?->images->first();
+                }
+            } else {
+                $primaryImage = $product->images->first();
+            }
+
+            if ($primaryImage) {
+                $imagePath = $primaryImage->image_path;
+                $thumbnailPath = $primaryImage->thumbnail_path ?? $primaryImage->image_path;
+                
+                // Ensure proper storage path
+                if (strpos($imagePath, 'storage/') !== 0) {
+                    $imagePath = 'storage/' . ltrim($imagePath, '/');
+                }
+                if (strpos($thumbnailPath, 'storage/') !== 0) {
+                    $thumbnailPath = 'storage/' . ltrim($thumbnailPath, '/');
+                }
+                
+                $product->primary_image = [
+                    'image_path' => $imagePath,
+                    'thumbnail_path' => $thumbnailPath,
+                    'url' => asset($imagePath),
+                    'thumbnail_url' => asset($thumbnailPath),
+                    'alt_text' => $product->title
+                ];
+            } else {
+                $product->primary_image = null;
+            }
+
+            // Calculate prices
+            if ($product->has_variants) {
+                $activeInStockVariants = $product->variants->where('status', 'active')->where('stock', '>', 0);
+
+                if ($activeInStockVariants->count() > 0) {
+                    $firstVariant = $activeInStockVariants->first();
+                    $product->original_price = $firstVariant->price;
+                    $product->discounted_price = $firstVariant->price * (1 - ($firstVariant->discount ?? 0) / 100);
+                    $product->max_discount = $firstVariant->discount ?? 0;
+                } else {
+                    $product->original_price = null;
+                    $product->discounted_price = null;
+                    $product->max_discount = 0;
+                }
+            } else {
+                $product->original_price = $product->base_price;
+                $product->discounted_price = $product->base_discount > 0
+                    ? $product->base_price * (1 - $product->base_discount / 100)
+                    : $product->base_price;
+                $product->max_discount = $product->base_discount ?? 0;
+            }
+
+            $product->stock = $product->has_variants
+                ? $product->variants->sum('stock')
+                : $product->base_stock;
+
+            return $product;
+        });
+
+        $recentProducts = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['product_lists']);
+
+        return [
+            'products' => $products,
+            'recent_products' => $recentProducts,
+            'category' => null,
+            'mainCategory' => null,
+            'subCategory' => null,
+            'show' => $show,
+            'sortBy' => $sortBy,
+            'price' => $priceRange,
+        ];
+    }
+
     /**
      * Fetch optimized product grids data.
      *
@@ -491,7 +838,7 @@ class FrontendController extends Controller
      * @param array $ttl
      * @return array
      */
-    private function fetchOptimizedProductGridsData(Request $request, array $ttl)
+    private function fetchOptimizedProductGridsDataOLD(Request $request, array $ttl)
     {
         $show = $request->input('show', 12);
         $sortBy = $request->input('sortBy', 'latest');
@@ -2202,6 +2549,126 @@ class FrontendController extends Controller
         return false;
     }
 
+    private function getRecentProductsData(string $key, int $ttl)
+    {
+        return Cache::remember($key, $ttl, function () use ($key, $ttl) {
+            $recentProducts = Product::where('status', 'active')
+                ->select([
+                    'id',
+                    'title',
+                    'slug',
+                    'base_price',
+                    'base_discount',
+                    'base_stock',
+                    'has_variants',
+                    'cat_id',
+                    'condition',
+                    'summary'
+                ])
+                ->with([
+                    'images' => fn($q) => $q->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                        ->where('is_primary', true),
+                    'cat_info' => fn($q) => $q->select(['id', 'title']),
+                    'variants' => fn($q) => $q->where('status', 'active')
+                        ->select(['id', 'product_id', 'price', 'discount', 'stock'])
+                        ->with([
+                            'images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                                ->where('is_primary', true)
+                        ])
+                ])
+                ->orderBy('id', 'DESC')
+                ->limit(3)
+                ->get();
+
+            $recentProducts->transform(function ($product) {
+                // Handle primary image
+                if ($product->has_variants && $product->variants->count() > 0) {
+                    $minVariant = $product->variants
+                        ->sortBy(function ($variant) {
+                            return $variant->discount > 0 
+                                ? $variant->price - ($variant->price * $variant->discount / 100) 
+                                : $variant->price;
+                        })
+                        ->first();
+                    
+                    if ($minVariant) {
+                        $product->discounted_price = $minVariant->discount > 0 
+                            ? $minVariant->price - ($minVariant->price * $minVariant->discount / 100) 
+                            : $minVariant->price;
+                        
+                        // Get variant's primary image
+                        $primaryImage = $minVariant->images->first();
+                        if ($primaryImage) {
+                            $imagePath = $primaryImage->image_path;
+                            $thumbnailPath = $primaryImage->thumbnail_path ?? $primaryImage->image_path;
+                            
+                            // Ensure proper storage path
+                            if (strpos($imagePath, 'storage/') !== 0) {
+                                $imagePath = 'storage/' . ltrim($imagePath, '/');
+                            }
+                            if (strpos($thumbnailPath, 'storage/') !== 0) {
+                                $thumbnailPath = 'storage/' . ltrim($thumbnailPath, '/');
+                            }
+                            
+                            $product->primary_image = [
+                                'image_path' => $imagePath,
+                                'thumbnail_path' => $thumbnailPath,
+                                'url' => asset($imagePath),
+                                'thumbnail_url' => asset($thumbnailPath),
+                                'alt_text' => $product->title
+                            ];
+                        }
+                    } else {
+                        $product->discounted_price = null;
+                        $product->primary_image = null;
+                    }
+                } else {
+                    // Simple product
+                    $product->discounted_price = $product->base_discount > 0
+                        ? $product->base_price - ($product->base_price * $product->base_discount / 100)
+                        : $product->base_price;
+                    
+                    // Get product's primary image
+                    $primaryImage = $product->images->first();
+                    if ($primaryImage) {
+                        $imagePath = $primaryImage->image_path;
+                        $thumbnailPath = $primaryImage->thumbnail_path ?? $primaryImage->image_path;
+                        
+                        // Ensure proper storage path
+                        if (strpos($imagePath, 'storage/') !== 0) {
+                            $imagePath = 'storage/' . ltrim($imagePath, '/');
+                        }
+                        if (strpos($thumbnailPath, 'storage/') !== 0) {
+                            $thumbnailPath = 'storage/' . ltrim($thumbnailPath, '/');
+                        }
+                        
+                        $product->primary_image = [
+                            'image_path' => $imagePath,
+                            'thumbnail_path' => $thumbnailPath,
+                            'url' => asset($imagePath),
+                            'thumbnail_url' => asset($thumbnailPath),
+                            'alt_text' => $product->title
+                        ];
+                    } else {
+                        $product->primary_image = null;
+                    }
+                }
+
+                $product->in_wishlist = class_exists('Helper') && method_exists('Helper', 'isProductInWishlist')
+                    ? Helper::isProductInWishlist($product->slug)
+                    : false;
+
+                return $product;
+            });
+
+            if (!RedisHelper::put($key, $recentProducts, $ttl)) {
+                Log::warning("Failed to store recent products in Redis for key: {$key}");
+            }
+
+            return $recentProducts;
+        });
+    }
+
     /**
      * Fetch recent products with caching.
      *
@@ -2209,7 +2676,7 @@ class FrontendController extends Controller
      * @param int $ttl Time to live
      * @return \Illuminate\Support\Collection
      */
-    private function getRecentProductsData(string $key, int $ttl)
+    private function getRecentProductsDataOLD(string $key, int $ttl)
     {
         return Cache::remember($key, $ttl, function () use ($key, $ttl) {
             $recentProducts = Product::where('status', 'active')

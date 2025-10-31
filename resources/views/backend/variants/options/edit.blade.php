@@ -10,7 +10,7 @@
         <form action="{{ route('variant-option.update', $option->id) }}" method="POST">
             @csrf
             @method('PUT')
-            <!-- Same form fields as create.blade.php, but value="{{ old('field', $option->field) }}" -->
+
             <div class="row">
                 <div class="col-md-6">
                     <div class="form-group">
@@ -18,7 +18,9 @@
                         <select name="variant_type_id" id="variant_type_id" class="form-control @error('variant_type_id') is-invalid @enderror" required>
                             <option value="">Select Type</option>
                             @foreach($types as $type)
-                                <option value="{{ $type->id }}" {{ old('variant_type_id', $option->variant_type_id) == $type->id ? 'selected' : '' }}>{{ $type->display_name }}</option>
+                                <option value="{{ $type->id }}" {{ old('variant_type_id', $option->variant_type_id) == $type->id ? 'selected' : '' }}>
+                                    {{ $type->display_name }}
+                                </option>
                             @endforeach
                         </select>
                         @error('variant_type_id')
@@ -26,9 +28,56 @@
                         @enderror
                     </div>
                 </div>
-                <!-- ... Repeat for other fields with old('field', $option->field) ... -->
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="display_value">Display Value <span class="text-danger">*</span></label>
+                        <input type="text" name="display_value" id="display_value" class="form-control @error('display_value') is-invalid @enderror" value="{{ old('display_value', $option->display_value) }}" required>
+                        @error('display_value')
+                            <span class="invalid-feedback">{{ $message }}</span>
+                        @enderror
+                    </div>
+                </div>
             </div>
-            <!-- ... Rest of form ... -->
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="value">Value <span class="text-danger">*</span></label>
+                        <input type="text" name="value" id="value" class="form-control @error('value') is-invalid @enderror" value="{{ old('value', $option->value) }}" required>
+                        @error('value')
+                            <span class="invalid-feedback">{{ $message }}</span>
+                        @enderror
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="hex_color">Hex Color (Optional)</label>
+                        <input type="color" name="hex_color" id="hex_color" class="form-control @error('hex_color') is-invalid @enderror" value="{{ old('hex_color', $option->hex_color ?? '#000000') }}">
+                        @error('hex_color')
+                            <span class="invalid-feedback">{{ $message }}</span>
+                        @enderror
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="sort_order">Sort Order</label>
+                        <input type="number" name="sort_order" id="sort_order" class="form-control" value="{{ old('sort_order', $option->sort_order ?? 0) }}" min="0">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="status">Status</label>
+                        <select name="status" id="status" class="form-control">
+                            <option value="active" {{ old('status', $option->status) == 'active' ? 'selected' : '' }}>Active</option>
+                            <option value="inactive" {{ old('status', $option->status) == 'inactive' ? 'selected' : '' }}>Inactive</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
             <button type="submit" class="btn btn-primary">Update Option</button>
             <a href="{{ route('variant-option.index') }}" class="btn btn-secondary">Cancel</a>
         </form>

@@ -401,6 +401,7 @@
         </form>
     </div>
 </div>
+
 <!-- Delete Variant Image Modal -->
 <div class="modal fade" id="deleteVariantImageModal" tabindex="-1" aria-labelledby="deleteVariantImageModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -417,6 +418,27 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-danger" id="confirmDeleteVariantImage">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Generic Confirmation Modal (re-used for all confirm actions) -->
+<div class="modal fade" id="genericConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Action</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- Content filled dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="genericConfirmBtn">Confirm</button>
             </div>
         </div>
     </div>
@@ -966,13 +988,18 @@ $('#load-types').click(function() {
         console.log('✅ Fully dynamic variant generation loaded (works with ANY variant types)');
 
         // Remove new variant
+        /* --------------------------------------------------------------
+         *  REMOVE NEW VARIANT (preview row) – MODAL
+         * -------------------------------------------------------------- */
         $(document).on('click', '.remove-new-variant-btn', function() {
             const $row = $(this).closest('tr');
             const name = $row.find('td:first').text().trim();
-            if (confirm(`Remove variant "${name}"?`)) {
-                $row.fadeOut(300, () => $row.remove());
-                showNotification('Variant removed.', 'info');
-            }
+
+            // Direct removal with fade-out animation
+            $row.fadeOut(300, function() {
+                $(this).remove();
+                showNotification(`Variant "${name}" removed.`, 'info');
+            });
         });
 
         // ============================================================
@@ -994,26 +1021,40 @@ $('#load-types').click(function() {
             }
             console.log('cartesianProduct function defined');
         }
+
         // Delete variant
+        /* --------------------------------------------------------------
+         *  DELETE VARIANT – MODAL
+         * -------------------------------------------------------------- */
         $(document).on('click', '.delete-variant-btn', function() {
             const variantId = $(this).data('variant-id');
-            if (!confirm('Are you sure you want to delete this variant?')) return;
-            $.ajax({
-                url: `/admin/product/variant/${variantId}/delete`,
-                type: 'DELETE',
-                headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
-                success: function(response) {
-                    if (response.success) {
-                        $(`tr[data-variant-id="${variantId}"]`).fadeOut(300, function() { $(this).remove(); });
-                        showNotification('Variant deleted successfully!', 'success');
-                    } else {
-                        showNotification(response.message || 'Failed to delete variant.', 'error');
+
+            $('#genericConfirmModal .modal-title').text('Delete Variant');
+            $('#genericConfirmModal .modal-body').html(
+                'Are you sure you want to delete this variant? This action cannot be undone.'
+            );
+            $('#genericConfirmModal').off('click', '#genericConfirmBtn')
+                                    .on('click', '#genericConfirmBtn', function() {
+                $.ajax({
+                    url: `/admin/product/variant/${variantId}/delete`,
+                    type: 'DELETE',
+                    headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+                    success: function(response) {
+                        $('#genericConfirmModal').modal('hide');
+                        if (response.success) {
+                            $(`tr[data-variant-id="${variantId}"]`).fadeOut(300, function() { $(this).remove(); });
+                            showNotification('Variant deleted successfully!', 'success');
+                        } else {
+                            showNotification(response.message || 'Failed to delete variant.', 'error');
+                        }
+                    },
+                    error: function() {
+                        showNotification('Failed to delete variant.', 'error');
                     }
-                },
-                error: function() {
-                    showNotification('Failed to delete variant.', 'error');
-                }
+                });
             });
+
+            $('#genericConfirmModal').modal('show');
         });
 
         $(document).on('click', '.delete-variant-image-btn', function() {
@@ -1065,31 +1106,45 @@ $('#load-types').click(function() {
         });
 
         // Delete product image
+        /* --------------------------------------------------------------
+         *  DELETE PRODUCT IMAGE – MODAL
+         * -------------------------------------------------------------- */
         $(document).on('click', '.delete-image-btn', function() {
-            const imageId = $(this).data('image-id');
+            const imageId   = $(this).data('image-id');
             const productId = $(this).data('product-id');
             const $container = $(this).closest('.image-container');
-            if (!confirm('Are you sure you want to delete this image?')) return;
-            $container.addClass('deleting');
-            $.ajax({
-                url: `/admin/product/${productId}/image/${imageId}/delete`,
-                type: 'DELETE',
-                headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
-                success: function(response) {
-                    if (response.success) {
-                        $container.fadeOut(300, function() { $(this).remove(); });
-                        updateImagePreview();
-                        showNotification('Image deleted successfully!', 'success');
-                    } else {
+
+            // Fill hidden fields in a **new** generic modal (re-use for all)
+            $('#genericConfirmModal .modal-title').text('Delete Product Image');
+            $('#genericConfirmModal .modal-body').html(
+                'Are you sure you want to delete this image? This action cannot be undone.'
+            );
+            $('#genericConfirmModal').off('click', '#genericConfirmBtn')
+                                    .on('click', '#genericConfirmBtn', function() {
+                $container.addClass('deleting');
+                $.ajax({
+                    url: `/admin/product/${productId}/image/${imageId}/delete`,
+                    type: 'DELETE',
+                    headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+                    success: function(response) {
+                        $('#genericConfirmModal').modal('hide');
+                        if (response.success) {
+                            $container.fadeOut(300, function() { $(this).remove(); });
+                            updateImagePreview();
+                            showNotification('Image deleted successfully!', 'success');
+                        } else {
+                            $container.removeClass('deleting');
+                            showNotification(response.message || 'Failed to delete image.', 'error');
+                        }
+                    },
+                    error: function() {
                         $container.removeClass('deleting');
-                        showNotification(response.message || 'Failed to delete image.', 'error');
+                        showNotification('Failed to delete image.', 'error');
                     }
-                },
-                error: function() {
-                    $container.removeClass('deleting');
-                    showNotification('Failed to delete image.', 'error');
-                }
+                });
             });
+
+            $('#genericConfirmModal').modal('show');
         });
 
         // Form validation
