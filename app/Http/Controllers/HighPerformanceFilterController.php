@@ -120,33 +120,82 @@ class HighPerformanceFilterController extends Controller
             
             $sql = "
                 WITH fp AS ({$baseSql}),
+                vmin AS (
+                    SELECT 
+                        p.id as product_id,
+                        MIN(v.price) FILTER (WHERE v.stock > 0) as min_orig_instock,
+                        MIN(v.price * (1 - COALESCE(v.discount, 0) / 100.0)) FILTER (WHERE v.stock > 0) as min_disc_instock,
+                        bool_or(v.stock > 0) as has_stock
+                    FROM fp p
+                    LEFT JOIN product_variants v ON p.id = v.product_id AND v.status = 'active'
+                    GROUP BY p.id
+                ),
+                vmaxd AS (
+                    SELECT 
+                        p.id as product_id,
+                        MAX(v.discount) FILTER (WHERE v.stock > 0 AND v.status = 'active') as max_variant_disc
+                    FROM fp p
+                    LEFT JOIN product_variants v ON p.id = v.product_id
+                    GROUP BY p.id
+                ),
                 ps AS (
                     SELECT 
-                        MIN(CASE WHEN discount > 0 THEN price * (1 - discount / 100.0) ELSE price END) as mn,
-                        MAX(CASE WHEN discount > 0 THEN price * (1 - discount / 100.0) ELSE price END) as mx
-                    FROM fp
+                        MIN(effective_price) as mn,
+                        MAX(effective_price) as mx
+                    FROM (
+                        SELECT 
+                            CASE 
+                                WHEN NOT p.has_variants AND p.base_stock > 0 THEN p.base_price * (1 - COALESCE(p.base_discount, 0) / 100.0)
+                                WHEN p.has_variants AND v.has_stock THEN v.min_disc_instock
+                                ELSE NULL 
+                            END as effective_price
+                        FROM fp p
+                        LEFT JOIN vmin v ON p.id = v.product_id
+                        WHERE (NOT p.has_variants AND p.base_stock > 0) OR (p.has_variants AND v.has_stock)
+                    ) eff
+                    WHERE effective_price IS NOT NULL
                 ),
                 avs AS (
                     SELECT 
-                        COUNT(*) FILTER (WHERE stock > 0) as ins,
-                        COUNT(*) FILTER (WHERE stock <= 0) as oos
-                    FROM fp
+                        COUNT(*) FILTER (WHERE (NOT p.has_variants AND p.base_stock > 0) OR (p.has_variants AND COALESCE(v.has_stock, false))) as ins,
+                        COUNT(*) FILTER (WHERE NOT ((NOT p.has_variants AND p.base_stock > 0) OR (p.has_variants AND COALESCE(v.has_stock, false)))) as oos
+                    FROM fp p
+                    LEFT JOIN vmin v ON p.id = v.product_id
                 ),
                 dcs AS (
                     SELECT 
-                        COUNT(*) FILTER (WHERE discount >= 5) as d5,
-                        COUNT(*) FILTER (WHERE discount >= 10) as d10,
-                        COUNT(*) FILTER (WHERE discount >= 20) as d20,
-                        COUNT(*) FILTER (WHERE discount >= 30) as d30,
-                        COUNT(*) FILTER (WHERE discount >= 50) as d50
-                    FROM fp
+                        COUNT(*) FILTER (WHERE 
+                            ((NOT p.has_variants AND p.base_discount >= 5 AND p.base_stock > 0) OR 
+                             (p.has_variants AND COALESCE(vd.max_variant_disc, 0) >= 5 AND COALESCE(v.has_stock, false)))
+                        ) as d5,
+                        COUNT(*) FILTER (WHERE 
+                            ((NOT p.has_variants AND p.base_discount >= 10 AND p.base_stock > 0) OR 
+                             (p.has_variants AND COALESCE(vd.max_variant_disc, 0) >= 10 AND COALESCE(v.has_stock, false)))
+                        ) as d10,
+                        COUNT(*) FILTER (WHERE 
+                            ((NOT p.has_variants AND p.base_discount >= 20 AND p.base_stock > 0) OR 
+                             (p.has_variants AND COALESCE(vd.max_variant_disc, 0) >= 20 AND COALESCE(v.has_stock, false)))
+                        ) as d20,
+                        COUNT(*) FILTER (WHERE 
+                            ((NOT p.has_variants AND p.base_discount >= 30 AND p.base_stock > 0) OR 
+                             (p.has_variants AND COALESCE(vd.max_variant_disc, 0) >= 30 AND COALESCE(v.has_stock, false)))
+                        ) as d30,
+                        COUNT(*) FILTER (WHERE 
+                            ((NOT p.has_variants AND p.base_discount >= 50 AND p.base_stock > 0) OR 
+                             (p.has_variants AND COALESCE(vd.max_variant_disc, 0) >= 50 AND COALESCE(v.has_stock, false)))
+                        ) as d50
+                    FROM fp p
+                    LEFT JOIN vmin v ON p.id = v.product_id
+                    LEFT JOIN vmaxd vd ON p.id = vd.product_id
                 ),
                 brs AS (
                     SELECT 
                         b.slug, b.title, COUNT(DISTINCT f.id) as cnt
                     FROM fp f
                     INNER JOIN brands b ON f.brand_id = b.id
+                    LEFT JOIN vmin v ON f.id = v.product_id
                     WHERE b.status = 'active'
+                    AND ((NOT f.has_variants AND f.base_stock > 0) OR (f.has_variants AND v.has_stock))
                     GROUP BY b.slug, b.title
                     HAVING COUNT(DISTINCT f.id) > 0
                     ORDER BY b.title
@@ -155,10 +204,12 @@ class HighPerformanceFilterController extends Controller
                 rts AS (
                     SELECT 
                         FLOOR(prc.average_rating) as rt,
-                        COUNT(*) as cnt
+                        COUNT(DISTINCT f.id) as cnt
                     FROM fp f
                     INNER JOIN product_ratings_cache prc ON f.id = prc.product_id
+                    LEFT JOIN vmin v ON f.id = v.product_id
                     WHERE prc.average_rating >= 1
+                    AND ((NOT f.has_variants AND f.base_stock > 0) OR (f.has_variants AND v.has_stock))
                     GROUP BY FLOOR(prc.average_rating)
                 )
                 SELECT 
@@ -181,7 +232,7 @@ class HighPerformanceFilterController extends Controller
     private function buildBaseStatsQuery($category, array $filters)
     {
         $query = DB::table('products as p')
-            ->select(['p.id', 'p.price', 'p.discount', 'p.stock', 'p.brand_id'])
+            ->select(['p.id', 'p.base_price', 'p.base_discount', 'p.base_stock', 'p.has_variants', 'p.brand_id'])
             ->where('p.status', 'active');
 
         if ($category) {
@@ -190,6 +241,7 @@ class HighPerformanceFilterController extends Controller
 
         if (!empty($filters['ratings'])) {
             $query->leftJoin('product_ratings_cache as prc', 'p.id', '=', 'prc.product_id');
+            $query->addSelect('prc.average_rating');
         }
 
         $filtersWithoutPrice = array_diff_key($filters, ['price_range' => 1]);
@@ -264,11 +316,42 @@ class HighPerformanceFilterController extends Controller
     {
         $query = DB::table('products as p')
             ->select([
-                'p.id', 'p.title', 'p.slug', 'p.price', 'p.discount', 
-                'p.stock', 'p.condition',
+                'p.id', 'p.title', 'p.slug', 'p.base_price', 'p.base_discount', 
+                'p.base_stock', 'p.condition', 'p.has_variants',
                 'b.title as bt', 'b.slug as bs',
                 'prc.average_rating as ar', 'prc.total_reviews as tr',
-                DB::raw('ARRAY_AGG(DISTINCT CONCAT(pi.sort_order, \':\', pi.image_path)) FILTER (WHERE pi.image_path IS NOT NULL) as imgs')
+                DB::raw('ARRAY_AGG(DISTINCT CONCAT(pi.sort_order, \':\', pi.image_path)) FILTER (WHERE pi.image_path IS NOT NULL) as imgs'),
+                DB::raw('
+                    COALESCE(
+                        (SELECT MIN(v.price * (1 - COALESCE(v.discount, 0) / 100.0)) 
+                         FROM product_variants v 
+                         WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0),
+                        p.base_price * (1 - COALESCE(p.base_discount, 0) / 100.0)
+                    ) as effective_price
+                '),
+                DB::raw('
+                    COALESCE(
+                        (SELECT MIN(v.price) 
+                         FROM product_variants v 
+                         WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0),
+                        p.base_price
+                    ) as effective_original_price
+                '),
+                DB::raw('
+                    COALESCE(
+                        (SELECT MAX(v.discount) 
+                         FROM product_variants v 
+                         WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0),
+                        p.base_discount
+                    ) as effective_discount
+                '),
+                DB::raw('
+                    CASE 
+                        WHEN p.has_variants THEN 
+                            CASE WHEN EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0) THEN true ELSE false END
+                        ELSE (p.base_stock > 0) 
+                    END as is_in_stock
+                ')
             ])
             ->leftJoin('brands as b', 'p.brand_id', '=', 'b.id')
             ->leftJoin('product_ratings_cache as prc', 'p.id', '=', 'prc.product_id')
@@ -277,8 +360,11 @@ class HighPerformanceFilterController extends Controller
                      ->whereRaw('pi.sort_order <= 2'); // Reduced from 3 to 2 images
             })
             ->where('p.status', 'active')
-            ->groupBy('p.id', 'p.title', 'p.slug', 'p.price', 'p.discount', 
-                     'p.stock', 'p.condition', 'b.title', 'b.slug', 'prc.average_rating', 'prc.total_reviews');
+            ->groupBy([
+                'p.id', 'p.title', 'p.slug', 'p.base_price', 'p.base_discount', 
+                'p.base_stock', 'p.condition', 'p.has_variants',
+                'b.title', 'b.slug', 'prc.average_rating', 'prc.total_reviews'
+            ]);
 
         if ($category) {
             $this->applyCategoryFilter($query, $category);
@@ -307,11 +393,15 @@ class HighPerformanceFilterController extends Controller
         if (!empty($filters['price_range']) && str_contains($filters['price_range'], '-')) {
             [$min, $max] = array_map('floatval', explode('-', $filters['price_range']));
             if ($min >= 0 && $max > $min) {
-                $query->whereRaw('
-                    CASE WHEN p.discount > 0 
-                    THEN p.price * (1 - p.discount / 100.0) 
-                    ELSE p.price END BETWEEN ? AND ?
-                ', [$min, $max]);
+                $query->where(function($q) use ($min, $max) {
+                    $q->where(function($sub) use ($min, $max) {
+                        $sub->where('p.has_variants', false)
+                            ->whereRaw('(p.base_price * (1 - COALESCE(p.base_discount, 0) / 100.0) BETWEEN ? AND ?)', [$min, $max]);
+                    })->orWhere(function($sub) use ($min, $max) {
+                        $sub->where('p.has_variants', true)
+                            ->whereRaw('EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0 AND (v.price * (1 - COALESCE(v.discount, 0) / 100.0) BETWEEN ? AND ?))', [$min, $max]);
+                    });
+                });
             }
         }
 
@@ -324,16 +414,37 @@ class HighPerformanceFilterController extends Controller
 
         if (!empty($filters['discounts'])) {
             $minDiscount = min(array_map('intval', $filters['discounts']));
-            $query->where('p.discount', '>=', $minDiscount);
+            $query->where(function($q) use ($minDiscount) {
+                $q->where(function($sub) use ($minDiscount) {
+                    $sub->where('p.has_variants', false)->where('p.base_discount', '>=', $minDiscount);
+                })->orWhere(function($sub) use ($minDiscount) {
+                    $sub->where('p.has_variants', true)
+                        ->whereRaw('EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0 AND v.discount >= ?)', [$minDiscount]);
+                });
+            });
         }
 
         if (!empty($filters['availability'])) {
             $query->where(function ($q) use ($filters) {
                 foreach ($filters['availability'] as $avail) {
                     if ($avail === 'in_stock') {
-                        $q->orWhere('p.stock', '>', 0);
+                        $q->orWhere(function($sub) {
+                            $sub->where(function($s) {
+                                $s->where('p.has_variants', false)->where('p.base_stock', '>', 0);
+                            })->orWhere(function($s) {
+                                $s->where('p.has_variants', true)
+                                    ->whereRaw('EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0)');
+                            });
+                        });
                     } elseif ($avail === 'out_of_stock') {
-                        $q->orWhere('p.stock', '<=', 0);
+                        $q->orWhere(function($sub) {
+                            $sub->where(function($s) {
+                                $s->where('p.has_variants', false)->where('p.base_stock', '<=', 0);
+                            })->orWhere(function($s) {
+                                $s->where('p.has_variants', true)
+                                    ->whereRaw('NOT EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0)');
+                            });
+                        });
                     }
                 }
             });
@@ -349,10 +460,22 @@ class HighPerformanceFilterController extends Controller
     {
         switch ($sortBy) {
             case 'price_low_high':
-                $query->orderByRaw('CASE WHEN p.discount > 0 THEN p.price * (1 - p.discount / 100.0) ELSE p.price END ASC');
+                $query->orderByRaw('
+                    CASE 
+                        WHEN p.has_variants THEN 
+                            COALESCE((SELECT MIN(v.price * (1 - COALESCE(v.discount, 0) / 100.0)) FROM product_variants v WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0), p.base_price * (1 - p.base_discount / 100.0))
+                        ELSE p.base_price * (1 - COALESCE(p.base_discount, 0) / 100.0) 
+                    END ASC
+                ');
                 break;
             case 'price_high_low':
-                $query->orderByRaw('CASE WHEN p.discount > 0 THEN p.price * (1 - p.discount / 100.0) ELSE p.price END DESC');
+                $query->orderByRaw('
+                    CASE 
+                        WHEN p.has_variants THEN 
+                            COALESCE((SELECT MIN(v.price * (1 - COALESCE(v.discount, 0) / 100.0)) FROM product_variants v WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0), p.base_price * (1 - p.base_discount / 100.0))
+                        ELSE p.base_price * (1 - COALESCE(p.base_discount, 0) / 100.0) 
+                    END DESC
+                ');
                 break;
             case 'rating_high_low':
                 $query->orderByRaw('COALESCE(prc.average_rating, 0) DESC');
@@ -371,9 +494,11 @@ class HighPerformanceFilterController extends Controller
     private function transformProductsOptimized($products): array
     {
         return $products->map(function ($p) {
-            $finalPrice = $p->discount > 0 
-                ? $p->price * (1 - $p->discount / 100) 
-                : $p->price;
+            $finalPrice = (float) ($p->effective_price ?? 0);
+            $origPrice = (float) ($p->effective_original_price ?? 0);
+            $disc = (int) ($p->effective_discount ?? 0);
+            $isInStock = (bool) $p->is_in_stock;
+            $stock = $isInStock ? ($p->has_variants ? 999 : (int) $p->base_stock) : 0;
 
             $images = [];
             if (!empty($p->imgs)) {
@@ -402,11 +527,11 @@ class HighPerformanceFilterController extends Controller
                 't' => Str::limit($p->title, 60), // Truncated from full title
                 's' => $p->slug,
                 'pr' => [
-                    'o' => (float) $p->price,
+                    'o' => $origPrice,
                     'f' => round($finalPrice, 2),
-                    'd' => (int) $p->discount
+                    'd' => $disc
                 ],
-                'st' => (int) $p->stock,
+                'st' => $stock,
                 'c' => $p->condition,
                 'b' => $p->bt ? ['t' => $p->bt, 's' => $p->bs] : null,
                 'i' => $images,
@@ -433,7 +558,7 @@ class HighPerformanceFilterController extends Controller
                 return max(1, (int) ($estimate * $this->getFilterFactor($category, $filters)));
             }
 
-            $query = DB::table('products as p')->where('p.status', 'active');
+            $query = DB::table('products as p')->select('p.id')->where('p.status', 'active');
             if ($category) {
                 $this->applyCategoryFilter($query, $category);
             }

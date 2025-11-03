@@ -12,8 +12,8 @@ use Exception;
 class OptimizedVariantMasterSeederNew extends Seeder
 {
     // Configuration
-    protected int $targetProducts = 100;
-    protected int $variantProducts = 95; // 95% variants as requested
+    protected int $targetProducts = 10000;
+    protected int $variantProducts = 9500; // 95% variants as requested
     protected int $variantsPerProduct = 4;
     protected int $batchSize = 500;
     protected bool $enableTruncate = false;

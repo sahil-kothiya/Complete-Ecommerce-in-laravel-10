@@ -4,6 +4,7 @@
         console.log("Unified shop system already initialized, skipping...");
         return;
     }
+    const appUrl = window.location.origin; // Dynamically use the current origin instead of hardcoded URL
     let e = {
             maxPrice: window.maxPrice || 5e3,
             filterDebounceTime: 300,
@@ -178,7 +179,7 @@
                             ? e.setAttribute("loaded", "")
                             : (e.addEventListener("load", () => e.setAttribute("loaded", "")),
                               e.addEventListener("error", () => {
-                                  (e.src = "/images/no-image.png"), e.setAttribute("loaded", "");
+                                  (e.src = `${appUrl}/images/no-image.png`), e.setAttribute("loaded", "");
                               }));
                 }),
                 (i.style.width = "100%"),
@@ -458,13 +459,16 @@
                 e.i && e.i.length > 0
                     ? e.i
                           .map((t) => {
-                              let i = t.startsWith("storage/photos/1/Products/") ? `http://127.0.0.1:8000/${t}` : `http://127.0.0.1:8000/storage/photos/1/Products/${t}`;
-                              return `<img src="${i}" class="slider-image lazy" alt="${e.t}"
+                              // Fixed image path construction: Use dynamic appUrl and direct /storage/ + relative path
+                              // Assuming t is the relative path like 'products/product_xxx.webp' for normal products
+                              // For variants, it would be 'products/variants/xxx.webp' - handled similarly
+                              let imageSrc = `${appUrl}/storage/${t}`;
+                              return `<img src="${imageSrc}" class="slider-image lazy" alt="${e.t}"
                             loading="lazy" width="235" height="235" decoding="async"
-                            onerror="this.src='/images/no-image.png'; this.onerror=null;">`;
+                            onerror="this.src='${appUrl}/images/no-image.png'; this.onerror=null;">`;
                           })
                           .join("")
-                    : `<img src="/images/no-image.png" class="slider-image lazy" alt="${e.t}"
+                    : `<img src="${appUrl}/images/no-image.png" class="slider-image lazy" alt="${e.t}"
                          loading="lazy" width="235" height="235" decoding="async">`;
             let a = e.b || { t: "", s: "" },
                 s = e.pr?.f ?? e.pr?.o ?? 0,

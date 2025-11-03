@@ -21,17 +21,55 @@
                 @php
                 $inWishlist = Helper::isProductInWishlist($product->slug);
                 $tabindex = 47 + $index * 4;
+                $basePrice = $product->base_price ?? 0;
+                $baseDiscount = $product->base_discount ?? 0;
+                $discountedPrice = $baseDiscount > 0 ? $basePrice - ($basePrice * $baseDiscount / 100) : $basePrice;
+                $baseStock = $product->base_stock ?? 0;
+                $hasVariants = $product->has_variants ?? false;
+
+                // Determine image source with proper path handling
+                $imageUrl = asset('images/no-image.png'); // Default fallback
+                
+                if ($hasVariants && $product->activeVariants && $product->activeVariants->first()) {
+                    // Check for variant image
+                    $variantImage = $product->activeVariants->first()->primaryImage;
+                    if ($variantImage && $variantImage->image_path) {
+                        // Check if storage path exists, otherwise use direct path
+                        $variantPath = 'products/variants/' . basename($variantImage->image_path);
+                        if (file_exists(public_path('storage/' . $variantPath))) {
+                            $imageUrl = asset('storage/' . $variantPath);
+                        } elseif (file_exists(public_path($variantImage->image_path))) {
+                            $imageUrl = asset($variantImage->image_path);
+                        }
+                    }
+                }
+                
+                // Fallback to product image if variant image not found or no variants
+                if ($imageUrl === asset('images/no-image.png')) {
+                    $productImage = $product->images->first();
+                    if ($productImage && $productImage->image_path) {
+                        // Check if storage path exists, otherwise use direct path
+                        $productPath = 'products/' . basename($productImage->image_path);
+                        if (file_exists(public_path('storage/' . $productPath))) {
+                            $imageUrl = asset('storage/' . $productPath);
+                        } elseif (file_exists(public_path($productImage->image_path))) {
+                            $imageUrl = asset($productImage->image_path);
+                        }
+                    }
+                }
+                dd($imageUrl);
                 @endphp
                 <div class="carousel-item flipkart-card" tabindex="{{ $tabindex }}">
                     <div class="flipkart-card-img-wrap">
                         <a href="{{ route('product-detail', $product->slug) }}">
-                            <img src="{{ $product->images->first() ? asset($product->images->first()->image_path) : asset('images/no-image.png') }}"
+                            <img src="{{ $imageUrl }}"
                                 alt="{{ $product->title }}"
                                 class="flipkart-card-img"
-                                loading="lazy">
+                                loading="lazy"
+                                onerror="this.src='{{ asset('images/no-image.png') }}'">
                         </a>
-                        @if($product->discount > 0)
-                        <span class="flipkart-discount-badge">{{ $product->discount }}% Off</span>
+                        @if($baseDiscount > 0)
+                        <span class="flipkart-discount-badge">{{ $baseDiscount }}% Off</span>
                         @endif
                         <div class="flipkart-card-icons">
                             <a href="{{ route('add-to-wishlist', $product->slug) }}"
@@ -45,17 +83,17 @@
                         <a href="{{ route('product-detail', $product->slug) }}"
                            class="flipkart-card-title">{{ Str::limit($product->title, 40) }}</a>
                         <div class="flipkart-card-price">
-                            @if($product->discount > 0)
-                            <span class="flipkart-price-discounted">${{ number_format($product->price - ($product->price * $product->discount / 100), 2) }}</span>
-                            <span class="flipkart-price-original">${{ number_format($product->price, 2) }}</span>
+                            @if($baseDiscount > 0)
+                            <span class="flipkart-price-discounted">${{ number_format($discountedPrice, 2) }}</span>
+                            <span class="flipkart-price-original">${{ number_format($basePrice, 2) }}</span>
                             @else
-                            <span class="flipkart-price-discounted">${{ number_format($product->price, 2) }}</span>
+                            <span class="flipkart-price-discounted">${{ number_format($basePrice, 2) }}</span>
                             @endif
                         </div>
                         <div class="add-to-cart mt-2 d-flex align-items-center gap-2">
                             <a href="{{ route('add-to-cart', $product->slug) }}"
-                               class="btn btn-sm btn-dark text-uppercase text-center {{ $product->stock <= 0 ? 'disabled' : '' }}">
-                                <i class="ti-shopping-cart"></i> {{ $product->stock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
+                               class="btn btn-sm btn-dark text-uppercase text-center {{ ($hasVariants ? ($product->inStockVariants->count() > 0) : $baseStock > 0) ? '' : 'disabled' }}">
+                                <i class="ti-shopping-cart"></i> {{ ($hasVariants ? ($product->inStockVariants->count() > 0 ? 'Add to Cart' : 'Out of Stock') : ($baseStock > 0 ? 'Add to Cart' : 'Out of Stock')) }}
                             </a>
                         </div>
                     </div>
@@ -111,6 +149,13 @@
             left: 100%;
         }
     }
+
+    /* Ensure images are properly sized */
+    .flipkart-card-img {
+        width: 100%;
+        height: auto;
+        object-fit: cover;
+    }
 </style>
 @endpush
 
@@ -125,37 +170,50 @@
         const prevBtn = document.getElementById('recentCarouselPrev');
         const nextBtn = document.getElementById('recentCarouselNext');
 
+        // Validate required elements exist
+        if (!track || !viewport || !prevBtn || !nextBtn) {
+            console.warn('Carousel elements not found');
+            return;
+        }
+
         // Auto-scroll variables
         let autoScrollInterval = null;
-        const autoScrollSpeed = 150; // milliseconds between scrolls
-        const scrollAmount = 5; // pixels per scroll step
+        const autoScrollSpeed = 50; // milliseconds between scrolls (smoother)
+        const scrollAmount = 2; // pixels per scroll step (smoother)
 
         function getItemWidth() {
-            const item = track?.querySelector('.carousel-item');
+            const item = track.querySelector('.carousel-item');
             if (!item) return 180;
             const style = window.getComputedStyle(item);
             return item.offsetWidth + parseInt(style.marginRight || 0) + parseInt(style.marginLeft || 0);
         }
 
         function scrollByCard(dir = 1) {
-            if (viewport) {
-                viewport.scrollBy({
-                    left: dir * getItemWidth(),
-                    behavior: 'smooth'
-                });
-            }
+            const itemWidth = getItemWidth();
+            viewport.scrollBy({
+                left: dir * itemWidth,
+                behavior: 'smooth'
+            });
         }
 
         function startAutoScroll(direction) {
             stopAutoScroll(); // Clear any existing interval
 
             autoScrollInterval = setInterval(() => {
-                if (viewport) {
-                    viewport.scrollBy({
-                        left: direction * scrollAmount,
-                        behavior: 'auto'
-                    });
+                const maxScroll = viewport.scrollWidth - viewport.clientWidth;
+                const currentScroll = viewport.scrollLeft;
+
+                // Stop at boundaries
+                if ((direction < 0 && currentScroll <= 0) || 
+                    (direction > 0 && currentScroll >= maxScroll)) {
+                    stopAutoScroll();
+                    return;
                 }
+
+                viewport.scrollBy({
+                    left: direction * scrollAmount,
+                    behavior: 'auto'
+                });
             }, autoScrollSpeed);
         }
 
@@ -164,47 +222,59 @@
                 clearInterval(autoScrollInterval);
                 autoScrollInterval = null;
             }
+            // Remove active state from both buttons
+            prevBtn.classList.remove('auto-scrolling');
+            nextBtn.classList.remove('auto-scrolling');
         }
 
         // Previous button events
-        if (prevBtn) {
-            prevBtn.addEventListener('click', () => scrollByCard(-1));
+        prevBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            scrollByCard(-1);
+        });
 
-            prevBtn.addEventListener('mouseenter', () => {
-                prevBtn.classList.add('auto-scrolling');
-                startAutoScroll(-1); // Scroll left
-            });
+        prevBtn.addEventListener('mouseenter', () => {
+            prevBtn.classList.add('auto-scrolling');
+            startAutoScroll(-1); // Scroll left
+        });
 
-            prevBtn.addEventListener('mouseleave', () => {
-                prevBtn.classList.remove('auto-scrolling');
-                stopAutoScroll();
-            });
-        }
+        prevBtn.addEventListener('mouseleave', stopAutoScroll);
 
         // Next button events
-        if (nextBtn) {
-            nextBtn.addEventListener('click', () => scrollByCard(1));
+        nextBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            scrollByCard(1);
+        });
 
-            nextBtn.addEventListener('mouseenter', () => {
-                nextBtn.classList.add('auto-scrolling');
-                startAutoScroll(1); // Scroll right
-            });
+        nextBtn.addEventListener('mouseenter', () => {
+            nextBtn.classList.add('auto-scrolling');
+            startAutoScroll(1); // Scroll right
+        });
 
-            nextBtn.addEventListener('mouseleave', () => {
-                nextBtn.classList.remove('auto-scrolling');
-                stopAutoScroll();
-            });
-        }
+        nextBtn.addEventListener('mouseleave', stopAutoScroll);
 
         // Stop auto-scroll when user manually interacts with carousel
-        if (viewport) {
-            viewport.addEventListener('wheel', stopAutoScroll);
-            viewport.addEventListener('touchstart', stopAutoScroll);
-            viewport.addEventListener('mousedown', stopAutoScroll);
-        }
+        viewport.addEventListener('wheel', stopAutoScroll);
+        viewport.addEventListener('touchstart', stopAutoScroll);
+        viewport.addEventListener('mousedown', stopAutoScroll);
+        viewport.addEventListener('scroll', () => {
+            // Update button states based on scroll position
+            const maxScroll = viewport.scrollWidth - viewport.clientWidth;
+            const currentScroll = viewport.scrollLeft;
+            
+            prevBtn.disabled = currentScroll <= 0;
+            nextBtn.disabled = currentScroll >= maxScroll;
+        });
 
         // Cleanup on page unload
         window.addEventListener('beforeunload', stopAutoScroll);
+
+        // Initial button state check
+        setTimeout(() => {
+            const maxScroll = viewport.scrollWidth - viewport.clientWidth;
+            prevBtn.disabled = viewport.scrollLeft <= 0;
+            nextBtn.disabled = viewport.scrollLeft >= maxScroll;
+        }, 100);
     });
 </script>
 @endpush
