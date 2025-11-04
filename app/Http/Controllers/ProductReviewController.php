@@ -4,10 +4,11 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Product;
-use Notification;
+use Illuminate\Support\Facades\Notification;
 use App\Notifications\StatusNotification;
 use App\User;
 use App\Models\ProductReview;
+use Illuminate\Support\Facades\Auth;
 
 class ProductReviewController extends Controller
 {
@@ -39,19 +40,19 @@ class ProductReviewController extends Controller
     public function store(Request $request)
     {
         $this->validate($request, [
-            'rate' => 'required|numeric|min:1'
+            'rate' => 'required|numeric|min:1|max:5',
+            'review' => 'required|string|max:1000'
         ]);
+
         $product_info = Product::getProductBySlug($request->slug);
-        // dd($product_info, $request->all());
-        // return $product_info;
-        // return $request->all();
         $data = $request->all();
         $data['product_id'] = $product_info->id;
-        $data['user_id'] = $request->user()->id;
+        $data['user_id'] = Auth::id();
         $data['status'] = 'active';
-        // dd($data);
-        $status = ProductReview::create($data);
 
+        $review = ProductReview::create($data);
+
+        // Send notification to admins
         $user = User::where('role', 'admin')->get();
         $details = [
             'title' => 'New Product Rating!',
@@ -59,12 +60,34 @@ class ProductReviewController extends Controller
             'fas' => 'fa-star'
         ];
         Notification::send($user, new StatusNotification($details));
-        if ($status) {
-            request()->session()->flash('success', 'Thank you for your feedback');
-        } else {
-            request()->session()->flash('error', 'Something went wrong! Please try again!!');
+
+        if ($request->expectsJson()) {
+            // Prepare response for AJAX
+            $userInfo = $review->user; // Assuming relation: belongsTo(User::class)
+            // Make access null-safe. `optional()` returns null when $userInfo is null.
+            $newReviewData = [
+                'user_name' => optional($userInfo)->name ?? 'Anonymous',
+                'user_photo' => optional($userInfo)->photo ? asset(optional($userInfo)->photo) : asset('backend/img/avatar.webp'),
+                'rate' => $review->rate,
+                'review' => $review->review,
+            ];
+
+            // Recalculate average and total
+            $allReviews = $product_info->getReview; // Assuming relation
+            $avg = $allReviews->avg('rate');
+            $total = $allReviews->count();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Thank you for your feedback',
+                'new_review' => $newReviewData,
+                'avg_rating' => (float) $avg,
+                'total_reviews' => $total
+            ]);
         }
-        return redirect()->back();
+
+        // Non-AJAX fallback
+        return redirect()->back()->with('success', 'Thank you for your feedback');
     }
 
     /**
@@ -117,12 +140,12 @@ class ProductReviewController extends Controller
             // ];
             // Notification::send($user,new StatusNotification($details));
             if ($status) {
-                request()->session()->flash('success', 'Review Successfully updated');
+                session()->flash('success', 'Review Successfully updated');
             } else {
-                request()->session()->flash('error', 'Something went wrong! Please try again!!');
+                session()->flash('error', 'Something went wrong! Please try again!!');
             }
         } else {
-            request()->session()->flash('error', 'Review not found!!');
+            session()->flash('error', 'Review not found!!');
         }
 
         return redirect()->route('review.index');
@@ -137,12 +160,18 @@ class ProductReviewController extends Controller
     public function destroy($id)
     {
         $review = ProductReview::find($id);
+        if (! $review) {
+            session()->flash('error', 'Review not found');
+            return redirect()->route('review.index');
+        }
+
         $status = $review->delete();
         if ($status) {
-            request()->session()->flash('success', 'Successfully deleted review');
+            session()->flash('success', 'Successfully deleted review');
         } else {
-            request()->session()->flash('error', 'Something went wrong! Try again');
+            session()->flash('error', 'Something went wrong! Try again');
         }
+
         return redirect()->route('review.index');
     }
 }

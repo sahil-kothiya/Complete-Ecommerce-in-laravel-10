@@ -47,13 +47,13 @@
                         <div class="carousel-item flipkart-card" tabindex="{{ $tabindex }}">
                             <div class="flipkart-card-img-wrap">
                                 <a href="{{ route('product-detail', $product->slug) }}">
-                                    <img src="{{ $product->images->first() ? asset($product->images->first()->image_path) : asset('images/no-image.png') }}"
+                                    <img src="{{ $product->primaryImage?->url ?? asset('images/no-image.png') }}"
                                         alt="{{ $product->title }}"
                                         class="flipkart-card-img"
                                         loading="lazy">
                                 </a>
                                 @if($product->discount > 0)
-                                    <span class="flipkart-discount-badge">{{ $product->discount }}% Off</span>
+                                    <span class="flipkart-discount-badge">{{ number_format($product->discount, 0) }}% Off</span>
                                 @endif
                                 <div class="flipkart-card-icons">
                                     <a href="{{ route('add-to-wishlist', $product->slug) }}"
@@ -67,11 +67,9 @@
                                 <a href="{{ route('product-detail', $product->slug) }}"
                                    class="flipkart-card-title">{{ Str::limit($product->title, 40) }}</a>
                                 <div class="flipkart-card-price">
+                                    <span class="flipkart-price-discounted">${{ number_format($product->price, 2) }}</span>
                                     @if($product->discount > 0)
-                                        <span class="flipkart-price-discounted">${{ number_format($product->price - ($product->price * $product->discount / 100), 2) }}</span>
-                                        <span class="flipkart-price-original">${{ number_format($product->price, 2) }}</span>
-                                    @else
-                                        <span class="flipkart-price-discounted">${{ number_format($product->price, 2) }}</span>
+                                        <span class="flipkart-price-original">${{ number_format($product->original_price, 2) }}</span>
                                     @endif
                                 </div>
                                 <div class="add-to-cart mt-2 d-flex align-items-center gap-2">
