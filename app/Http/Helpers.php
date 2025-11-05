@@ -119,21 +119,104 @@ class Helper
         }
         return PostCategory::has('posts')->orderBy('id', 'DESC')->get();
     }
-    // Cart Count
-    public static function cartCount($user_id = '')
-    {
 
-        if (Auth::check()) {
-            if ($user_id == "") $user_id = auth()->user()->id;
-            return Cart::where('user_id', $user_id)->where('order_id', null)->sum('quantity');
-        } else {
+    public static function totalWishlistPrice()
+    {
+        return Helper::getAllProductFromWishlist()->sum(function ($item) {
+            return $item->variant ? $item->variant->discounted_price : 
+                ($item->price ?? $item->product->base_price * (1 - ($item->product->base_discount ?? 0)/100));
+        });
+    }
+
+    public static function isProductInWishlist($productSlug)
+    {
+        if (!auth()->check()) return false;
+
+        return \App\Models\Wishlist::where('user_id', auth()->id())
+            ->whereHas('product', function ($query) use ($productSlug) {
+                $query->where('slug', $productSlug);
+            })->exists();
+    }
+
+    public static function cartCount($user_id = null)
+    {
+        $user_id = $user_id ?? (Auth::check() ? Auth::id() : null);
+        if (!$user_id) return 0;
+
+        return Cart::where('user_id', $user_id)
+            ->whereNull('order_id')
+            ->sum('quantity');
+    }
+
+    public static function wishlistCount($user_id = null)
+    {
+        if (!Auth::check()) {
             return 0;
         }
+
+        $user_id = $user_id ?: Auth::id();
+
+        return Wishlist::where('user_id', $user_id)
+            ->whereNull('cart_id')
+            ->sum('quantity');
     }
-    // relationship cart with product
-    public function product()
+
+    public static function getAllProductFromWishlist($user_id = '')
     {
-        return $this->hasOne('App\Models\Product', 'id', 'product_id');
+        if (Auth::check()) {
+            $user_id = $user_id ?: auth()->user()->id;
+
+            return Wishlist::with([
+                    'product' => function ($q) {
+                        $q->select('id', 'title', 'slug', 'summary', 'base_price', 'base_discount', 'has_variants', 'status')
+                        ->with([
+                            'images' => function ($query) {
+                                $query->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                                        ->orderByDesc('is_primary')
+                                        ->orderBy('sort_order');
+                            }
+                        ]);
+                    },
+                    'variant' => function ($q) {
+                        $q->select('id', 'product_id', 'sku', 'price', 'discount', 'stock', 'status', 'variant_values')
+                        ->with([
+                            'variantOptions' => function ($query) {
+                                $query->select('product_variant_options.id', 'variant_type_id', 'display_value', 'value', 'sort_order')
+                                        ->orderBy('sort_order');
+                            },
+                            'variantOptions.variantType' => function ($query) {
+                                $query->select('id', 'name', 'display_name', 'sort_order');
+                            },
+                            'images' => function ($query) {
+                                $query->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                                        ->orderByDesc('is_primary')
+                                        ->orderBy('sort_order');
+                            }
+                        ]);
+                    }
+                ])
+                ->where('user_id', $user_id)
+                ->whereNull('cart_id')
+                ->get();
+        }
+
+        return collect();
+    }
+
+    // relationship cart with product (helper)
+    public static function productForCart($cart)
+    {
+        // Accept either a Cart model/array/object with product_id or a product id
+        $productId = null;
+        if (is_numeric($cart)) {
+            $productId = $cart;
+        } elseif (is_array($cart) && isset($cart['product_id'])) {
+            $productId = $cart['product_id'];
+        } elseif (is_object($cart) && isset($cart->product_id)) {
+            $productId = $cart->product_id;
+        }
+
+        return $productId ? Product::find($productId) : null;
     }
 
 
@@ -218,52 +301,228 @@ class Helper
 
     public static function totalCartPrice($user_id = null)
     {
-        if (!Auth::check()) return 0;
+        $user_id = $user_id ?? (Auth::check() ? Auth::id() : null);
+        if (!$user_id) return 0.0;
 
-        $user_id = $user_id ?? auth()->id();
-
-        $cartItems = Cart::with('product.cat_info.discounts')
+        $cartItems = Cart::with(['product.cat_info.discounts', 'variant'])
             ->where('user_id', $user_id)
             ->whereNull('order_id')
             ->get();
 
         $discountService = app(DiscountService::class);
-        $total = 0;
+        $total = 0.0;
 
         foreach ($cartItems as $cart) {
-            $product = $cart->product;
-            $quantity = $cart->quantity;
-
-            // Original product price
-            $originalPrice = $product->price;
-
-            // Get all applicable discounts (category, product, etc.)
-            $discounts = $discountService->getEffectiveDiscounts($product);
-
-            // Apply all discounts to get the final price
-            $discountedPrice = $discountService->applyAllDiscounts($originalPrice, $discounts);
-
-            // Add to total based on quantity
-            $total += $discountedPrice * $quantity;
+            $basePrice = $cart->variant?->price ?? $cart->product->base_price ?? 0.0;
+            $discounts = $discountService->getEffectiveDiscounts($cart->product, $cart->variant);
+            $finalPrice = $discountService->applyAllDiscounts($basePrice, $discounts);
+            $total += $finalPrice * $cart->quantity;
         }
 
         return round($total, 2);
     }
 
+    public static function totalCartPriceOLD($user_id = null)
+    {
+        $discountService = app(DiscountService::class);
+
+        if (Auth::check()) {
+            $user_id = $user_id ?? Auth::id();
+
+            $cartItems = Cart::with(['product.cat_info.discounts', 'variant'])
+                ->where('user_id', $user_id)
+                ->whereNull('order_id')
+                ->get();
+
+            $total = 0;
+
+            foreach ($cartItems as $cart) {
+                $product = $cart->product;
+                $quantity = $cart->quantity;
+
+                if ($cart->variant) {
+                    // For variants: Use variant price as original
+                    $originalPrice = $cart->variant->price;
+                    $discounts = [];
+
+                    // Include variant's own discount if any
+                    if ($cart->variant->discount > 0) {
+                        $discounts[] = [
+                            'type' => 'percentage',
+                            'value' => $cart->variant->discount,
+                            'source' => 'variant',
+                            'title' => 'Variant Discount',
+                        ];
+                    }
+                } else {
+                    // For non-variants: Use base price
+                    $originalPrice = $product->base_price;
+                    $discounts = [];
+
+                    // Include product's base discount if any
+                    if ($product->base_discount > 0) {
+                        $discounts[] = [
+                            'type' => 'percentage',
+                            'value' => $product->base_discount,
+                            'source' => 'product',
+                            'title' => 'Product Discount',
+                        ];
+                    }
+                }
+
+                // Append category discounts (assuming getEffectiveDiscounts returns array of discounts)
+                $categoryDiscounts = $discountService->getEffectiveDiscounts($product);
+                $discounts = array_merge($discounts, $categoryDiscounts);
+
+                // Apply all discounts sequentially to get final price
+                $discountedPrice = $discountService->applyAllDiscounts($originalPrice, $discounts);
+
+                // Add to total
+                $total += $discountedPrice * $quantity;
+            }
+
+            return round($total, 2);
+        } else {
+            // Guest cart from session
+            $cart = Session::get('cart', []);
+            $total = 0;
+
+            foreach ($cart as $item) {
+                $quantity = $item['quantity'] ?? 1;
+                $product = Product::with('cat_info.discounts')->find($item['product_id']);
+
+                if (!$product) continue;
+
+                if (isset($item['variant_id'])) {
+                    $variant = ProductVariant::find($item['variant_id']);
+                    if (!$variant) continue;
+
+                    $originalPrice = $variant->price;
+                    $discounts = [];
+
+                    if ($variant->discount > 0) {
+                        $discounts[] = [
+                            'type' => 'percentage',
+                            'value' => $variant->discount,
+                            'source' => 'variant',
+                            'title' => 'Variant Discount',
+                        ];
+                    }
+                } else {
+                    $originalPrice = $product->base_price;
+                    $discounts = [];
+
+                    if ($product->base_discount > 0) {
+                        $discounts[] = [
+                            'type' => 'percentage',
+                            'value' => $product->base_discount,
+                            'source' => 'product',
+                            'title' => 'Product Discount',
+                        ];
+                    }
+                }
+
+                // Append category discounts
+                $categoryDiscounts = $discountService->getEffectiveDiscounts($product);
+                $discounts = array_merge($discounts, $categoryDiscounts);
+
+                $discountedPrice = $discountService->applyAllDiscounts($originalPrice, $discounts);
+                $total += $discountedPrice * $quantity;
+            }
+
+            return round($total, 2);
+        }
+    }
+
 
     public static function totalCartPriceWithBreakdown($user_id = '')
     {
+        $discountService = app(DiscountService::class);
+
         if (!Auth::check()) {
+            // Handle guest breakdown similarly
+            $cart = Session::get('cart', []);
+            $total = 0;
+            $saved = 0;
+            $discountBreakdown = [];
+
+            foreach ($cart as $item) {
+                $quantity = $item['quantity'] ?? 1;
+                $product = Product::with('cat_info.discounts')->find($item['product_id']);
+                if (!$product) continue;
+
+                if (isset($item['variant_id'])) {
+                    $variant = ProductVariant::find($item['variant_id']);
+                    if (!$variant) continue;
+
+                    $originalPrice = $variant->price;
+                    $discounts = [];
+
+                    if ($variant->discount > 0) {
+                        $discounts[] = [
+                            'type' => 'percentage',
+                            'value' => $variant->discount,
+                            'source' => 'variant',
+                            'title' => 'Variant Discount',
+                        ];
+                    }
+                } else {
+                    $originalPrice = $product->base_price;
+                    $discounts = [];
+
+                    if ($product->base_discount > 0) {
+                        $discounts[] = [
+                            'type' => 'percentage',
+                            'value' => $product->base_discount,
+                            'source' => 'product',
+                            'title' => 'Product Discount',
+                        ];
+                    }
+                }
+
+                $categoryDiscounts = $discountService->getEffectiveDiscounts($product);
+                $discounts = array_merge($discounts, $categoryDiscounts);
+
+                $discountedPrice = $discountService->applyAllDiscounts($originalPrice, $discounts);
+
+                $total += $discountedPrice * $quantity;
+                $saved += ($originalPrice - $discountedPrice) * $quantity;
+
+                // Breakdown
+                $intermediatePrice = $originalPrice;
+                foreach ($discounts as $discount) {
+                    $key = ($discount['title'] ?? ucfirst($discount['source'])) . ' (' . $discount['type'] . ')';
+
+                    if (!isset($discountBreakdown[$key])) {
+                        $discountBreakdown[$key] = [
+                            'title' => $discount['title'] ?? ucfirst($discount['source']),
+                            'type' => $discount['type'],
+                            'value' => $discount['value'],
+                            'source' => $discount['source'],
+                            'saved' => 0,
+                        ];
+                    }
+
+                    if ($discount['type'] === 'percentage') {
+                        $savedPerUnit = $intermediatePrice * ($discount['value'] / 100);
+                    } else {
+                        $savedPerUnit = $discount['value'];
+                    }
+
+                    $discountBreakdown[$key]['saved'] += $savedPerUnit * $quantity;
+                    $intermediatePrice -= $savedPerUnit;
+                }
+            }
+
             return [
-                'total' => 0,
-                'saved' => 0,
-                'discount_breakdown' => [],
+                'total' => round($total, 2),
+                'saved' => round($saved, 2),
+                'discount_breakdown' => collect($discountBreakdown)->values()->toArray(),
             ];
         }
 
         $user_id = $user_id ?: auth()->id();
-        $carts = Cart::with(['product.cat_info.discounts'])->where('user_id', $user_id)->whereNull('order_id')->get();
-        $discountService = app(DiscountService::class);
+        $carts = Cart::with(['product.cat_info.discounts', 'variant'])->where('user_id', $user_id)->whereNull('order_id')->get();
 
         $total = 0;
         $saved = 0;
@@ -271,19 +530,34 @@ class Helper
 
         foreach ($carts as $cart) {
             $product = $cart->product;
-            $originalPrice = $product->price;
+            $originalPrice = $cart->variant ? $cart->variant->price : $product->base_price;
             $quantity = $cart->quantity;
 
-            // Get all discounts (product & category)
             $discounts = $discountService->getEffectiveDiscounts($product);
+
+            // Include product/variant discount
+            if ($cart->variant && $cart->variant->discount > 0) {
+                array_unshift($discounts, [
+                    'type' => 'percentage',
+                    'value' => $cart->variant->discount,
+                    'source' => 'variant',
+                    'title' => 'Variant Discount',
+                ]);
+            } elseif (!$cart->variant && $product->base_discount > 0) {
+                array_unshift($discounts, [
+                    'type' => 'percentage',
+                    'value' => $product->base_discount,
+                    'source' => 'product',
+                    'title' => 'Product Discount',
+                ]);
+            }
+
             $discountedPrice = $discountService->applyAllDiscounts($originalPrice, $discounts);
 
-            // Compute total price and savings
             $total += $discountedPrice * $quantity;
             $saved += ($originalPrice - $discountedPrice) * $quantity;
 
             // Aggregate discount breakdown per type/title
-            // Compute saved amount per discount type (in order)
             $intermediatePrice = $originalPrice;
             foreach ($discounts as $discount) {
                 $key = ($discount['title'] ?? ucfirst($discount['source'])) . ' (' . $discount['type'] . ')';
@@ -298,7 +572,6 @@ class Helper
                     ];
                 }
 
-                // Apply discount to intermediate price
                 if ($discount['type'] === 'percentage') {
                     $savedPerUnit = $intermediatePrice * ($discount['value'] / 100);
                 } else {
@@ -306,8 +579,6 @@ class Helper
                 }
 
                 $discountBreakdown[$key]['saved'] += $savedPerUnit * $quantity;
-
-                // Reduce price for next layer
                 $intermediatePrice -= $savedPerUnit;
             }
         }
@@ -316,120 +587,7 @@ class Helper
             'total' => round($total, 2),
             'saved' => round($saved, 2),
             'discount_breakdown' => collect($discountBreakdown)->values()->toArray(),
-            // 'discount_breakdown' => collect($discountBreakdown)->sortByDesc('saved')->values()->toArray(),
         ];
-    }
-
-    // Total amount cart
-    // public static function totalCartPrice($user_id = '')
-    // {
-    //     if (Auth::check()) {
-    //         if ($user_id == "") $user_id = auth()->user()->id;
-    //         return Cart::where('user_id', $user_id)->where('order_id', null)->sum('amount');
-    //     } else {
-    //         return 0;
-    //     }
-    // }
-    // Wishlist Count
-    public static function wishlistCount($user_id = '')
-    {
-        if (Auth::check()) {
-            if ($user_id == "") $user_id = auth()->user()->id;
-            return Wishlist::where('user_id', $user_id)->where('cart_id', null)->sum('quantity');
-        } else {
-            return 0;
-        }
-    }
-    public static function getAllProductFromWishlist($user_id = '')
-    {
-        if (Auth::check()) {
-            $user_id = $user_id ?: auth()->user()->id;
-
-            return Wishlist::with([
-                    'product' => function ($q) {
-                        $q->select('id', 'title', 'slug', 'summary', 'base_price', 'base_discount', 'has_variants', 'status')
-                        ->with([
-                            'images' => function ($query) {
-                                $query->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
-                                        ->orderByDesc('is_primary')
-                                        ->orderBy('sort_order');
-                            }
-                        ]);
-                    },
-                    'variant' => function ($q) {
-                        $q->select('id', 'product_id', 'sku', 'price', 'discount', 'stock', 'status', 'variant_values')
-                        ->with([
-                            'variantOptions' => function ($query) {
-                                $query->select('product_variant_options.id', 'variant_type_id', 'display_value', 'value', 'sort_order')
-                                        ->orderBy('sort_order');
-                            },
-                            'variantOptions.variantType' => function ($query) {
-                                $query->select('id', 'name', 'display_name', 'sort_order');
-                            },
-                            'images' => function ($query) {
-                                $query->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
-                                        ->orderByDesc('is_primary')
-                                        ->orderBy('sort_order');
-                            }
-                        ]);
-                    }
-                ])
-                ->where('user_id', $user_id)
-                ->whereNull('cart_id')
-                ->get();
-        }
-
-        return collect();
-    }
-
-    // public static function totalWishlistPrice($user_id = '')
-    // {
-    //     if (Auth::check()) {
-    //         if ($user_id == "") $user_id = auth()->user()->id;
-    //         return Wishlist::where('user_id', $user_id)->where('cart_id', null)->sum('amount');
-    //     } else {
-    //         return 0;
-    //     }
-    // }
-
-    public static function totalWishlistPrice()
-    {
-        return Helper::getAllProductFromWishlist()->sum(function ($item) {
-            return $item->variant ? $item->variant->discounted_price : 
-                ($item->price ?? $item->product->base_price * (1 - ($item->product->base_discount ?? 0)/100));
-        });
-    }
-
-    private function cleanupOldVariants(Product $product)
-    {
-        if ($product->getOriginal('has_variants')) {
-            foreach ($product->variants as $variant) {
-                foreach ($variant->images as $img) {
-                    Storage::delete('public/' . $img->image_path);
-                }
-                $variant->delete();
-            }
-        }
-    }
-
-    private function cleanupOldProductImages(Product $product)
-    {
-        if (!$product->getOriginal('has_variants')) {
-            foreach ($product->images as $img) {
-                Storage::delete('public/' . $img->image_path);
-            }
-            ProductImage::where('product_id', $product->id)->delete();
-        }
-    }
-
-    public static function isProductInWishlist($productSlug)
-    {
-        if (!auth()->check()) return false;
-
-        return \App\Models\Wishlist::where('user_id', auth()->id())
-            ->whereHas('product', function ($query) use ($productSlug) {
-                $query->where('slug', $productSlug);
-            })->exists();
     }
 
     // Total price with shipping and coupon

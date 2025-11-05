@@ -49,134 +49,169 @@ class OrderController extends Controller
      */
     public function store(Request $request)
     {
-        // Validate request
         $validated = $request->validate([
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'email' => 'required|email|max:255',
-            'phone' => 'required|string|max:20',
-            'country' => 'required|string|max:100',
-            'address1' => 'required|string|max:255',
-            'address2' => 'nullable|string|max:255',
-            'post_code' => 'nullable|string|max:20',
+            'first_name'     => 'required|string|max:255',
+            'last_name'      => 'required|string|max:255',
+            'email'          => 'required|email|max:255',
+            'phone'          => 'required|string|max:20',
+            'country'        => 'required|string|max:100',
+            'address1'       => 'required|string|max:255',
+            'address2'       => 'nullable|string|max:255',
+            'post_code'      => 'nullable|string|max:20',
             'payment_method' => 'required|in:' . implode(',', Order::getValidPaymentMethods()),
-            'shipping' => 'nullable|exists:shippings,id',
+            'shipping'       => 'nullable|exists:shippings,id',
         ]);
-        // dd($request->all(), $validated);
 
-        // Check if cart is empty
         if (Helper::cartCount() <= 0) {
-            return back()->with('error', 'Cart is Empty!');
+            return back()->with('error', 'Your cart is empty.');
         }
 
-        // Store form data in session for payment processing
+        // --- GUEST USER: create or login ---
+        $user = Auth::check()
+            ? Auth::user()
+            : $this->getOrCreateGuestUser($validated['email']);
+
+        // --- STORE CHECKOUT DATA ---
         session([
-            'checkout_data' => [
-                'first_name' => $validated['first_name'],
-                'last_name' => $validated['last_name'],
-                'email' => $validated['email'],
-                'phone' => $validated['phone'],
-                'country' => $validated['country'],
-                'address1' => $validated['address1'],
-                'address2' => $validated['address2'] ?? null,
-                'post_code' => $validated['post_code'] ?? null,
-                'shipping_id' => $validated['shipping'] ?? null,
-            ]
+            'checkout_data' => array_merge($validated, [
+                'user_id' => $user->id,
+            ])
         ]);
 
-        // Route based on payment method
         return match ($validated['payment_method']) {
-            Order::PAYMENT_METHOD_PAYPAL => redirect()->route('payment'),
-            Order::PAYMENT_METHOD_STRIPE => app(StripeController::class)->payment(),
-            Order::PAYMENT_METHOD_SQUARE => app(SquareController::class)->payment(),
-            Order::PAYMENT_METHOD_MOLLIE => app(MollieController::class)->payment(),
-            Order::PAYMENT_METHOD_COD => $this->processCODOrder($validated),
-            default => back()->with('error', 'Invalid payment method selected.')
+            Order::PAYMENT_METHOD_PAYPAL => redirect()->route('payment.paypal'),
+            Order::PAYMENT_METHOD_STRIPE => app(StripeController::class)->initiate(),
+            Order::PAYMENT_METHOD_SQUARE => app(SquareController::class)->initiate(),
+            Order::PAYMENT_METHOD_MOLLIE => app(MollieController::class)->initiate(),
+            Order::PAYMENT_METHOD_COD   => $this->processCODOrder($user),
+            default                     => back()->with('error', 'Invalid payment method.'),
         };
     }
 
     /**
-     * Process Cash on Delivery order
+     * Get or create a guest user (for COD / guest checkout)
      */
-    private function processCODOrder(array $validated): RedirectResponse
+    private function getOrCreateGuestUser(string $email): User
     {
-        try {
+        $user = User::firstOrCreate(
+            ['email' => $email],
+            [
+                'name'     => 'Guest',
+                'password' => bcrypt(Str::random(16)),
+                'role'     => 'customer',
+                'status'   => 'active',
+            ]
+        );
+
+        Auth::login($user);
+        return $user;
+    }
+
+    /**
+     * Process Cash on Delivery – now works for both logged-in and guest users
+     */
+    private function processCODOrder(User $user)
+    {
+        // try {
             DB::beginTransaction();
 
-            $subtotal = Helper::totalCartPrice();
-            $couponDiscount = session('coupon')['value'] ?? 0;
-            $shippingCost = $this->calculateShippingCost($validated['shipping']);
-            $totalAmount = $subtotal + $shippingCost - $couponDiscount;
+            $subtotal      = Helper::totalCartPrice($user->id);
+            $couponValue   = session('coupon')['value'] ?? 0;
+            $shippingCost  = $this->calculateShippingCost(session('checkout_data')['shipping'] ?? null);
+            $totalAmount   = $subtotal + $shippingCost - $couponValue;
 
-            // Ensure minimum order amount
             if ($totalAmount <= 0) {
                 DB::rollBack();
-                return back()->with('error', 'Invalid order total amount.');
+                return back()->with('error', 'Order total cannot be zero.');
             }
 
             $order = Order::create([
-                'user_id' => Auth::id(),
-                'sub_total' => $subtotal,
-                'coupon' => $couponDiscount,
-                'total_amount' => $totalAmount,
-                'quantity' => Helper::cartCount(),
+                'user_id'        => $user->id,
+                'order_number'   => null, // auto-generated in boot()
+                'sub_total'      => $subtotal,
+                'coupon'         => $couponValue,
+                'shipping_cost'  => $shippingCost,
+                'total_amount'   => $totalAmount,
+                'quantity'       => Helper::cartCount($user->id),
                 'payment_method' => Order::PAYMENT_METHOD_COD,
                 'payment_status' => Order::PAYMENT_STATUS_UNPAID,
-                'status' => Order::STATUS_NEW,
-                'first_name' => $validated['first_name'],
-                'last_name' => $validated['last_name'],
-                'email' => $validated['email'],
-                'phone' => $validated['phone'],
-                'country' => $validated['country'],
-                'address1' => $validated['address1'],
-                'address2' => $validated['address2'],
-                'post_code' => $validated['post_code'],
-                'shipping_id' => $validated['shipping'],
+                'status'         => Order::STATUS_NEW,
+                'first_name'     => session('checkout_data')['first_name'],
+                'last_name'      => session('checkout_data')['last_name'],
+                'email'          => session('checkout_data')['email'],
+                'phone'          => session('checkout_data')['phone'],
+                'country'        => session('checkout_data')['country'],
+                'address1'       => session('checkout_data')['address1'],
+                'address2'       => session('checkout_data')['address2'] ?? null,
+                'post_code'      => session('checkout_data')['post_code'] ?? null,
+                'shipping_id'    => session('checkout_data')['shipping'] ?? null,
             ]);
 
-            // Move cart items to order
-            $this->moveCartItemsToOrder($order->id);
+            $this->moveCartItemsToOrder($order->id, $user->id);
 
             DB::commit();
 
-            // Clear sessions
             session()->forget(['cart', 'coupon', 'checkout_data']);
+            if (!Auth::check()) {
+                Auth::logout();
+            }
 
-            Log::info('COD Order created successfully', ['order_id' => $order->id, 'user_id' => Auth::id()]);
+            return redirect()->route('order.success', $order->order_number)
+                ->with('success', 'Order placed! #' . $order->order_number);
 
-            return redirect()->route('home')
-                ->with('success', 'Your order has been placed successfully!');
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('COD Order Error: ' . $e->getMessage(), [
-                'user_id' => Auth::id(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return back()->with('error', 'Failed to process your order. Please try again.');
-        }
+        // } catch (\Exception $e) {
+        //     DB::rollBack();
+        //     Log::error('COD Order Failed', ['error' => $e->getMessage()]);
+        //     return back()->with('error', 'Failed to place order.');
+        // }
     }
 
     /**
      * Calculate shipping cost
      */
-    private function calculateShippingCost(?string $shippingId): float
+    private function calculateShippingCost($shippingId): float
     {
-        if (!$shippingId) {
-            return 0.0;
-        }
-
+        if (!$shippingId) return 0.0;
         $shipping = Shipping::find($shippingId);
         return $shipping ? (float) $shipping->price : 0.0;
     }
 
     /**
-     * Move cart items to order
+     * Move cart items (user or guest session) to order
      */
-    private function moveCartItemsToOrder(int $orderId): void
+    private function moveCartItemsToOrder(int $orderId, int $userId): void
     {
-        Cart::where('user_id', Auth::id())
+        Cart::where('user_id', $userId)
             ->whereNull('order_id')
             ->update(['order_id' => $orderId]);
+
+        // Handle guest session cart
+        $guestCart = session('cart', []);
+        if ($guestCart) {
+            foreach ($guestCart as $item) {
+                Cart::updateOrCreate(
+                    [
+                        'user_id'    => $userId,
+                        'product_id' => $item['product_id'],
+                        'variant_id' => $item['variant_id'] ?? null,
+                    ],
+                    [
+                        'quantity'  => $item['quantity'],
+                        'order_id'  => $orderId,
+                    ]
+                );
+            }
+            session()->forget('cart');
+        }
+    }
+
+    public function success(string $orderNumber)
+    {
+        $order = Order::where('order_number', $orderNumber)
+            ->with(['cart_info.product', 'shipping'])
+            ->firstOrFail();
+
+        return view('frontend.pages.order-success', compact('order'));
     }
 
     /**

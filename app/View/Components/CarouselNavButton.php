@@ -23,7 +23,7 @@ class CarouselNavButton extends Component
 
     public function __construct(
         $id,
-        $ariaLabel,
+        $ariaLabel = '',
         $icon = 'ti-angle-left',
         $direction = -1,
         $buttonClass = 'carousel-nav-btn',

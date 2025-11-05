@@ -42,7 +42,7 @@ use App\Http\Controllers\{
     VariantTypeController,
     WishlistController
 };
-
+use App\Models\Cart;
 
 // Utility
 Route::get('/check-redis-cache', fn() => response()->json([
@@ -134,6 +134,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/wishlist', [WishlistController::class, 'index'])->name('wishlist');
     Route::get('/wishlist/{slug}', [WishlistController::class, 'wishlist'])->name('add-to-wishlist');
     Route::post('/wishlist-delete/{id}', [WishlistController::class, 'wishlistDelete'])->name('wishlist-delete');
+    Route::get('/cart/count', function() {
+        $count = Cart::where('user_id', Auth::id())
+            ->whereNull('order_id')
+            ->count();
+        return response()->json(['count' => $count]);
+    })->name('cart.count');
 });
 
 Route::post('/cart-delete/{id}', [CartController::class, 'cartDelete'])->name('cart-delete');
@@ -142,6 +148,7 @@ Route::post('/cart-update', [CartController::class, 'cartUpdate'])->name('cart.u
 // Orders
 Route::post('/cart/order', [OrderController::class, 'store'])->name('cart.order');
 Route::get('/order/pdf/{id}', [OrderController::class, 'pdf'])->name('order.pdf');
+Route::get('/order/success/{order_number}', [OrderController::class, 'success'])->name('order.success');
 Route::get('/income', [OrderController::class, 'incomeChart'])->name('product.order.income');
 Route::get('/product/track', [OrderController::class, 'orderTrack'])->name('order.track');
 Route::post('/product/track/order', [OrderController::class, 'productTrackOrder'])->name('product.track.order');
@@ -227,6 +234,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
         'shipping' => ShippingController::class,
         'coupon' => CouponController::class,
         'filter' => FilterController::class,
+        'shipping', ShippingController::class,
     ]);
 
     // Variant Type Resource (no name prefix)

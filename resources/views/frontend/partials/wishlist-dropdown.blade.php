@@ -1,6 +1,6 @@
 <div class="shopping-item">
     <div class="dropdown-cart-header">
-        <span>{{ Helper::wishlistCount() }} Items</span>
+        <span>{{ Helper::wishlistCount() ?? 0 }} Items</span>
         <a href="{{ route('wishlist') }}">View Wishlist</a>
     </div>
 

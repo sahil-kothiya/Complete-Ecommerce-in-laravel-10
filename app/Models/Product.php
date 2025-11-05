@@ -357,4 +357,67 @@ class Product extends Model
             RedisHelper::forget("product_variants:{$product->id}");
         });
     }
+
+    /**
+     * Resolve everything that the carousel needs:
+     *   – price (discounted)
+     *   – original price (if discount >0)
+     *   – discount %
+     *   – stock status (0 = out-of-stock)
+     *   – primary image URL
+     *   – display name (variant display or product title)
+     *
+     * @return object
+     */
+    public function resolveDisplayData()
+    {
+        // -----------------------------------------------------------------
+        // 1. Products WITHOUT variants – use base fields
+        // -----------------------------------------------------------------
+        if (! $this->has_variants) {
+            return (object) [
+                'price'          => $this->base_price,
+                'original_price' => $this->base_price,
+                'discount'       => $this->base_discount,
+                'stock'          => $this->base_stock,
+                'image_url'      => $this->primaryImage?->url ?? asset('images/no-image.png'),
+                'display_name'   => $this->title,
+            ];
+        }
+
+        // -----------------------------------------------------------------
+        // 2. Products WITH variants – cheapest *in-stock* variant wins
+        // -----------------------------------------------------------------
+        $variant = $this->inStockVariants()
+            ->with(['primaryImage', 'variantOptions'])
+            ->orderByRaw('price * (1 - COALESCE(discount,0)/100) ASC')
+            ->first();
+
+        // If every variant is out of stock → show out-of-stock UI
+        if (! $variant) {
+            $variant = $this->activeVariants()
+                ->with(['primaryImage', 'variantOptions'])
+                ->orderBy('price')
+                ->first(); // fallback to any active variant (still show “out of stock”)
+        }
+
+        $discounted = $variant?->discounted_price ?? $variant?->price ?? 0;
+        $original   = $variant?->price ?? 0;
+        $discount   = $variant?->discount ?? 0;
+        $stock      = $variant?->stock ?? 0;
+
+        return (object) [
+            'price'          => $discounted,
+            'original_price' => $original,
+            'discount'       => $discount,
+            'stock'          => $stock,
+            'image_url'      => $variant?->primaryImage?->url
+                            ?? $variant?->images->first()?->url
+                            ?? $this->primaryImage?->url
+                            ?? asset('images/no-image.png'),
+            'display_name'   => $variant?->display_name
+                            ? $this->title . ' – ' . $variant->display_name
+                            : $this->title,
+        ];
+    }
 }

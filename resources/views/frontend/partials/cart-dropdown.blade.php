@@ -2,7 +2,7 @@
 <div class="shopping-item">
     <!-- Cart header with item count and view cart link -->
     <div class="dropdown-cart-header">
-        <span>{{ $cartCount ?? 0 }} Items</span>
+        <span>{{ Helper::cartCount() ?? 0 }} Items</span>
         <a href="{{ route('cart') }}" tabindex="1">View Cart</a>
     </div>
     <!-- List of cart items -->

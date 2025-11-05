@@ -1,5 +1,4 @@
 {{-- resources/views/components/similar-products-carousel.blade.php --}}
-<!-- Related Products Section (Flipkart/Amazon Style Carousel) -->
 <div class="related-carousel-section">
     <div class="container">
         <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap">
@@ -12,13 +11,6 @@
                     aria-label="Previous products"
                     icon="ti-angle-left"
                     :direction="-1"
-                    :background-color="$defaultBackgroundColor"
-                    :text-color="$defaultTextColor"
-                    :hover-scale="$defaultHoverScale"
-                    :hover-shadow="$defaultHoverShadow"
-                    :auto-scroll-speed="$defaultAutoScrollSpeed"
-                    :scroll-amount="$defaultScrollAmount"
-                    :shimmer-animation="$defaultShimmer"
                     carousel-id="{{ $carouselId }}" />
 
                 <x-carousel-nav-button 
@@ -26,60 +18,76 @@
                     aria-label="Next products"
                     icon="ti-angle-right"
                     :direction="1"
-                    :background-color="$defaultBackgroundColor"
-                    :text-color="$defaultTextColor"
-                    :hover-scale="$defaultHoverScale"
-                    :hover-shadow="$defaultHoverShadow"
-                    :auto-scroll-speed="$defaultAutoScrollSpeed"
-                    :scroll-amount="$defaultScrollAmount"
-                    :shimmer-animation="$defaultShimmer"
                     carousel-id="{{ $carouselId }}" />
             </div>
         </div>
+
         <div class="carousel-viewport position-relative">
             <div class="carousel-track flipkart-carousel" id="{{ $carouselId }}">
                 @php $tabindex = $startingTabIndex; @endphp
+
                 @if($products && $products->count() > 0)
                     @foreach($products as $product)
                         @php
+                            // NEW – resolve everything in one call
+                            $data = $product->resolveDisplayData();
+
                             $inWishlist = Helper::isProductInWishlist($product->slug);
                         @endphp
+
                         <div class="carousel-item flipkart-card" tabindex="{{ $tabindex }}">
                             <div class="flipkart-card-img-wrap">
                                 <a href="{{ route('product-detail', $product->slug) }}">
-                                    <img src="{{ $product->primaryImage?->url ?? asset('images/no-image.png') }}"
-                                        alt="{{ $product->title }}"
-                                        class="flipkart-card-img"
-                                        loading="lazy">
+                                    <img src="{{ $data->image_url }}"
+                                         alt="{{ $product->title }}"
+                                         class="flipkart-card-img"
+                                         loading="lazy">
                                 </a>
-                                @if($product->discount > 0)
-                                    <span class="flipkart-discount-badge">{{ number_format($product->discount, 0) }}% Off</span>
+
+                                @if($data->discount > 0)
+                                    <span class="flipkart-discount-badge">
+                                        {{ number_format($data->discount, 0) }}% Off
+                                    </span>
                                 @endif
+
                                 <div class="flipkart-card-icons">
                                     <a href="{{ route('add-to-wishlist', $product->slug) }}"
                                        class="flipkart-icon-btn"
                                        title="Add to Wishlist">
-                                        <i class="ti-heart" style="color: {{ $inWishlist ? 'red' : '#6c757d' }}"></i>
+                                        <i class="ti-heart"
+                                           style="color: {{ $inWishlist ? 'red' : '#6c757d' }}"></i>
                                     </a>
                                 </div>
                             </div>
+
                             <div class="flipkart-card-body">
                                 <a href="{{ route('product-detail', $product->slug) }}"
-                                   class="flipkart-card-title">{{ Str::limit($product->title, 40) }}</a>
+                                   class="flipkart-card-title">
+                                    {{ Str::limit($data->display_name, 40) }}
+                                </a>
+
                                 <div class="flipkart-card-price">
-                                    <span class="flipkart-price-discounted">${{ number_format($product->price, 2) }}</span>
-                                    @if($product->discount > 0)
-                                        <span class="flipkart-price-original">${{ number_format($product->original_price, 2) }}</span>
+                                    <span class="flipkart-price-discounted">
+                                        ${{ number_format($data->price, 2) }}
+                                    </span>
+
+                                    @if($data->discount > 0)
+                                        <span class="flipkart-price-original">
+                                            ${{ number_format($data->original_price, 2) }}
+                                        </span>
                                     @endif
                                 </div>
+
                                 <div class="add-to-cart mt-2 d-flex align-items-center gap-2">
                                     <a href="{{ route('add-to-cart', $product->slug) }}"
-                                       class="btn btn-sm btn-dark text-uppercase text-center {{ $product->stock <= 0 ? 'disabled' : '' }}">
-                                        <i class="ti-shopping-cart"></i> {{ $product->stock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
+                                       class="btn btn-sm btn-dark text-uppercase text-center {{ $data->stock <= 0 ? 'disabled' : '' }}">
+                                        <i class="ti-shopping-cart"></i>
+                                        {{ $data->stock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
                                     </a>
                                 </div>
                             </div>
                         </div>
+
                         @php $tabindex++; @endphp
                     @endforeach
                 @else
@@ -91,7 +99,6 @@
         </div>
     </div>
 </div>
-<!-- End Related Products Carousel -->
 
 @push('styles')
 <link rel="stylesheet" href="{{ asset('css/product-detail.css') }}">

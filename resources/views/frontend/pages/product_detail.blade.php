@@ -228,48 +228,65 @@
 								<span id="stockAlertMessage">This variant is currently out of stock</span>
 							</div>
 
-							<!-- Product Buy -->
+							<!-- Product Buy Section - FIXED -->
 							<div class="product-buy">
 								<form action="{{route('single-add-to-cart')}}" method="POST" id="addToCartForm">
 									@csrf
 									<input type="hidden" name="slug" value="{{$product_detail->slug}}">
 									<input type="hidden" name="variant_id" id="selectedVariantId" value="">
+									
+									<!-- Hidden quantity input - actual form value -->
+									<input type="hidden" name="quantity" id="quantityValue" value="1" data-min="1" data-max="1000">
 
 									<div class="quantity" id="quantitySection">
 										<h6 class="text-center" tabindex="32">Quantity:</h6>
 										<div class="input-group">
 											<div class="button minus">
-												<button type="button" class="btn btn-primary btn-number" disabled="disabled" data-type="minus" data-field="quant[1]" tabindex="33">
+												<button type="button" class="btn btn-primary btn-number" data-type="minus" tabindex="33" disabled>
 													<i class="ti-minus"></i>
 												</button>
 											</div>
-											<input type="text" name="quant[1]" class="input-number" data-min="1" data-max="1000" value="1" id="quantity" tabindex="34">
+											<!-- Display-only input - shows current value -->
+											<input type="text" class="input-number" value="1" id="quantity" readonly tabindex="34">
 											<div class="button plus">
-												<button type="button" class="btn btn-primary btn-number" data-type="plus" data-field="quant[1]" tabindex="35">
+												<button type="button" class="btn btn-primary btn-number" data-type="plus" tabindex="35">
 													<i class="ti-plus"></i>
 												</button>
 											</div>
 										</div>
 									</div>
 
+									<!-- Stock Availability Alert -->
+									<div id="stockAlert" class="alert alert-danger d-none mt-3" role="alert">
+										<i class="fa fa-exclamation-circle"></i>
+										<span id="stockAlertMessage">This variant is currently out of stock</span>
+									</div>
+
 									<div class="add-to-cart mt-4">
 										<button type="submit" class="btn" id="addToCartBtn" tabindex="36">Add to cart</button>
-										<a href="{{route('add-to-wishlist',$product_detail->slug)}}" class="btn min" id="wishlistBtn" tabindex="37"><i class="ti-heart"></i> Add to Wishlist</a>
+										<!-- <br> -->
+										<a href="{{route('add-to-wishlist',$product_detail->slug)}}" 
+										class="btn min" 
+										id="wishlistBtn" 
+										tabindex="37">
+											<i class="ti-heart"></i> Add to Wishlist
+										</a>
 									</div>
 								</form>
 
-								<p class="cat" tabindex="38">Category: <a href="{{route('product-cat',$product_detail->cat_info['slug'])}}" tabindex="39">{{$product_detail->cat_info['title']}}</a></p>
+								<p class="cat" tabindex="38">Category: 
+									<a href="{{route('product-cat',$product_detail->cat_info['slug'])}}" tabindex="39">
+										{{$product_detail->cat_info['title']}}
+									</a>
+								</p>
+								
 								@if($product_detail->sub_cat_info)
-								<p class="cat mt-1" tabindex="40">Sub Category: <a href="{{route('product-cat',[$product_detail->cat_info['slug'],$product_detail->sub_cat_info['slug']])}}" tabindex="41">{{$product_detail->sub_cat_info['title']}}</a></p>
+								<p class="cat mt-1" tabindex="40">Sub Category: 
+									<a href="{{route('product-cat',[$product_detail->cat_info['slug'],$product_detail->sub_cat_info['slug']])}}" tabindex="41">
+										{{$product_detail->sub_cat_info['title']}}
+									</a>
+								</p>
 								@endif
-								<p class="availability" tabindex="42">SKU: <span id="displaySku">{{$product_detail->current_sku}}</span></p>
-								<p class="availability" tabindex="43">Stock: <span id="displayStock">
-										@if($product_detail->current_stock > 0)
-										<span class="badge badge-success">{{$product_detail->current_stock}}</span>
-										@else
-										<span class="badge badge-danger">Out of Stock</span>
-										@endif
-									</span></p>
 							</div>
 						</div>
 					</div>
@@ -876,7 +893,7 @@
 		left: -100%;
 		width: 100%;
 		height: 100%;
-		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
 		transition: left 0.5s;
 	}
 
@@ -885,9 +902,14 @@
 	}
 
 	.add-to-cart .btn:hover:not(:disabled) {
-		background: #e68a00;
-		box-shadow: 0 4px 8px rgba(255, 159, 0, 0.3);
-		transform: translateY(-1px);
+		background: linear-gradient(135deg, #ff6f00 0%, #ff4500 100%);
+		box-shadow: 0 6px 20px rgba(255, 111, 0, 0.4);
+		transform: translateY(-2px);
+	}
+
+	.add-to-cart .btn:active:not(:disabled) {
+		transform: translateY(0);
+		box-shadow: 0 3px 10px rgba(255, 111, 0, 0.3);
 	}
 
 	.add-to-cart .btn:disabled {
@@ -898,27 +920,34 @@
 
 	.add-to-cart .btn.min {
 		background: #fff;
-		border: 1px solid #c2c2c2;
+		border: 2px solid #c2c2c2;
 		color: #212121;
-		padding: 12px 16px;
+		padding: 12px 24px;
 		margin-left: 10px;
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
 	}
 
-	.add-to-cart .btn.min:hover {
-		border-color: #ff6b6b;
-		color: #ff6b6b;
-		transform: scale(1.1);
+	.add-to-cart .btn.min i {
+		transition: transform 0.3s ease;
 	}
 
-	/* Quantity Selector Enhancement */
+	.add-to-cart .btn.min:hover i {
+		transform: scale(1.2);
+	}
+
+	/* Enhanced Quantity Selector Styles */
 	.quantity {
 		margin: 20px 0;
 		opacity: 1;
-		transition: opacity 0.3s ease;
+		transition: opacity 0.3s ease, max-height 0.3s ease;
 	}
 
 	.quantity.hidden {
 		opacity: 0;
+		max-height: 0;
+		overflow: hidden;
 		pointer-events: none;
 	}
 
@@ -927,6 +956,8 @@
 		font-weight: 600;
 		color: #212121;
 		margin-bottom: 10px;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
 	}
 
 	.quantity .input-group {
@@ -935,6 +966,7 @@
 		border: 1px solid #c2c2c2;
 		border-radius: 2px;
 		overflow: hidden;
+		background: #fff;
 	}
 
 	.quantity .button {
@@ -945,36 +977,70 @@
 		background: #fff;
 		border: none;
 		color: #2874f0;
-		padding: 8px 12px;
+		padding: 10px 16px;
 		font-size: 18px;
 		cursor: pointer;
-		transition: background 0.2s;
+		transition: all 0.2s ease;
+		min-width: 44px;
+		height: 44px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 
 	.quantity .btn-number:hover:not(:disabled) {
 		background: #f0f0f0;
 	}
 
+	.quantity .btn-number:active:not(:disabled) {
+		background: #e0e0e0;
+		transform: scale(0.95);
+	}
+
 	.quantity .btn-number:disabled {
 		color: #c2c2c2;
 		cursor: not-allowed;
+		opacity: 0.5;
 	}
 
 	.quantity .input-number {
-		width: 60px;
+		width: 70px;
 		text-align: center;
 		border: none;
 		border-left: 1px solid #f0f0f0;
 		border-right: 1px solid #f0f0f0;
-		padding: 8px;
+		padding: 10px;
 		font-size: 16px;
-		font-weight: 500;
+		font-weight: 600;
 		color: #212121;
+		background: #fafafa;
+		cursor: default;
+		user-select: all;
 	}
 
 	.quantity .input-number:focus {
 		outline: none;
+		background: #fff;
 	}
+
+	/* Responsive Styles */
+	@media (max-width: 767px) {
+		.quantity .input-group {
+			width: 100%;
+			justify-content: center;
+		}
+		
+		.add-to-cart .btn {
+			width: 100%;
+			margin-bottom: 10px;
+		}
+		
+		.add-to-cart .btn.min {
+			width: auto;
+			margin-left: 0;
+			margin-top: 10px;
+		}
+}
 
 	/* Product Info Meta */
 	.product-des .cat,
@@ -1261,8 +1327,19 @@
 		}
 
 		.add-to-cart .btn {
-			width: 100%;
-			margin-bottom: 10px;
+			position: relative;
+			background: linear-gradient(135deg, #ff9f00 0%, #ff6f00 100%);
+			color: white;
+			padding: 14px 40px;
+			border: none;
+			border-radius: 4px;
+			font-size: 16px;
+			font-weight: 600;
+			cursor: pointer;
+			transition: all 0.3s ease;
+			overflow: hidden;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
 		}
 
 		.add-to-cart .btn.min {
@@ -1298,13 +1375,12 @@ document.addEventListener('DOMContentLoaded', function() {
     let isUpdating = false;
     let lastChangedType = null;
 
-    // Normalize a value to comparable string
+    // Normalize functions
     function normalizeVal(v) {
         if (v === null || v === undefined) return '';
         return String(v).trim().toLowerCase();
     }
 
-    // Normalize an options object
     function normalizeOptions(obj) {
         const out = {};
         Object.entries(obj || {}).forEach(([k, v]) => {
@@ -1324,7 +1400,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // DOM Elements
-    const qtyInput = document.getElementById('quantity');
+    const qtyDisplay = document.getElementById('quantity');
+    const qtyHidden = document.getElementById('quantityValue');
     const minusBtn = document.querySelector('.button.minus .btn-number');
     const plusBtn = document.querySelector('.button.plus .btn-number');
     const mainImage = document.getElementById('mainImage');
@@ -1344,230 +1421,68 @@ document.addEventListener('DOMContentLoaded', function() {
     const wishlistBtn = document.getElementById('wishlistBtn');
 
     /* ===============================
-        REVIEW AJAX HANDLER
-    ============================== */
-    const reviewForm = document.getElementById('reviewForm');
-    const submitReviewBtn = document.getElementById('submitReviewBtn');
-    const reviewTextarea = document.getElementById('review-text');
-    const productRatingStars = document.getElementById('productRatingStars');
-    const totalReviewCount = document.getElementById('totalReviewCount');
-    const avgRatingSection = document.getElementById('avgRatingSection');
-    const reviewsContainer = document.getElementById('reviewsContainer');
-
-    if (reviewForm) {
-        reviewForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-
-            if (!document.querySelector('input[name="rate"]:checked')) {
-                showReviewMessage('Please select a rating.', 'error');
-                return;
-            }
-
-            const formData = new FormData(reviewForm);
-
-            submitReviewBtn.disabled = true;
-            submitReviewBtn.textContent = 'Submitting...';
-
-            fetch(reviewForm.action, {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                    'Accept': 'application/json',
-                },
-            })
-            .then(response => {
-                if (!response.ok) throw new Error('Network error');
-                return response.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    showReviewMessage(data.message, 'success');
-                    appendNewReview(data.new_review);
-                    updateRatings(data.avg_rating, data.total_reviews);
-                    reviewForm.reset();
-                    document.querySelectorAll('.star-rating__input').forEach(el => el.checked = false);
-                } else {
-                    showReviewMessage(data.message || 'Error', 'error');
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                showReviewMessage('Failed to submit review.', 'error');
-            })
-            .finally(() => {
-                submitReviewBtn.disabled = false;
-                submitReviewBtn.textContent = 'Submit Review';
-            });
-        });
-    }
-
-    function showReviewMessage(message, type) {
-        let messageEl = document.querySelector('.review-message');
-        if (!messageEl) {
-            messageEl = document.createElement('div');
-            messageEl.className = 'review-message';
-            reviewForm.parentNode.insertBefore(messageEl, reviewForm.nextSibling);
-        }
-        messageEl.textContent = message;
-        messageEl.className = `review-message ${type}`;
-        messageEl.style.display = 'block';
-        setTimeout(() => {
-            messageEl.style.display = 'none';
-        }, 5000);
-    }
-
-    function appendNewReview(reviewData) {
-        if (!reviewsContainer) return;
-
-        const singleRating = document.createElement('div');
-        singleRating.className = 'single-rating';
-        singleRating.innerHTML = `
-            <div class="rating-author">
-                <img src="${reviewData.user_photo}" alt="${reviewData.user_name}" loading="lazy">
-            </div>
-            <div class="rating-des">
-                <h6>${reviewData.user_name}</h6>
-                <div class="ratings">
-                    <ul class="rating">
-                        ${Array.from({length: 5}, (_, i) => 
-                            `<li><i class="fa ${reviewData.rate >= (i + 1) ? 'fa-star' : 'fa-star-o'}"></i></li>`
-                        ).join('')}
-                    </ul>
-                    <div class="rate-count">(${reviewData.rate})</div>
-                </div>
-                <p>${reviewData.review}</p>
-                <small class="text-muted" style="font-size: 12px;">${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</small>
-            </div>
-        `;
-
-        const avgSection = reviewsContainer.querySelector('.avg-ratting');
-        if (avgSection) {
-            const existingReviews = avgSection.nextElementSibling;
-            if (existingReviews && existingReviews.classList.contains('single-rating')) {
-                reviewsContainer.insertBefore(singleRating, existingReviews);
-            } else {
-                avgSection.insertAdjacentElement('afterend', singleRating);
-            }
-        } else {
-            reviewsContainer.appendChild(singleRating);
-        }
-
-        // Trigger animation
-        singleRating.style.opacity = '0';
-        singleRating.style.transform = 'translateY(20px)';
-        setTimeout(() => {
-            singleRating.style.transition = 'all 0.5s ease';
-            singleRating.style.opacity = '1';
-            singleRating.style.transform = 'translateY(0)';
-        }, 100);
-    }
-
-    function updateRatings(avgRating, totalReviews) {
-        const ceilAvg = Math.ceil(avgRating);
-
-        if (productRatingStars) {
-            productRatingStars.innerHTML = Array.from({length: 5}, (_, i) => 
-                `<li><i class="fa ${ceilAvg >= (i + 1) ? 'fa-star' : 'fa-star-o'}"></i></li>`
-            ).join('');
-        }
-
-        if (totalReviewCount) {
-            totalReviewCount.innerHTML = `(${totalReviews}) Review${totalReviews !== 1 ? 's' : ''}`;
-        }
-
-        if (avgRatingSection) {
-            const h4 = avgRatingSection.querySelector('h4');
-            const span = avgRatingSection.querySelector('span');
-            if (h4) h4.innerHTML = `${ceilAvg} <span>(Overall)</span>`;
-            if (span) span.innerHTML = `Based on ${totalReviews} Comments`;
-        }
-    }
-
-    /* ===============================
-        TAB SCROLL FIX
-    ============================== */
-    const reviewTabLink = document.getElementById('reviews-tab');
-    const descriptionTabLink = document.getElementById('description-tab');
-
-    function handleTabClick(e, targetId) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const link = e.currentTarget;
-        const targetPane = document.getElementById(targetId);
-
-        document.querySelectorAll('.nav-tabs .nav-link').forEach(tab => tab.classList.remove('active'));
-        document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('show', 'active'));
-
-        link.classList.add('active');
-        targetPane.classList.add('show', 'active');
-
-        if (targetPane) {
-            const offsetTop = targetPane.offsetTop - 100;
-            window.scrollTo({
-                top: offsetTop,
-                behavior: 'smooth'
-            });
-        }
-    }
-
-    if (reviewTabLink) {
-        reviewTabLink.addEventListener('click', function(e) {
-            handleTabClick(e, 'reviews');
-        });
-    }
-
-    if (descriptionTabLink) {
-        descriptionTabLink.addEventListener('click', function(e) {
-            handleTabClick(e, 'description');
-        });
-    }
-
-    const totalReviewLink = document.getElementById('totalReviewCount');
-    if (totalReviewLink) {
-        totalReviewLink.addEventListener('click', function(e) {
-            e.preventDefault();
-            handleTabClick({ currentTarget: reviewTabLink, preventDefault: () => {}, stopPropagation: () => {} }, 'reviews');
-        });
-    }
-
-    /* ===============================
-        UPDATE WISHLIST HREF WITH VARIANT ID
-    ============================== */
-    function updateWishlistHref() {
-        if (!wishlistBtn || !currentVariant) return;
-
-        let currentHref = wishlistBtn.getAttribute('href');
-        const separator = currentHref.includes('?') ? '&' : '?';
-        const newHref = currentHref.includes('variant_id=') 
-            ? currentHref.replace(/variant_id=\d+/, `variant_id=${currentVariant.id}`) 
-            : `${currentHref}${separator}variant_id=${currentVariant.id}`;
-
-        wishlistBtn.href = newHref;
-    }
-
-    /* ===============================
         QUANTITY CONTROL FUNCTIONS
     ============================== */
-    function updateMinusState() {
-        if (!minusBtn || !qtyInput) return;
-        const min = parseInt(qtyInput.getAttribute('data-min')) || 1;
-        const currentValue = parseInt(qtyInput.value) || 1;
-        minusBtn.disabled = currentValue <= min;
+    function updateQuantityDisplay() {
+        if (!qtyDisplay || !qtyHidden) return;
+        qtyDisplay.value = qtyHidden.value;
+        updateMinusState();
     }
 
     function updateQuantityMax() {
-        if (!qtyInput || !currentVariant) return;
-        const max = parseInt(currentVariant.stock) || 0;
-        qtyInput.setAttribute('data-max', max);
-        const val = parseInt(qtyInput.value) || 1;
-        if (val > max && max > 0) {
-            qtyInput.value = max;
+        if (!qtyHidden) return;
+        
+        let max = 1000; // Default max
+        
+        if (hasVariants && currentVariant) {
+            max = parseInt(currentVariant.stock) || 0;
+        } else if (!hasVariants) {
+            // For non-variant products, get stock from display
+            const stockBadge = displayStock?.querySelector('.badge');
+            const stockText = stockBadge?.textContent?.trim() || '0';
+            max = parseInt(stockText) || 0;
         }
-        updateMinusState();
+        
+        qtyHidden.setAttribute('data-max', max);
+        
+        const currentQty = parseInt(qtyHidden.value) || 1;
+        if (currentQty > max && max > 0) {
+            qtyHidden.value = max;
+            updateQuantityDisplay();
+        }
     }
+
+    function updateMinusState() {
+        if (!minusBtn || !qtyHidden) return;
+        const min = parseInt(qtyHidden.getAttribute('data-min')) || 1;
+        const currentValue = parseInt(qtyHidden.value) || 1;
+        minusBtn.disabled = currentValue <= min;
+    }
+
+    // Plus button handler
+    plusBtn?.addEventListener('click', () => {
+        const max = parseInt(qtyHidden.getAttribute('data-max')) || 1000;
+        const val = parseInt(qtyHidden.value) || 1;
+        if (val < max) {
+            qtyHidden.value = val + 1;
+            updateQuantityDisplay();
+        }
+    });
+
+    // Minus button handler
+    minusBtn?.addEventListener('click', () => {
+        const min = parseInt(qtyHidden.getAttribute('data-min')) || 1;
+        const val = parseInt(qtyHidden.value) || 1;
+        if (val > min) {
+            qtyHidden.value = val - 1;
+            updateQuantityDisplay();
+        }
+    });
+
+    // Display input click handler
+    qtyDisplay?.addEventListener('click', function() {
+        this.select();
+    });
 
     /* ===============================
         VARIANT SELECTION HANDLERS
@@ -1743,7 +1658,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (!normSelected.color) return null;
 
-        // Case 1: Storage changed, auto-select RAM
         if (lastChangedType === 'storage' && normSelected.storage) {
             const matchingVariants = variants.filter(v => {
                 if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
@@ -1793,7 +1707,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        // Case 2: RAM changed, auto-select Storage
         if (lastChangedType === 'ram' && normSelected.ram) {
             const matchingVariants = variants.filter(v => {
                 if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
@@ -1843,7 +1756,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        // Case 3: Only color selected, auto-select cheapest
         if (normSelected.color && !normSelected.storage && !normSelected.ram) {
             const matchingVariants = variants.filter(v => {
                 if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
@@ -1922,11 +1834,29 @@ document.addEventListener('DOMContentLoaded', function() {
             handleNoVariantFound();
         }
 
-        // Update wishlist href after variant is set
         updateWishlistHref();
-
         hideLoadingStates();
         isUpdating = false;
+    }
+
+    /* ===============================
+        UPDATE WISHLIST HREF
+    ============================== */
+    function updateWishlistHref() {
+        if (!wishlistBtn) return;
+
+        let currentHref = wishlistBtn.getAttribute('href');
+        
+        if (hasVariants && currentVariant) {
+            const separator = currentHref.includes('?') ? '&' : '?';
+            const newHref = currentHref.includes('variant_id=') 
+                ? currentHref.replace(/variant_id=\d+/, `variant_id=${currentVariant.id}`) 
+                : `${currentHref}${separator}variant_id=${currentVariant.id}`;
+            wishlistBtn.href = newHref;
+        } else {
+            const baseHref = currentHref.split('?')[0];
+            wishlistBtn.href = baseHref;
+        }
     }
 
     /* ===============================
@@ -1992,10 +1922,7 @@ document.addEventListener('DOMContentLoaded', function() {
             wishlistBtn.style.display = 'inline-block';
         }
 
-        if (qtyInput && stock > 0) {
-            qtyInput.setAttribute('data-max', stock);
-            updateQuantityMax();
-        }
+        updateQuantityMax();
 
         if (variantIdInput) {
             variantIdInput.value = variant.id || '';
@@ -2192,12 +2119,7 @@ document.addEventListener('DOMContentLoaded', function() {
             variantIdInput.value = '';
         }
 
-        // Reset wishlist href to base (no variant_id)
-        if (wishlistBtn) {
-            let currentHref = wishlistBtn.getAttribute('href');
-            const baseHref = currentHref.split('?')[0].split('&')[0]; // Remove query params
-            wishlistBtn.href = baseHref;
-        }
+        updateWishlistHref();
     }
 
     /* ===============================
@@ -2212,17 +2134,31 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     /* ===============================
-        FORM SUBMISSION HANDLER FOR ADD TO CART
+        FORM SUBMISSION - FIXED
     ============================== */
     if (addToCartForm) {
         addToCartForm.addEventListener('submit', function(e) {
-            const variantId = variantIdInput ? variantIdInput.value.trim() : '';
-            const quantity = parseInt(qtyInput.value) || 1;
-            const stock = currentVariant ? parseInt(currentVariant.stock) || 0 : parseInt(document.querySelector('#displayStock .badge')?.textContent) || 0;
+            e.preventDefault();
+            
+            // Validate variant selection for products with variants
+            if (hasVariants && !currentVariant) {
+                showAlert('Please select a valid product variant.', 'error');
+                if (stockAlert) {
+                    stockAlert.classList.remove('d-none');
+                    document.getElementById('stockAlertMessage').textContent = 'Please select a valid product variant.';
+                }
+                return false;
+            }
 
-            // Client-side validation for stock
+            // Get quantity and stock
+            const quantity = parseInt(qtyHidden.value) || 1;
+            const stock = hasVariants && currentVariant 
+                ? parseInt(currentVariant.stock) || 0 
+                : parseInt(displayStock?.querySelector('.badge')?.textContent) || 0;
+            
+            // Validate stock
             if (stock < quantity) {
-                e.preventDefault();
+                showAlert(`Insufficient stock. Only ${stock} available.`, 'error');
                 if (stockAlert) {
                     stockAlert.classList.remove('d-none');
                     document.getElementById('stockAlertMessage').textContent = `Insufficient stock. Only ${stock} available.`;
@@ -2230,14 +2166,121 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             }
 
-            // Ensure variant_id is empty for non-variant products
-            if (!hasVariants && variantId) {
+            // Validate stock > 0
+            if (stock <= 0) {
+                showAlert('This product is out of stock.', 'error');
+                return false;
+            }
+
+            // Set variant_id properly
+            if (hasVariants && currentVariant) {
+                variantIdInput.value = currentVariant.id;
+            } else if (!hasVariants) {
                 variantIdInput.value = '';
             }
 
-            // Update wishlist href before submit (in case user clicks wishlist after)
-            updateWishlistHref();
+            // Show loading state
+            addToCartBtn.disabled = true;
+            addToCartBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Adding...';
+
+            // Create FormData
+            const formData = new FormData(addToCartForm);
+            
+            // Ensure quantity is from hidden input
+            formData.set('quantity', qtyHidden.value);
+
+            // Submit via fetch
+            fetch(addToCartForm.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                },
+                credentials: 'same-origin'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    // Show the actual message from server (handles "updated" vs "added")
+                    showAlert(data.message || 'Product added to cart!', 'success');
+                    
+                    // Update cart count
+                    updateCartCount();
+                    
+                    // Reset quantity to 1 after successful add
+                    qtyHidden.value = 1;
+                    updateQuantityDisplay();
+                    
+                    // Optional: Show mini cart preview or scroll to top
+                    // window.scrollTo({ top: 0, behavior: 'smooth' });
+                } else {
+                    showAlert(data.message || 'Failed to add to cart', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Cart Error:', error);
+                showAlert('An error occurred. Please try again.', 'error');
+            })
+            .finally(() => {
+                addToCartBtn.disabled = stock <= 0;
+                addToCartBtn.textContent = stock > 0 ? 'Add to cart' : 'Out of Stock';
+            });
         });
+    }
+
+    /* ===============================
+        HELPER FUNCTIONS
+    ============================== */
+    function showAlert(message, type) {
+        document.querySelectorAll('.cart-alert').forEach(el => el.remove());
+        
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type === 'success' ? 'success' : 'danger'} cart-alert`;
+        alertDiv.style.cssText = 'position: fixed; top: 80px; right: 20px; z-index: 9999; max-width: 350px; animation: slideInRight 0.3s ease;';
+        alertDiv.innerHTML = `
+            <i class="fa fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i> 
+            <span>${message}</span>
+            <button type="button" class="close" onclick="this.parentElement.remove()" style="margin-left: 10px;">
+                <span>&times;</span>
+            </button>
+        `;
+        
+        document.body.appendChild(alertDiv);
+        
+        setTimeout(() => {
+            alertDiv.style.animation = 'slideOutRight 0.3s ease';
+            setTimeout(() => alertDiv.remove(), 300);
+        }, 4000);
+    }
+
+    function updateCartCount() {
+        fetch('/cart/count', {
+            headers: { 
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => response.json())
+        .then(data => {
+            const cartCountEl = document.querySelector('.cart-count, .shopping-item .badge');
+            if (cartCountEl) {
+                cartCountEl.textContent = data.count;
+                
+                // Add animation
+                cartCountEl.style.animation = 'bounce 0.5s ease';
+                setTimeout(() => {
+                    cartCountEl.style.animation = '';
+                }, 500);
+            }
+        })
+        .catch(err => console.error('Failed to update cart count:', err));
     }
 
     /* ===============================
@@ -2295,39 +2338,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     /* ===============================
-        QUANTITY CONTROLS
-    ============================== */
-    plusBtn?.addEventListener('click', () => {
-        const max = parseInt(qtyInput.getAttribute('data-max')) || 1000;
-        const val = parseInt(qtyInput.value) || 1;
-        if (val < max) {
-            qtyInput.value = val + 1;
-            updateMinusState();
-        }
-    });
-
-    minusBtn?.addEventListener('click', () => {
-        const min = parseInt(qtyInput.getAttribute('data-min')) || 1;
-        const val = parseInt(qtyInput.value) || 1;
-        if (val > min) {
-            qtyInput.value = val - 1;
-            updateMinusState();
-        }
-    });
-
-    qtyInput?.addEventListener('change', function() {
-        const min = parseInt(this.getAttribute('data-min')) || 1;
-        const max = parseInt(this.getAttribute('data-max')) || 1000;
-        let val = parseInt(this.value) || 1;
-        val = Math.max(min, Math.min(max, val));
-        this.value = val;
-        updateMinusState();
-    });
-
-    updateMinusState();
-
-    /* ===============================
-        INITIAL IMAGE GALLERY (fallback if no variant images)
+        INITIAL IMAGE GALLERY
     ============================== */
     document.querySelectorAll('.thumbnail-image').forEach(thumb => {
         thumb.addEventListener('click', function() {
@@ -2355,23 +2366,19 @@ document.addEventListener('DOMContentLoaded', function() {
         HANDLE NON-VARIANT PRODUCTS
     ============================== */
     if (!hasVariants) {
-        // For non-variant products, ensure variant_id is empty and use base stock/price
         if (variantIdInput) variantIdInput.value = '';
-        const baseStock = {{ $product_detail->base_stock ?? 0 }};
+        
+        updateQuantityMax();
+        
+        const stockBadge = displayStock?.querySelector('.badge');
+        const baseStock = parseInt(stockBadge?.textContent) || 0;
+        
         if (addToCartBtn) {
             addToCartBtn.disabled = baseStock <= 0;
             addToCartBtn.textContent = baseStock > 0 ? 'Add to cart' : 'Out of Stock';
         }
-        if (qtyInput) {
-            qtyInput.setAttribute('data-max', baseStock);
-        }
 
-        // Ensure wishlist href has no variant_id for non-variants
-        if (wishlistBtn) {
-            let currentHref = wishlistBtn.getAttribute('href');
-            const baseHref = currentHref.split('?')[0].split('&')[0]; // Remove query params
-            wishlistBtn.href = baseHref;
-        }
+        updateWishlistHref();
     }
 
     /* ===============================
@@ -2379,7 +2386,60 @@ document.addEventListener('DOMContentLoaded', function() {
     ============================== */
     if (hasVariants && variants.length > 0) {
         initializeVariantSystem();
+    } else {
+        // Initialize quantity controls for non-variant products
+        updateQuantityDisplay();
+        updateMinusState();
     }
+
+    // Add CSS animations
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        @keyframes slideOutRight {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+        @keyframes bounce {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+        .cart-alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .cart-alert i {
+            font-size: 20px;
+        }
+        .cart-alert .close {
+            background: transparent;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            margin-left: auto;
+        }
+    `;
+    document.head.appendChild(style);
 });
 </script>
 @endpush

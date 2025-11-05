@@ -4,144 +4,133 @@ namespace App\Services;
 
 use App\Models\Discount;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use Carbon\Carbon;
 
 class DiscountService
 {
-    public function getEffectiveDiscount(Product $product): ?array
+    /**
+     * Get **all** active discounts for a product (product + variant + category).
+     *
+     * @param Product $product
+     * @param ProductVariant|null $variant
+     * @return array
+     */
+    public function getEffectiveDiscounts(Product $product, ?ProductVariant $variant = null): array
     {
-        $now = Carbon::now();
+        $discounts = [];
+        $now       = Carbon::now();
 
-        $category = $product->cat_info; // Uses cat_id from product
-
-        if (!$category) return null;
-
-        $activeDiscount = $category->discounts()
-            ->where('is_active', true)
-            ->where('starts_at', '<=', $now)
-            ->where('ends_at', '>=', $now)
-            ->first();
-
-        if ($activeDiscount) {
-            return [
-                'type' => $activeDiscount->type,
-                'value' => $activeDiscount->value,
+        // 1. Variant discount (highest priority)
+        if ($variant && $variant->discount > 0) {
+            $discounts[] = [
+                'type'   => 'percentage',
+                'value'  => $variant->discount,
+                'source' => 'variant',
+                'title'  => 'Variant Discount',
             ];
         }
 
-        return null;
-    }
-
-    public function calculateDiscountedPrice($original, $discount): float
-    {
-        if ($discount['type'] === 'percentage') {
-            return round($original - ($original * $discount['value'] / 100), 2);
-        }
-
-        return round(max($original - $discount['value'], 0), 2);
-    }
-
-    public function getAllActiveCategoryDiscounts(): array
-    {
-        $now = now();
-
-        $discounts = Discount::where('is_active', true)
-            ->where('starts_at', '<=', $now)
-            ->where('ends_at', '>=', $now)
-            ->whereHas('categories')
-            ->with('categories:id,slug,title')
-            ->get();
-
-        $results = [];
-
-        foreach ($discounts as $discount) {
-            $category = $discount->categories->first(); // pick first category for link
-            if ($category) {
-                $results[] = [
-                    'title' => $discount->title,
-                    'value' => $discount->value,
-                    'type' => $discount->type,
-                    'category_slug' => $category->slug,
-                    'category_title' => $category->title,
-                ];
-            }
-        }
-
-        return $results;
-    }
-
-    public function getEffectiveDiscounts(Product $product): array
-    {
-        $discounts = [];
-
-        // 1. Product-level discount
-        if ($product->base_discount && $product->base_discount > 0) {
+        // 2. Product base discount
+        if ($product->base_discount > 0) {
             $discounts[] = [
                 'type'   => 'percentage',
                 'value'  => $product->base_discount,
                 'source' => 'product',
+                'title'  => 'Product Discount',
             ];
         }
 
-        // 2. Category-level discounts
-        $now = now();
+        // 3. Category discounts (active now)
         $categoryDiscounts = Discount::where('is_active', true)
             ->where('starts_at', '<=', $now)
-            ->where('ends_at', '>=', $now)
-            ->whereHas('categories', function ($q) use ($product) {
-                $q->where('categories.id', $product->cat_id);
-            })
-            ->with('categories')
+            ->where('ends_at',   '>=', $now)
+            ->whereHas('categories', fn($q) => $q->where('categories.id', $product->cat_id))
             ->get();
 
-        foreach ($categoryDiscounts as $discount) {
+        foreach ($categoryDiscounts as $d) {
             $discounts[] = [
-                'type'   => $discount->type,
-                'value'  => $discount->value,
+                'type'   => $d->type,
+                'value'  => $d->value,
                 'source' => 'category',
-                'title'  => $discount->title,
+                'title'  => $d->title,
             ];
         }
 
         return $discounts;
     }
 
-    public function applyAllDiscounts(float $basePrice = null, array $discounts): float
+    /**
+     * Apply an array of discounts **in order** to a base price.
+     *
+     * @param float $basePrice
+     * @param array $discounts  [{type, value, source, title}]
+     * @return float
+     */
+    public function applyAllDiscounts(float $basePrice, array $discounts): float
     {
-        // If basePrice is null, return 0.0
-        $prix = $basePrice ?? 0.0;
+        $price = $basePrice;
 
-        // Apply product-level discount first
         foreach ($discounts as $discount) {
-            if ($discount['source'] === 'product') {
-                if ($discount['type'] === 'percentage') {
-                    $prix -= ($prix * $discount['value'] / 100);
-                } elseif ($discount['type'] === 'amount') {
-                    $prix -= $discount['value'];
-                }
+            if ($discount['type'] === 'percentage') {
+                $price -= $price * ($discount['value'] / 100);
+            } elseif ($discount['type'] === 'amount') {
+                $price -= $discount['value'];
             }
+            // never go below 0
+            $price = max($price, 0.0);
         }
 
-        // Then apply category-level discounts
-        foreach ($discounts as $discount) {
-            if ($discount['source'] === 'category') {
-                if ($discount['type'] === 'percentage') {
-                    $prix -= ($prix * $discount['value'] / 100);
-                } elseif ($discount['type'] === 'amount') {
-                    $prix -= $discount['value'];
-                }
-            }
-        }
-
-        return max($prix, 0);
+        return round($price, 2);
     }
 
+    /**
+     * Helper – single discount calculation (kept for backward compatibility)
+     */
+    public function calculateDiscountedPrice(float $original, array $discount): float
+    {
+        return $this->applyAllDiscounts($original, [$discount]);
+    }
+
+    /**
+     * Cached price for product (base + product discount only)
+     */
     public function getCachedDiscountedPrice(Product $product): float
     {
-        // Use base_price and base_discount, default to 0.0 if base_price is null
-        $basePrice = $product->base_price ?? 0.0;
-        return $product->base_discount > 0
-            ? $basePrice - ($basePrice * $product->base_discount / 100)
-            : $basePrice;
+        $base = $product->base_price ?? 0.0;
+        if ($product->base_discount > 0) {
+            return $this->applyAllDiscounts($base, [[
+                'type'  => 'percentage',
+                'value' => $product->base_discount,
+                'source'=> 'product',
+            ]]);
+        }
+        return round($base, 2);
+    }
+
+    /**
+     * All active category discounts (for homepage banners etc.)
+     */
+    public function getAllActiveCategoryDiscounts(): array
+    {
+        $now = Carbon::now();
+
+        return Discount::where('is_active', true)
+            ->where('starts_at', '<=', $now)
+            ->where('ends_at',   '>=', $now)
+            ->whereHas('categories')
+            ->with('categories:id,slug,title')
+            ->get()
+            ->map(function ($d) {
+                $cat = $d->categories->first();
+                return [
+                    'title'           => $d->title,
+                    'value'           => $d->value,
+                    'type'            => $d->type,
+                    'category_slug'   => $cat?->slug,
+                    'category_title'  => $cat?->title,
+                ];
+            })
+            ->toArray();
     }
 }
