@@ -33,7 +33,8 @@
 					</tr>
 				</thead>
 				<tbody>
-					@php $tabIndex = 2; @endphp
+					@php $tabIndex = 2; 
+					@endphp
 					@foreach($shippings as $shipping)
 					<tr>
 						<td>{{$loop->iteration}}</td>
@@ -41,9 +42,9 @@
 						<td>${{$shipping->price}}</td>
 						<td>
 							@if($shipping->status=='active')
-							<span class="badge badge-success">{{$shipping->status}}</span>
+							<span class="badge badge-success">active</span>
 							@else
-							<span class="badge badge-warning">{{$shipping->status}}</span>
+							<span class="badge badge-warning">In-active</span>
 							@endif
 						</td>
 						<td>

@@ -35,6 +35,15 @@ class UsersTableSeeder extends Seeder
                 'created_at' => $now->copy()->subDays(2),
                 'updated_at' => $now->copy()->subDays(2),
             ],
+            [
+                'name'       => 'sahil',
+                'email'      => 'sahil@mailinator.com',
+                'password'   => Hash::make('1111'),
+                'role'       => 'user',
+                'status'     => 'active',
+                'created_at' => $now->copy()->subDays(2),
+                'updated_at' => $now->copy()->subDays(2),
+            ],
         ];
 
         DB::table('users')->insert($data);

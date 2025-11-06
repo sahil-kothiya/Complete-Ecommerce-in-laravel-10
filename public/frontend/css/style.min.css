@@ -211,7 +211,7 @@
 .header.shop .nav li:hover a,
 .header.shop .search-bar .btnn:hover,
 .most-popular .owl-carousel .owl-nav div:hover,
-.shop.single #wishlistBtn #addToCartBtn .btn:hover {
+.shop.single .btn:hover {
     color: #fff;
     background: #f7941d
 }

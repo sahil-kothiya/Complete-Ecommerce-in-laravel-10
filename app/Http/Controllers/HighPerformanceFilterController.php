@@ -244,8 +244,14 @@ class HighPerformanceFilterController extends Controller
             $query->addSelect('prc.average_rating');
         }
 
-        $filtersWithoutPrice = array_diff_key($filters, ['price_range' => 1]);
-        $this->applyFiltersToQuery($query, $filtersWithoutPrice);
+        // IMPORTANT: Don't apply discount filter to stats query
+        // We need to show all discount counts regardless of current selection
+        $filtersWithoutPriceAndDiscount = array_diff_key($filters, [
+            'price_range' => 1,
+            'discounts' => 1  // Added this line
+        ]);
+        
+        $this->applyFiltersToQuery($query, $filtersWithoutPriceAndDiscount);
 
         return $query;
     }
@@ -272,7 +278,7 @@ class HighPerformanceFilterController extends Controller
 
     private function getOptimizedFilteredProducts($category, array $currentFilters, Request $request)
     {
-        $perPage = min((int) $request->input('show', 12), 48); // Reduced max from 60
+        $perPage = min((int) $request->input('show', 12), 48);
         $page = max(1, (int) $request->input('page', 1));
         $offset = ($page - 1) * $perPage;
         $sortBy = $currentFilters['sortBy'] ?? 'latest';
@@ -321,49 +327,61 @@ class HighPerformanceFilterController extends Controller
                 'b.title as bt', 'b.slug as bs',
                 'prc.average_rating as ar', 'prc.total_reviews as tr',
                 DB::raw('ARRAY_AGG(DISTINCT CONCAT(pi.sort_order, \':\', pi.image_path)) FILTER (WHERE pi.image_path IS NOT NULL) as imgs'),
+                // ✅ FIXED: Use LATERAL join to get cheapest in-stock variant
                 DB::raw('
                     COALESCE(
-                        (SELECT MIN(v.price * (1 - COALESCE(v.discount, 0) / 100.0)) 
-                         FROM product_variants v 
-                         WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0),
+                        cheapest_v.min_disc_price,
                         p.base_price * (1 - COALESCE(p.base_discount, 0) / 100.0)
                     ) as effective_price
                 '),
                 DB::raw('
                     COALESCE(
-                        (SELECT MIN(v.price) 
-                         FROM product_variants v 
-                         WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0),
+                        cheapest_v.price,
                         p.base_price
                     ) as effective_original_price
                 '),
                 DB::raw('
                     COALESCE(
-                        (SELECT MAX(v.discount) 
-                         FROM product_variants v 
-                         WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0),
+                        cheapest_v.discount,
                         p.base_discount
                     ) as effective_discount
                 '),
                 DB::raw('
                     CASE 
                         WHEN p.has_variants THEN 
-                            CASE WHEN EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0) THEN true ELSE false END
+                            COALESCE(cheapest_v.stock > 0, false)
                         ELSE (p.base_stock > 0) 
                     END as is_in_stock
                 ')
             ])
             ->leftJoin('brands as b', 'p.brand_id', '=', 'b.id')
             ->leftJoin('product_ratings_cache as prc', 'p.id', '=', 'prc.product_id')
+            // ✅ FIXED: Properly get cheapest in-stock variant using LATERAL join
+            ->leftJoinSub(
+                'SELECT DISTINCT ON (product_id) 
+                    product_id,
+                    price,
+                    discount,
+                    stock,
+                    price * (1 - COALESCE(discount, 0) / 100.0) as min_disc_price
+                FROM product_variants
+                WHERE status = \'active\' AND stock > 0
+                ORDER BY product_id, price * (1 - COALESCE(discount, 0) / 100.0) ASC',
+                'cheapest_v',
+                'cheapest_v.product_id',
+                '=',
+                'p.id'
+            )
             ->leftJoin('product_images as pi', function($join) {
                 $join->on('p.id', '=', 'pi.product_id')
-                     ->whereRaw('pi.sort_order <= 2'); // Reduced from 3 to 2 images
+                    ->whereRaw('pi.sort_order <= 2');
             })
             ->where('p.status', 'active')
             ->groupBy([
                 'p.id', 'p.title', 'p.slug', 'p.base_price', 'p.base_discount', 
                 'p.base_stock', 'p.condition', 'p.has_variants',
-                'b.title', 'b.slug', 'prc.average_rating', 'prc.total_reviews'
+                'b.title', 'b.slug', 'prc.average_rating', 'prc.total_reviews',
+                'cheapest_v.price', 'cheapest_v.discount', 'cheapest_v.stock', 'cheapest_v.min_disc_price'
             ]);
 
         if ($category) {
@@ -416,7 +434,9 @@ class HighPerformanceFilterController extends Controller
             $minDiscount = min(array_map('intval', $filters['discounts']));
             $query->where(function($q) use ($minDiscount) {
                 $q->where(function($sub) use ($minDiscount) {
-                    $sub->where('p.has_variants', false)->where('p.base_discount', '>=', $minDiscount);
+                    $sub->where('p.has_variants', false)
+                        ->where('p.base_discount', '>=', $minDiscount)
+                        ->where('p.base_stock', '>', 0);
                 })->orWhere(function($sub) use ($minDiscount) {
                     $sub->where('p.has_variants', true)
                         ->whereRaw('EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0 AND v.discount >= ?)', [$minDiscount]);
@@ -487,7 +507,7 @@ class HighPerformanceFilterController extends Controller
                 $query->orderBy('p.title', 'DESC');
                 break;
             default:
-                $query->orderBy('p.id', 'DESC'); // Changed from created_at for better performance
+                $query->orderBy('p.id', 'DESC');
         }
     }
 
@@ -524,7 +544,7 @@ class HighPerformanceFilterController extends Controller
 
             return [
                 'id' => $p->id,
-                't' => Str::limit($p->title, 60), // Truncated from full title
+                't' => Str::limit($p->title, 60),
                 's' => $p->slug,
                 'pr' => [
                     'o' => $origPrice,
@@ -656,10 +676,18 @@ class HighPerformanceFilterController extends Controller
 
     private function parseCurrentFilters(Request $request): array
     {
+        // Parse discounts from both 'discounts' and 'discount' parameters
+        $discounts = [];
+        if ($request->has('discounts')) {
+            $discounts = $this->parseArray($request->input('discounts', []));
+        } elseif ($request->has('discount')) {
+            $discounts = $this->parseArray($request->input('discount', []));
+        }
+
         return [
             'brands' => array_slice($this->parseArray($request->input('brands', [])), 0, 20),
             'ratings' => array_slice($this->parseArray($request->input('ratings', [])), 0, 5),
-            'discounts' => array_slice($this->parseArray($request->input('discounts', [])), 0, 10),
+            'discounts' => array_slice($discounts, 0, 10),
             'price_range' => $request->input('price_range', ''),
             'availability' => $this->parseArray($request->input('availability', [])),
             'sortBy' => $request->input('sortBy', 'latest'),
@@ -755,7 +783,7 @@ class HighPerformanceFilterController extends Controller
             'mx' => self::MAX_PRICE_DEFAULT,
             'cmn' => 0,
             'cmx' => self::MAX_PRICE_DEFAULT,
-            'cur' => '$'
+            'cur' => ''
         ];
     }
 }

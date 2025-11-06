@@ -62,6 +62,11 @@ Route::get('/user/logout', [FrontendController::class, 'logout'])->name('user.lo
 Route::get('/user/register', [FrontendController::class, 'register'])->name('register.form');
 Route::post('/user/register', [FrontendController::class, 'registerSubmit'])->name('register.submit');
 
+Route::post('/login/email-check', function(Request $request) {
+    $exists = User::where('email', $request->email)->exists();
+    return response()->json($exists);
+})->name('login.email.check');
+
 Route::get('/password/reset', [ForgotPasswordController::class, 'showLinkRequestForm'])->name('password.request');
 Route::post('/password/email', [ForgotPasswordController::class, 'sendResetLinkEmail'])->name('password.email');
 Route::get('/password/reset/{token}', [ResetPasswordController::class, 'showResetForm'])->name('password.reset');
@@ -234,7 +239,6 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
         'shipping' => ShippingController::class,
         'coupon' => CouponController::class,
         'filter' => FilterController::class,
-        'shipping', ShippingController::class,
     ]);
 
     // Variant Type Resource (no name prefix)

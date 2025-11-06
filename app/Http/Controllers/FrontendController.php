@@ -2370,12 +2370,161 @@ class FrontendController extends Controller
         ]);
     }
 
+    public function productSubCat(Request $request, $encryptedPath)
+    {
+        // try {
+            $slugPath = UrlEncryptor::decodePath($encryptedPath);
+            $segments = explode('/', trim($slugPath, '/'));
+            $currentCategory = Category::whereNull('parent_id')
+                ->where('status', 'active')
+                ->where('slug', $segments[0])
+                ->firstOrFail();
+
+            array_shift($segments);
+            foreach ($segments as $segment) {
+                $child = $currentCategory->children()
+                    ->where('slug', $segment)
+                    ->where('status', 'active')
+                    ->firstOrFail();
+                $currentCategory = $child;
+            }
+
+            $descendantIds = $this->getDescendantIds($currentCategory);
+            $cacheKey = 'product_count_' . md5(serialize([
+                'category' => $currentCategory->id,
+                'descendant_ids' => $descendantIds,
+                'filters' => $request->except(['page', '_token'])
+            ]));
+
+            $productQuery = Product::with([
+                'images' => fn($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true),
+                'cat_info' => fn($q) => $q->select(['id', 'title']),
+                'sub_cat_info' => fn($q) => $q->select(['id', 'title']),
+                'variants' => fn($q) => $q->where('status', 'active')
+                    ->select(['id', 'product_id', 'price', 'discount', 'stock'])
+                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'product_variant_id', 'is_primary'])->where('is_primary', true)])
+            ])
+                ->where('status', 'active')
+                ->where(function ($query) use ($descendantIds) {
+                    $query->whereIn('cat_id', $descendantIds)
+                        ->orWhereIn('child_cat_id', $descendantIds);
+                });
+
+            $this->applyFiltersToQuery($productQuery, $request);
+
+            $perPage = $request->input('show', 12);
+            $products = RedisHelper::remember($cacheKey . '_results_' . $request->input('page', 1), self::CACHE_TTL, function () use ($productQuery, $perPage, $request, $encryptedPath) {
+                $products = $productQuery->paginate($perPage);
+                $products->setPath("/product-cat/" . $encryptedPath);
+                $products->appends($request->except(['page', '_token']));
+                return $products;
+            });
+
+            $totalProducts = RedisHelper::remember($cacheKey, self::CACHE_TTL, function () use ($productQuery) {
+                return $productQuery->count();
+            });
+
+            $maxPrice = RedisHelper::remember($cacheKey . '_max_price', self::CACHE_TTL, function () use ($descendantIds) {
+                return Product::where('status', 'active')
+                    ->where(function ($query) use ($descendantIds) {
+                        $query->whereIn('cat_id', $descendantIds)
+                            ->orWhereIn('child_cat_id', $descendantIds);
+                    })
+                    ->selectRaw('
+                        MAX(
+                            CASE 
+                                WHEN has_variants = false THEN 
+                                    CASE 
+                                        WHEN base_discount > 0 THEN 
+                                            base_price - (base_price * base_discount / 100)
+                                        ELSE 
+                                            base_price 
+                                    END
+                                ELSE 
+                                    (SELECT MAX(
+                                        CASE 
+                                            WHEN discount > 0 THEN 
+                                                price - (price * discount / 100)
+                                            ELSE 
+                                                price 
+                                        END
+                                    ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
+                            END
+                        ) as max_price
+                    ')
+                    ->value('max_price') ?? 1000;
+            });
+
+            $recentProducts = $this->recentProductService->getRecentProducts();
+
+            if ($request->wantsJson()) {
+                $html = view('frontend.pages.product-grid-html', compact('products'))->render();
+                return response()->json([
+                    'success' => true,
+                    'html' => $html,
+                    'message' => $products->isEmpty() ? 'No products found with current filters' : null,
+                    'total' => $products->total(),
+                    'current_page' => $products->currentPage(),
+                    'last_page' => $products->lastPage(),
+                    'debug_info' => [
+                        'total_before_pagination' => $totalProducts,
+                        'applied_filters' => $request->except(['page', '_token']),
+                    ]
+                ]);
+            }
+
+            $appliedFilters = [
+                'brands' => $request->input('brand', []),
+                'price_range' => $request->input('price_range', ''),
+                'min_rating' => $request->input('min_rating', []),
+                'min_discount' => $request->input('min_discount', []),
+                'sortBy' => $request->input('sortBy', 'latest'),
+                'show' => $request->input('show', 12),
+            ];
+
+            if (config('app.debug')) {
+                Log::debug('productSubCat: Processed request', [
+                    'category_id' => $currentCategory->id,
+                    'descendant_ids' => $descendantIds,
+                    'total_products' => $totalProducts,
+                    'filters' => $appliedFilters,
+                    'sql' => $productQuery->toSql(),
+                    'bindings' => $productQuery->getBindings()
+                ]);
+            }
+
+            return view('frontend.pages.product-grids', [
+                'products' => $products,
+                'mainCategory' => $currentCategory,
+                'max_price' => $maxPrice,
+                'recent_products' => $recentProducts,
+                'applied_filters' => $appliedFilters,
+                'has_filters' => $this->hasFiltersApplied($request),
+            ]);
+        // } catch (\Exception $e) {
+        //     Log::error('Product category filter error: ' . $e->getMessage(), [
+        //         'encrypted_path' => $encryptedPath,
+        //         'request_data' => $request->all(),
+        //         'trace' => $e->getTraceAsString()
+        //     ]);
+
+        //     if ($request->wantsJson()) {
+        //         return response()->json([
+        //             'success' => false,
+        //             'message' => 'Failed to apply filters: ' . $e->getMessage(),
+        //         ], 500);
+        //     }
+
+        //     abort(500, 'Error loading category: ' . $e->getMessage());
+        // }
+    }
+
     /**
      * Display products for a subcategory
      */
-    public function productSubCat(Request $request, $encryptedPath)
+    public function productSubCatOLD(Request $request, $encryptedPath)
     {
-        try {
+        // try {
             $slugPath = UrlEncryptor::decodePath($encryptedPath);
             $segments = explode('/', trim($slugPath, '/'));
             $currentCategory = Category::whereNull('parent_id')
@@ -2504,22 +2653,22 @@ class FrontendController extends Controller
                 'applied_filters' => $appliedFilters,
                 'has_filters' => $this->hasFiltersApplied($request),
             ]);
-        } catch (\Exception $e) {
-            Log::error('Product category filter error: ' . $e->getMessage(), [
-                'encrypted_path' => $encryptedPath,
-                'request_data' => $request->all(),
-                'trace' => $e->getTraceAsString()
-            ]);
+        // } catch (\Exception $e) {
+        //     Log::error('Product category filter error: ' . $e->getMessage(), [
+        //         'encrypted_path' => $encryptedPath,
+        //         'request_data' => $request->all(),
+        //         'trace' => $e->getTraceAsString()
+        //     ]);
 
-            if ($request->wantsJson()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to apply filters: ' . $e->getMessage(),
-                ], 500);
-            }
+        //     if ($request->wantsJson()) {
+        //         return response()->json([
+        //             'success' => false,
+        //             'message' => 'Failed to apply filters: ' . $e->getMessage(),
+        //         ], 500);
+        //     }
 
-            abort(500, 'Error loading category: ' . $e->getMessage());
-        }
+        //     abort(500, 'Error loading category: ' . $e->getMessage());
+        // }
     }
 
     /**

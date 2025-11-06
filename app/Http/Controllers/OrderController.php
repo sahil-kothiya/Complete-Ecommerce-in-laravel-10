@@ -112,7 +112,7 @@ class OrderController extends Controller
      */
     private function processCODOrder(User $user)
     {
-        // try {
+        try {
             DB::beginTransaction();
 
             $subtotal      = Helper::totalCartPrice($user->id);
@@ -159,11 +159,11 @@ class OrderController extends Controller
             return redirect()->route('order.success', $order->order_number)
                 ->with('success', 'Order placed! #' . $order->order_number);
 
-        // } catch (\Exception $e) {
-        //     DB::rollBack();
-        //     Log::error('COD Order Failed', ['error' => $e->getMessage()]);
-        //     return back()->with('error', 'Failed to place order.');
-        // }
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('COD Order Failed', ['error' => $e->getMessage()]);
+            return back()->with('error', 'Failed to place order.');
+        }
     }
 
     /**

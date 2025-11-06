@@ -264,7 +264,7 @@
 
 									<div class="add-to-cart mt-4">
 										<button type="submit" class="btn" id="addToCartBtn" tabindex="36">Add to cart</button>
-										<!-- <br> -->
+										<br>
 										<a href="{{route('add-to-wishlist',$product_detail->slug)}}" 
 										class="btn min" 
 										id="wishlistBtn" 
@@ -897,7 +897,7 @@
 		transition: left 0.5s;
 	}
 
-	.add-to-cart .btn:hover:not(:disabled)::before {
+	/* .add-to-cart .btn:hover:not(:disabled)::before {
 		left: 100%;
 	}
 
@@ -905,7 +905,7 @@
 		background: linear-gradient(135deg, #ff6f00 0%, #ff4500 100%);
 		box-shadow: 0 6px 20px rgba(255, 111, 0, 0.4);
 		transform: translateY(-2px);
-	}
+	} */
 
 	.add-to-cart .btn:active:not(:disabled) {
 		transform: translateY(0);
