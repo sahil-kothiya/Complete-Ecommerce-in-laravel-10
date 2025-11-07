@@ -16,7 +16,7 @@ class HighPerformanceFilterController extends Controller
 {
     private const CACHE_TTL = 1800;
     private const PRODUCTS_CACHE_TTL = 300;
-    private const MAX_PRICE_DEFAULT = 10000;
+    private const MAX_PRICE_DEFAULT = 100;
     private const MAX_EXECUTION_TIME = 3000;
 
     public function getFilterData(Request $request, $path = null)

@@ -89,7 +89,7 @@
                             @endif
                         </td>
                         <td>{{ $product->is_featured ? 'Yes' : 'No' }}</td>
-                        <td>$. {{ $displayPrice }} /-</td>
+                        <td>${{ $displayPrice }} /-</td>
                         <td>{{ $displayDiscount }}</td>
                         <td>{{ $displaySize }}</td>
                         <td>{{ $product->condition ?? 'N/A' }}</td>

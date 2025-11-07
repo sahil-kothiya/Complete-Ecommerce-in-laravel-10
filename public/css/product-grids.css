@@ -441,53 +441,53 @@
 
 /* Price Filter */
 .price-filter {
-    padding: 15px 0;
+    padding: 10px 0;
 }
 
 .price-filter-inner {
     padding: 15px;
-    background: #ffffff;
-    border-radius: 6px;
-    border: 1px solid #e9ecef;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    background: #fff8f0;
+    border-radius: 4px;
+    border: 1px solid #ffe0b2;
 }
 
 #slider-range {
     margin: 10px 0 15px 0;
-    height: 6px;
-    background: #e9ecef;
+    height: 5px;
+    background: #ffcc80;
     border: none;
     border-radius: 3px;
     position: relative;
 }
 
 .ui-slider .ui-slider-handle {
-    width: 18px;
-    height: 18px;
-    background: #f7941d;
+    width: 16px;
+    height: 16px;
+    background: #ff9800;
     border: 2px solid #ffffff;
     border-radius: 50%;
     top: -6px;
     cursor: grab;
     outline: none;
-    box-shadow: 0 1px 4px rgba(247, 148, 29, 0.3);
+    box-shadow: 0 2px 4px rgba(255, 152, 0, 0.3);
     transition: all 0.2s ease;
 }
 
 .ui-slider .ui-slider-handle:hover,
 .ui-slider .ui-slider-handle:focus {
-    transform: scale(1.05);
-    box-shadow: 0 2px 6px rgba(247, 148, 29, 0.4);
+    transform: scale(1.1);
+    box-shadow: 0 3px 6px rgba(255, 152, 0, 0.4);
 }
 
 .ui-slider .ui-slider-handle:active {
     cursor: grabbing;
+    transform: scale(1.05);
 }
 
 .ui-slider .ui-slider-range {
-    background: #f7941d;
+    background: #ff9800;
     border-radius: 3px;
-    height: 6px;
+    height: 5px;
 }
 
 .product_filter {
@@ -500,18 +500,17 @@
 .label-input.range-input {
     display: flex;
     align-items: center;
-    padding: 8px 12px;
+    padding: 10px 12px;
     background: #ffffff;
-    border: 1px solid #dee2e6;
+    border: 1px solid #ffe0b2;
     border-radius: 4px;
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-    margin-bottom: 10px;
+    margin-top: 5px;
 }
 
 .range-label {
-    font-weight: 500;
-    color: #495057;
-    font-size: 13px;
+    font-weight: 600;
+    color: #e65100;
+    font-size: 12px;
     min-width: 45px;
     white-space: nowrap;
 }
@@ -665,20 +664,21 @@
 /* Additional sidebar styling for better layout */
 .single-widget {
     background: #ffffff;
-    border-radius: 8px;
-    padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-    border: 1px solid #e9ecef;
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 15px;
 }
 
 .single-widget .title {
-    color: #f7941d;
-    font-size: 16px;
+    color: #333333;
+    font-size: 14px;
     font-weight: 600;
-    margin-bottom: 15px;
-    padding-bottom: 8px;
-    border-bottom: 2px solid #f8f9fa;
+    margin-bottom: 12px;
+    padding-bottom: 0;
+    border-bottom: none;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .categor-list {
@@ -688,60 +688,74 @@
 }
 
 .categor-list li {
-    margin-bottom: 8px;
+    margin-bottom: 6px;
 }
 
 .categor-list label {
     display: flex;
     align-items: center;
     cursor: pointer;
-    padding: 8px 0;
-    transition: all 0.3s ease;
-    border-radius: 4px;
+    padding: 6px 0;
+    transition: all 0.2s ease;
+    border-radius: 3px;
+    font-size: 13px;
+    color: #555555;
 }
 
 .categor-list label:hover {
-    background: #f8f9fa;
-    padding-left: 10px;
+    background: #f5f5f5;
+    padding-left: 8px;
+    color: #333333;
 }
 
 .filter-checkbox {
-    width: 16px;
-    height: 16px;
-    margin-right: 10px;
-    accent-color: #f7941d;
+    width: 15px;
+    height: 15px;
+    margin-right: 8px;
+    accent-color: #ff9800;
     cursor: pointer;
 }
 
 .categor-list input[type="checkbox"]:checked+span {
-    color: #f7941d;
-    font-weight: 600;
+    color: #ff9800;
+    font-weight: 500;
 }
 
 .no-brands {
     text-align: center;
     padding: 20px;
-    color: #6c757d;
+    color: #999999;
 }
 
 .empty-state {
-    padding: 20px;
+    padding: 15px;
 }
 
 .empty-state i {
-    font-size: 32px;
-    color: #dee2e6;
+    font-size: 28px;
+    color: #cccccc;
     display: block;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
+}
+
+.empty-state p {
+    font-size: 13px;
+    color: #666666;
+    margin-bottom: 4px;
+}
+
+.empty-state small {
+    font-size: 11px;
+    color: #999999;
 }
 
 /* Shop top bar */
 .shop-top {
-    background: #f8f9fa;
-    padding: 20px;
-    border-radius: 8px;
-    margin-bottom: 25px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    background: #ffffff;
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    border: 1px solid #e8e8e8;
 }
 
 .shop-shorter {

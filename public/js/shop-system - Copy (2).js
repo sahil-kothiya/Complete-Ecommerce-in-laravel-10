@@ -4,9 +4,9 @@
         console.log("Unified shop system already initialized, skipping...");
         return;
     }
-    const appUrl = window.location.origin;
+    const appUrl = window.location.origin; // Dynamically use the current origin instead of hardcoded URL
     let e = {
-            maxPrice: window.maxPrice || 100,
+            maxPrice: window.maxPrice || 5e3,
             filterDebounceTime: 300,
             sliderAnimationSpeed: 800,
             cartAnimationDelay: 800,
@@ -222,13 +222,7 @@
             let e = document.getElementById("productFilterForm");
             if (!e) return;
             e.addEventListener("change", (e) => {
-                if (e.target.matches('select[name="sortBy"]')) {
-                    this.handleSortByChange(e.target);
-                } else if (e.target.matches('select[name="show"]')) {
-                    this.handleShowChange(e.target);
-                } else if (e.target.matches('input[type="checkbox"]')) {
-                    this.handleFilterChange(e.target);
-                }
+                e.target.matches('select[name="sortBy"], select[name="show"]') ? this.debouncedApply(1) : e.target.matches('input[type="checkbox"]') && this.handleFilterChange(e.target);
             });
             let t = e.querySelector('.filter_button, button[type="submit"]');
             t &&
@@ -256,86 +250,39 @@
         initializeFiltersFromURL() {
             let t = new URLSearchParams(window.location.search),
                 i = !1;
-            
-            // Clear all active filters first
-            this.activeFilters = {};
-            
-            // Clear all checkboxes first
-            document.querySelectorAll('#productFilterForm input[type="checkbox"]').forEach((e) => (e.checked = !1));
-            
-            // Map URL parameter names to input field names
-            const filterMapping = {
-                'brands': { inputName: 'brand', filterType: 'brand' },
-                'ratings': { inputName: 'min_rating', filterType: 'rating' },
-                'discounts': { inputName: 'min_discount', filterType: 'discount' }
-            };
-            
-            // Process brands, ratings, and discounts
-            Object.entries(filterMapping).forEach(([urlParam, config]) => {
-                let urlValue = t.get(urlParam);
-                if (urlValue) {
-                    urlValue.split(",").forEach((value) => {
-                        let checkbox = document.querySelector(`input[name="${config.inputName}[]"][value="${value}"]`);
-                        if (checkbox) {
-                            checkbox.checked = true;
-                            this.addToActiveFilters(config.filterType, value, checkbox.dataset.filterLabel || value);
-                            i = true;
-                        }
+            ["brands", "ratings", "discounts"].forEach((e) => {
+                let a = t.get(e);
+                if (a) {
+                    let s = "brands" === e ? "brand" : "ratings" === e ? "min_rating" : "min_discount";
+                    a.split(",").forEach((e) => {
+                        let t = document.querySelector(`input[name="${s}[]"][value="${e}"]`);
+                        t && ((t.checked = !0), this.addToActiveFilters(s, e, t.dataset.filterLabel || e), (i = !0));
                     });
                 }
             });
-            
-            // Process availability
             let a = t.get("availability");
-            if (a) {
+            a &&
                 a.split(",").forEach((e) => {
                     let t = document.querySelector(`input[name="availability[]"][value="${e}"]`);
-                    if (t) {
-                        t.checked = true;
-                        this.addToActiveFilters("availability", e, t.dataset.filterLabel || e);
-                        i = true;
-                    }
+                    t && ((t.checked = !0), this.addToActiveFilters("availability", e, t.dataset.filterLabel || e), (i = !0));
                 });
-            }
-            
-            // Process price range
             let s = t.get("price_range");
             if (s && s !== `0-${e.maxPrice}`) {
                 let l = document.getElementById("price_range");
                 if (l) {
                     l.value = s;
                     let [r, n] = s.split("-");
-                    this.addToActiveFilters("price", s, `Price: ${e.currency}${r} - ${e.currency}${n}`);
-                    i = true;
+                    this.addToActiveFilters("price", s, `${e.currency}${r} - ${e.currency}${n}`), (i = !0);
                 }
             }
-            
-            // Process sortBy
-            let sortByValue = t.get("sortBy");
-            let sortBySelect = document.getElementById("sortBy");
-            if (sortByValue && sortByValue !== "latest") {
-                if (sortBySelect) {
-                    sortBySelect.value = sortByValue;
-                    let selectedOption = sortBySelect.querySelector(`option[value="${sortByValue}"]`);
-                    if (selectedOption) {
-                        this.addToActiveFilters("sortBy", sortByValue, `Sort: ${selectedOption.textContent}`);
-                        i = true;
-                    }
-                }
-            }
-            
-            // Process show (items per page)
-            let showValue = t.get("show");
-            let showSelect = document.getElementById("show");
-            if (showValue && showValue !== "12") {
-                if (showSelect) {
-                    showSelect.value = showValue;
-                    this.addToActiveFilters("show", showValue, `Show: ${showValue} items`);
-                    i = true;
-                }
-            }
-            
-            return i;
+            return (
+                ["sortBy", "show"].forEach((e) => {
+                    let a = t.get(e),
+                        s = document.getElementById(e);
+                    a && s && a !== s.querySelector("option")?.value && ((s.value = a), (i = !0));
+                }),
+                i
+            );
         }
         initializePriceRange() {
             let t = document.getElementById("slider-range");
@@ -352,88 +299,20 @@
                 min: i,
                 max: a,
                 values: [n, d],
-                slide: (e, t) => {
+                slide(e, t) {
                     let i = document.getElementById("amount");
-                    i && (i.value = `${s}${t.values[0]} - ${s}${t.values[1]}`);
-                    r && (r.value = `${t.values[0]}-${t.values[1]}`);
+                    i && (i.value = `${s}${t.values[0]} - ${s}${t.values[1]}`), r && (r.value = `${t.values[0]}-${t.values[1]}`);
                 },
-                stop: (e, t) => {
-                    // Update active filters when slider stops
-                    this.handlePriceRangeChange(t.values[0], t.values[1], s);
-                    this.debouncedApply(1);
-                },
+                stop: () => this.debouncedApply(1),
             });
             let c = document.getElementById("amount");
             c && (c.value = `${s}${n} - ${s}${d}`);
         }
         handleFilterChange(e) {
-            // Map input names to filter types for consistency
-            const inputNameToFilterType = {
-                'brand': 'brand',
-                'min_rating': 'rating',
-                'min_discount': 'discount',
-                'availability': 'availability'
-            };
-            
-            let inputName = e.name.replace("[]", "");
-            let filterType = inputNameToFilterType[inputName] || inputName;
-            let filterValue = e.value;
-            let filterLabel = e.dataset.filterLabel || filterValue;
-            
-            if (e.checked) {
-                this.addToActiveFilters(filterType, filterValue, filterLabel);
-            } else {
-                this.removeFromActiveFilters(filterType, filterValue);
-            }
-            
-            this.updateActiveFiltersDisplay();
-            this.debouncedApply(1);
-        }
-        handleSortByChange(selectElement) {
-            let value = selectElement.value;
-            let selectedOption = selectElement.querySelector(`option[value="${value}"]`);
-            let label = selectedOption ? selectedOption.textContent : value;
-            
-            // Remove previous sortBy filter if exists
-            this.removeFromActiveFilters("sortBy");
-            
-            // Only add to active filters if not default
-            if (value && value !== "latest") {
-                this.addToActiveFilters("sortBy", value, `Sort: ${label}`);
-            }
-            
-            this.updateActiveFiltersDisplay();
-            this.debouncedApply(1);
-        }
-        handleShowChange(selectElement) {
-            let value = selectElement.value;
-            
-            // Remove previous show filter if exists
-            this.removeFromActiveFilters("show");
-            
-            // Only add to active filters if not default
-            if (value && value !== "12") {
-                this.addToActiveFilters("show", value, `Show: ${value} items`);
-            }
-            
-            this.updateActiveFiltersDisplay();
-            this.debouncedApply(1);
-        }
-        handlePriceRangeChange(minPrice, maxPrice, currency) {
-            // Remove previous price filter if exists
-            this.removeFromActiveFilters("price");
-            
-            // Only add to active filters if not default range
-            let defaultMin = 0;
-            let defaultMax = e.maxPrice;
-            
-            if (minPrice !== defaultMin || maxPrice !== defaultMax) {
-                let priceValue = `${minPrice}-${maxPrice}`;
-                let priceLabel = `Price: ${currency}${minPrice} - ${currency}${maxPrice}`;
-                this.addToActiveFilters("price", priceValue, priceLabel);
-            }
-            
-            this.updateActiveFiltersDisplay();
+            let t = e.dataset.filterType || e.name.replace("[]", ""),
+                i = e.value,
+                a = e.dataset.filterLabel || i;
+            e.checked ? this.addToActiveFilters(t, i, a) : this.removeFromActiveFilters(t, i), this.updateActiveFiltersDisplay(), this.debouncedApply(1);
         }
         addToActiveFilters(e, t, i) {
             this.activeFilters[e] || (this.activeFilters[e] = {}), (this.activeFilters[e][t] = i);
@@ -444,88 +323,22 @@
         removeActiveFilter(e) {
             let t = e.dataset.filterType,
                 i = e.dataset.filterValue;
-            e.classList.add("removing");
-            setTimeout(() => {
-                // Map filter types to actual input names
-                let filterNameMap = {
-                    'brand': 'brand',
-                    'rating': 'min_rating',
-                    'discount': 'min_discount',
-                    'availability': 'availability',
-                    'price': 'price_range'
-                };
-                
-                let inputName = filterNameMap[t] || t;
-                
-                // Uncheck the corresponding checkbox
-                let checkbox = document.querySelector(`input[name="${inputName}[]"][value="${i}"]`);
-                if (checkbox) {
-                    checkbox.checked = false;
-                }
-                
-                // Handle price range separately
-                if ("price" === t) {
-                    this.resetPriceRange();
-                }
-                
-                // Handle sortBy - reset to default
-                if ("sortBy" === t) {
-                    let sortBySelect = document.getElementById("sortBy");
-                    if (sortBySelect) {
-                        sortBySelect.value = "latest";
-                    }
-                }
-                
-                // Handle show - reset to default
-                if ("show" === t) {
-                    let showSelect = document.getElementById("show");
-                    if (showSelect) {
-                        showSelect.value = "12";
-                    }
-                }
-                
-                // Remove from active filters
-                this.removeFromActiveFilters(t, i);
-                this.updateActiveFiltersDisplay();
-                this.debouncedApply(1);
-            }, 300);
+            e.classList.add("removing"),
+                setTimeout(() => {
+                    let e = document.querySelector(`input[name="${t}[]"][value="${i}"]`);
+                    e && (e.checked = !1), "price" === t && this.resetPriceRange(), this.removeFromActiveFilters(t, i), this.updateActiveFiltersDisplay(), this.debouncedApply(1);
+                }, 300);
         }
         clearAllFilters() {
             let e = document.querySelectorAll(".active-filter-tag");
             e.forEach((e, t) => {
                 setTimeout(() => e.classList.add("removing"), 50 * t);
-            });
-            
-            setTimeout(() => {
-                // Uncheck all filter checkboxes (brands, ratings, discounts, availability)
-                document.querySelectorAll('#productFilterForm input[type="checkbox"][name^="brand"], #productFilterForm input[type="checkbox"][name^="min_rating"], #productFilterForm input[type="checkbox"][name^="min_discount"], #productFilterForm input[type="checkbox"][name^="availability"]').forEach((e) => (e.checked = !1));
-                
-                // Reset price range
-                this.resetPriceRange();
-                
-                // Reset sortBy to default
-                let sortBySelect = document.getElementById("sortBy");
-                if (sortBySelect) {
-                    sortBySelect.value = "latest";
-                }
-                
-                // Reset show to default
-                let showSelect = document.getElementById("show");
-                if (showSelect) {
-                    showSelect.value = "12";
-                }
-                
-                // Clear active filters
-                this.activeFilters = {};
-                this.updateActiveFiltersDisplay();
-                
-                // Update URL
-                let e = new URL(window.location);
-                e.search = "";
-                history.replaceState({}, "", e);
-                
-                this.debouncedApply(1);
-            }, 500);
+            }),
+                setTimeout(() => {
+                    document.querySelectorAll('#productFilterForm input[type="checkbox"]').forEach((e) => (e.checked = !1)), this.resetPriceRange(), (this.activeFilters = {}), this.updateActiveFiltersDisplay();
+                    let e = new URL(window.location);
+                    (e.search = ""), history.replaceState({}, "", e), this.debouncedApply(1);
+                }, 500);
         }
         resetPriceRange() {
             let t = document.getElementById("slider-range"),
@@ -533,12 +346,7 @@
                 a = document.getElementById("amount");
             if (t && window.jQuery && jQuery.fn.slider) {
                 let s = e.maxPrice;
-                jQuery(t).slider("values", [0, s]);
-                i && (i.value = `0-${s}`);
-                a && (a.value = `${e.currency}0 - ${e.currency}${s}`);
-                
-                // Remove price filter from active filters
-                this.removeFromActiveFilters("price");
+                jQuery(t).slider("values", [0, s]), i && (i.value = `0-${s}`), a && (a.value = `${e.currency}0 - ${e.currency}${s}`);
             }
         }
         updateActiveFiltersDisplay() {
@@ -651,6 +459,9 @@
                 e.i && e.i.length > 0
                     ? e.i
                           .map((t) => {
+                              // Fixed image path construction: Use dynamic appUrl and direct /storage/ + relative path
+                              // Assuming t is the relative path like 'products/product_xxx.webp' for normal products
+                              // For variants, it would be 'products/variants/xxx.webp' - handled similarly
                               let imageSrc = `${appUrl}/storage/${t}`;
                               return `<img src="${imageSrc}" class="slider-image lazy" alt="${e.t}"
                             loading="lazy" width="235" height="235" decoding="async"
