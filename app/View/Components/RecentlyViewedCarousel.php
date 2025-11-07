@@ -21,6 +21,7 @@ class RecentlyViewedCarousel extends Component
     public $defaultAutoScrollSpeed;
     public $defaultScrollAmount;
     public $defaultShimmer;
+    public $startingTabIndex;
 
     public function __construct(
         $products = null,
@@ -37,7 +38,8 @@ class RecentlyViewedCarousel extends Component
         $defaultHoverShadow = '0 4px 8px rgba(0, 0, 0, 0.2)',
         $defaultAutoScrollSpeed = 150,
         $defaultScrollAmount = 5,
-        $defaultShimmer = true
+        $defaultShimmer = true,
+        $startingTabIndex = 100
     ) {
         $this->products = $products ?? collect();
         $this->carouselId = $carouselId;
@@ -54,6 +56,7 @@ class RecentlyViewedCarousel extends Component
         $this->defaultAutoScrollSpeed = $defaultAutoScrollSpeed;
         $this->defaultScrollAmount = $defaultScrollAmount;
         $this->defaultShimmer = $defaultShimmer;
+        $this->startingTabIndex = $startingTabIndex;
     }
 
     public function render()

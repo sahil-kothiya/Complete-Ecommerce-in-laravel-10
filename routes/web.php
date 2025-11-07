@@ -112,7 +112,7 @@ Route::get('/apply-filters/{encryptedFilters?}', [FrontendController::class, 'ap
 Route::post('/encrypt-filters', [FrontendController::class, 'encryptFilters'])
     ->name('encrypt.filters')
     ->middleware('throttle:60,1'); // 60 requests per minute
-    
+
 Route::get('/product-brand/{slug}', [FrontendController::class, 'productBrand'])->name('product-brand');
 Route::get('/product-grids', [FrontendController::class, 'productGrids'])->name('product-grids');
 Route::get('/product-lists', [FrontendController::class, 'productLists'])->name('product-lists');
@@ -131,9 +131,11 @@ Route::get('/cart', [FrontendController::class, 'cart'])->name('cart');
 Route::post('/wishlist/toggle/{slug}', [WishlistController::class, 'toggle'])->name('wishlist.toggle');
 Route::get('/wishlist/check', [WishlistController::class, 'check']);
 
+// Add to cart - works for both guest and authenticated users
+Route::post('/add-to-cart', [CartController::class, 'singleAddToCart'])->name('single-add-to-cart');
+
 Route::middleware('auth')->group(function () {
     Route::get('/add-to-cart/{slug}', [CartController::class, 'addToCart'])->name('add-to-cart');
-    Route::post('/add-to-cart', [CartController::class, 'singleAddToCart'])->name('single-add-to-cart');
     Route::get('/checkout', [CartController::class, 'checkout'])->name('checkout');
 
     Route::get('/wishlist', [WishlistController::class, 'index'])->name('wishlist');

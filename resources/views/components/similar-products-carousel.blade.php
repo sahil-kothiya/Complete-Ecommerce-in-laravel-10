@@ -6,19 +6,33 @@
                 <h2 class="carousel-title mb-0">{{ $title }}</h2>
             </div>
             <div class="carousel-nav-btns">
-                <x-carousel-nav-button 
+                <x-carousel-nav-button
                     :id="$prevButtonId"
-                    aria-label="Previous products"
+                    :aria-label="'Previous ' . strtolower($title)"
                     icon="ti-angle-left"
                     :direction="-1"
-                    carousel-id="{{ $carouselId }}" />
+                    :background-color="$defaultBackgroundColor ?? '#6c757d'"
+                    :text-color="$defaultTextColor ?? 'white'"
+                    :hover-scale="$defaultHoverScale"
+                    :hover-shadow="$defaultHoverShadow"
+                    :auto-scroll-speed="$defaultAutoScrollSpeed"
+                    :scroll-amount="$defaultScrollAmount"
+                    :shimmer-animation="$defaultShimmer"
+                    :carousel-id="$carouselId" />
 
-                <x-carousel-nav-button 
+                <x-carousel-nav-button
                     :id="$nextButtonId"
-                    aria-label="Next products"
+                    :aria-label="'Next ' . strtolower($title)"
                     icon="ti-angle-right"
                     :direction="1"
-                    carousel-id="{{ $carouselId }}" />
+                    :background-color="$defaultBackgroundColor ?? '#6c757d'"
+                    :text-color="$defaultTextColor ?? 'white'"
+                    :hover-scale="$defaultHoverScale"
+                    :hover-shadow="$defaultHoverShadow"
+                    :auto-scroll-speed="$defaultAutoScrollSpeed"
+                    :scroll-amount="$defaultScrollAmount"
+                    :shimmer-animation="$defaultShimmer"
+                    :carousel-id="$carouselId" />
             </div>
         </div>
 

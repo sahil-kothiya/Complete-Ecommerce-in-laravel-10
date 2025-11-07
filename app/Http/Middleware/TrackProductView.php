@@ -19,10 +19,15 @@ class TrackProductView
     {
         $response = $next($request);
 
+        // Ensure session is started
+        if (!$request->session()->isStarted()) {
+            $request->session()->start();
+        }
+
         // Track product view if this is a product detail page
         if ($request->route() && $request->route()->getName() === 'product-detail') {
             $slug = $request->route('slug');
-            
+
             // Get product ID from slug
             $product = \App\Models\Product::where('slug', $slug)
                 ->where('status', 'active')

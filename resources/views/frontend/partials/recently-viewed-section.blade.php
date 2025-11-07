@@ -29,7 +29,7 @@
 
                 // Determine image source with proper path handling
                 $imageUrl = asset('images/no-image.png'); // Default fallback
-                
+
                 if ($hasVariants && $product->activeVariants && $product->activeVariants->first()) {
                     // Check for variant image
                     $variantImage = $product->activeVariants->first()->primaryImage;
@@ -43,7 +43,7 @@
                         }
                     }
                 }
-                
+
                 // Fallback to product image if variant image not found or no variants
                 if ($imageUrl === asset('images/no-image.png')) {
                     $productImage = $product->images->first();
@@ -57,7 +57,6 @@
                         }
                     }
                 }
-                dd($imageUrl);
                 @endphp
                 <div class="carousel-item flipkart-card" tabindex="{{ $tabindex }}">
                     <div class="flipkart-card-img-wrap">
@@ -204,7 +203,7 @@
                 const currentScroll = viewport.scrollLeft;
 
                 // Stop at boundaries
-                if ((direction < 0 && currentScroll <= 0) || 
+                if ((direction < 0 && currentScroll <= 0) ||
                     (direction > 0 && currentScroll >= maxScroll)) {
                     stopAutoScroll();
                     return;
@@ -261,7 +260,7 @@
             // Update button states based on scroll position
             const maxScroll = viewport.scrollWidth - viewport.clientWidth;
             const currentScroll = viewport.scrollLeft;
-            
+
             prevBtn.disabled = currentScroll <= 0;
             nextBtn.disabled = currentScroll >= maxScroll;
         });

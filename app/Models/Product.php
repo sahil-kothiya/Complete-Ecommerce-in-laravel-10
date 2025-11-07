@@ -375,10 +375,16 @@ class Product extends Model
         // 1. Products WITHOUT variants – use base fields
         // -----------------------------------------------------------------
         if (! $this->has_variants) {
+            $discount = $this->base_discount ?? 0;
+            $originalPrice = $this->base_price;
+            $discountedPrice = $discount > 0
+                ? $originalPrice * (1 - $discount / 100)
+                : $originalPrice;
+
             return (object) [
-                'price'          => $this->base_price,
-                'original_price' => $this->base_price,
-                'discount'       => $this->base_discount,
+                'price'          => $discountedPrice,
+                'original_price' => $originalPrice,
+                'discount'       => $discount,
                 'stock'          => $this->base_stock,
                 'image_url'      => $this->primaryImage?->url ?? asset('images/no-image.png'),
                 'display_name'   => $this->title,

@@ -342,7 +342,7 @@ class FrontendController extends Controller
             if ($product->has_variants && $product->variants->count() > 0) {
                 // For variant products, get first active in-stock variant's image
                 $activeInStockVariants = $product->variants->where('status', 'active')->where('stock', '>', 0);
-                
+
                 if ($activeInStockVariants->count() > 0) {
                     $firstVariant = $activeInStockVariants->first();
                     $primaryImage = $firstVariant->images->first();
@@ -352,7 +352,7 @@ class FrontendController extends Controller
                 }
             } else {
                 // For simple products, use product's primary image
-                $primaryImage = $product->images->where('is_primary', true)->first() 
+                $primaryImage = $product->images->where('is_primary', true)->first()
                     ?? $product->images->first();
             }
 
@@ -360,7 +360,7 @@ class FrontendController extends Controller
             if ($primaryImage) {
                 $imagePath = $primaryImage->image_path;
                 $thumbnailPath = $primaryImage->thumbnail_path ?? $primaryImage->image_path;
-                
+
                 // Ensure proper storage path
                 if (strpos($imagePath, 'storage/') !== 0) {
                     $imagePath = 'storage/' . ltrim($imagePath, '/');
@@ -368,7 +368,7 @@ class FrontendController extends Controller
                 if (strpos($thumbnailPath, 'storage/') !== 0) {
                     $thumbnailPath = 'storage/' . ltrim($thumbnailPath, '/');
                 }
-                
+
                 $product->primary_image = [
                     'image_path' => $imagePath,
                     'thumbnail_path' => $thumbnailPath,
@@ -646,11 +646,11 @@ class FrontendController extends Controller
                 $query->where(function ($q) use ($minPrice, $maxPrice) {
                     $q->where('has_variants', false)
                         ->whereRaw('
-                        CASE 
-                            WHEN base_discount > 0 THEN 
+                        CASE
+                            WHEN base_discount > 0 THEN
                                 base_price - (base_price * base_discount / 100)
-                            ELSE 
-                                base_price 
+                            ELSE
+                                base_price
                         END BETWEEN ? AND ?', [(float)$minPrice, (float)$maxPrice]);
                 })
                     ->orWhere(function ($q) use ($minPrice, $maxPrice) {
@@ -658,11 +658,11 @@ class FrontendController extends Controller
                             ->whereHas('variants', function ($subQuery) use ($minPrice, $maxPrice) {
                                 $subQuery->where('status', 'active')
                                     ->whereRaw('
-                                    CASE 
-                                        WHEN discount > 0 THEN 
+                                    CASE
+                                        WHEN discount > 0 THEN
                                             price - (price * discount / 100)
-                                        ELSE 
-                                            price 
+                                        ELSE
+                                            price
                                     END BETWEEN ? AND ?', [(float)$minPrice, (float)$maxPrice]);
                             });
                     });
@@ -672,10 +672,10 @@ class FrontendController extends Controller
         if (!empty($minRatings)) {
             $productsQuery->whereRaw('
                 products.id IN (
-                    SELECT product_id 
-                    FROM product_reviews 
-                    WHERE product_reviews.product_id = products.id 
-                    GROUP BY product_id 
+                    SELECT product_id
+                    FROM product_reviews
+                    WHERE product_reviews.product_id = products.id
+                    GROUP BY product_id
                     HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
                 )', [min(array_map('intval', $minRatings))]);
         }
@@ -701,42 +701,42 @@ class FrontendController extends Controller
         // Apply sorting
         if ($sortBy === 'price_low_high') {
             $productsQuery->orderByRaw('
-                CASE 
-                    WHEN has_variants = false THEN 
-                        CASE 
-                            WHEN base_discount > 0 THEN 
+                CASE
+                    WHEN has_variants = false THEN
+                        CASE
+                            WHEN base_discount > 0 THEN
                                 base_price - (base_price * base_discount / 100)
-                            ELSE 
-                                base_price 
+                            ELSE
+                                base_price
                         END
-                    ELSE 
+                    ELSE
                         (SELECT MIN(
-                            CASE 
-                                WHEN discount > 0 THEN 
+                            CASE
+                                WHEN discount > 0 THEN
                                     price - (price * discount / 100)
-                                ELSE 
-                                    price 
+                                ELSE
+                                    price
                             END
                         ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
                 END ASC
             ');
         } elseif ($sortBy === 'price_high_low') {
             $productsQuery->orderByRaw('
-                CASE 
-                    WHEN has_variants = false THEN 
-                        CASE 
-                            WHEN base_discount > 0 THEN 
+                CASE
+                    WHEN has_variants = false THEN
+                        CASE
+                            WHEN base_discount > 0 THEN
                                 base_price - (base_price * base_discount / 100)
-                            ELSE 
-                                base_price 
+                            ELSE
+                                base_price
                         END
-                    ELSE 
+                    ELSE
                         (SELECT MAX(
-                            CASE 
-                                WHEN discount > 0 THEN 
+                            CASE
+                                WHEN discount > 0 THEN
                                     price - (price * discount / 100)
-                                ELSE 
-                                    price 
+                                ELSE
+                                    price
                             END
                         ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
                 END DESC
@@ -754,7 +754,7 @@ class FrontendController extends Controller
             // Handle primary image for display
             if ($product->has_variants && $product->variants->count() > 0) {
                 $activeInStockVariants = $product->variants->where('status', 'active')->where('stock', '>', 0);
-                
+
                 if ($activeInStockVariants->count() > 0) {
                     $firstVariant = $activeInStockVariants->first();
                     $primaryImage = $firstVariant->images->first();
@@ -768,7 +768,7 @@ class FrontendController extends Controller
             if ($primaryImage) {
                 $imagePath = $primaryImage->image_path;
                 $thumbnailPath = $primaryImage->thumbnail_path ?? $primaryImage->image_path;
-                
+
                 // Ensure proper storage path
                 if (strpos($imagePath, 'storage/') !== 0) {
                     $imagePath = 'storage/' . ltrim($imagePath, '/');
@@ -776,7 +776,7 @@ class FrontendController extends Controller
                 if (strpos($thumbnailPath, 'storage/') !== 0) {
                     $thumbnailPath = 'storage/' . ltrim($thumbnailPath, '/');
                 }
-                
+
                 $product->primary_image = [
                     'image_path' => $imagePath,
                     'thumbnail_path' => $thumbnailPath,
@@ -887,11 +887,11 @@ class FrontendController extends Controller
                 $query->where(function ($q) use ($minPrice, $maxPrice) {
                     $q->where('has_variants', false)
                         ->whereRaw('
-                        CASE 
-                            WHEN base_discount > 0 THEN 
+                        CASE
+                            WHEN base_discount > 0 THEN
                                 base_price - (base_price * base_discount / 100)
-                            ELSE 
-                                base_price 
+                            ELSE
+                                base_price
                         END BETWEEN ? AND ?', [(float)$minPrice, (float)$maxPrice]);
                 })
                     // Variant products (use lowest variant price)
@@ -900,11 +900,11 @@ class FrontendController extends Controller
                             ->whereHas('variants', function ($subQuery) use ($minPrice, $maxPrice) {
                                 $subQuery->where('status', 'active')
                                     ->whereRaw('
-                                    CASE 
-                                        WHEN discount > 0 THEN 
+                                    CASE
+                                        WHEN discount > 0 THEN
                                             price - (price * discount / 100)
-                                        ELSE 
-                                            price 
+                                        ELSE
+                                            price
                                     END BETWEEN ? AND ?', [(float)$minPrice, (float)$maxPrice]);
                             });
                     });
@@ -914,10 +914,10 @@ class FrontendController extends Controller
         if (!empty($minRatings)) {
             $productsQuery->whereRaw('
                 products.id IN (
-                    SELECT product_id 
-                    FROM product_reviews 
-                    WHERE product_reviews.product_id = products.id 
-                    GROUP BY product_id 
+                    SELECT product_id
+                    FROM product_reviews
+                    WHERE product_reviews.product_id = products.id
+                    GROUP BY product_id
                     HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
                 )', [min(array_map('intval', $minRatings))]);
         }
@@ -947,42 +947,42 @@ class FrontendController extends Controller
 
         if ($sortBy === 'price_low_high') {
             $productsQuery->orderByRaw('
-                CASE 
-                    WHEN has_variants = false THEN 
-                        CASE 
-                            WHEN base_discount > 0 THEN 
+                CASE
+                    WHEN has_variants = false THEN
+                        CASE
+                            WHEN base_discount > 0 THEN
                                 base_price - (base_price * base_discount / 100)
-                            ELSE 
-                                base_price 
+                            ELSE
+                                base_price
                         END
-                    ELSE 
+                    ELSE
                         (SELECT MIN(
-                            CASE 
-                                WHEN discount > 0 THEN 
+                            CASE
+                                WHEN discount > 0 THEN
                                     price - (price * discount / 100)
-                                ELSE 
-                                    price 
+                                ELSE
+                                    price
                             END
                         ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
                 END ASC
             ');
         } elseif ($sortBy === 'price_high_low') {
             $productsQuery->orderByRaw('
-                CASE 
-                    WHEN has_variants = false THEN 
-                        CASE 
-                            WHEN base_discount > 0 THEN 
+                CASE
+                    WHEN has_variants = false THEN
+                        CASE
+                            WHEN base_discount > 0 THEN
                                 base_price - (base_price * base_discount / 100)
-                            ELSE 
-                                base_price 
+                            ELSE
+                                base_price
                         END
-                    ELSE 
+                    ELSE
                         (SELECT MAX(
-                            CASE 
-                                WHEN discount > 0 THEN 
+                            CASE
+                                WHEN discount > 0 THEN
                                     price - (price * discount / 100)
-                                ELSE 
-                                    price 
+                                ELSE
+                                    price
                             END
                         ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
                 END DESC
@@ -1238,11 +1238,11 @@ class FrontendController extends Controller
                         $query->where(function ($q) use ($minPrice, $maxPrice) {
                             $q->where('has_variants', false)
                                 ->whereRaw('
-                                CASE 
-                                    WHEN base_discount > 0 THEN 
+                                CASE
+                                    WHEN base_discount > 0 THEN
                                         base_price - (base_price * base_discount / 100)
-                                    ELSE 
-                                        base_price 
+                                    ELSE
+                                        base_price
                                 END BETWEEN ? AND ?', [$minPrice, $maxPrice]);
                         })
                             ->orWhere(function ($q) use ($minPrice, $maxPrice) {
@@ -1250,11 +1250,11 @@ class FrontendController extends Controller
                                     ->whereHas('variants', function ($subQuery) use ($minPrice, $maxPrice) {
                                         $subQuery->where('status', 'active')
                                             ->whereRaw('
-                                            CASE 
-                                                WHEN discount > 0 THEN 
+                                            CASE
+                                                WHEN discount > 0 THEN
                                                     price - (price * discount / 100)
-                                                ELSE 
-                                                    price 
+                                                ELSE
+                                                    price
                                             END BETWEEN ? AND ?', [$minPrice, $maxPrice]);
                                     });
                             });
@@ -1269,10 +1269,10 @@ class FrontendController extends Controller
             $minRating = min(array_map('intval', $minRatings));
             $productQuery->whereRaw('
                 products.id IN (
-                    SELECT product_id 
-                    FROM product_reviews 
-                    WHERE product_reviews.product_id = products.id 
-                    GROUP BY product_id 
+                    SELECT product_id
+                    FROM product_reviews
+                    WHERE product_reviews.product_id = products.id
+                    GROUP BY product_id
                     HAVING AVG(CAST(rate as DECIMAL(3,2))) >= ?
                 )', [$minRating]);
         }
@@ -1306,21 +1306,21 @@ class FrontendController extends Controller
         switch ($sortBy) {
             case 'price_low_high':
                 $productQuery->orderByRaw('
-                    CASE 
-                        WHEN has_variants = false THEN 
-                            CASE 
-                                WHEN base_discount > 0 THEN 
+                    CASE
+                        WHEN has_variants = false THEN
+                            CASE
+                                WHEN base_discount > 0 THEN
                                     base_price - (base_price * base_discount / 100)
-                                ELSE 
-                                    base_price 
+                                ELSE
+                                    base_price
                             END
-                        ELSE 
+                        ELSE
                             (SELECT MIN(
-                                CASE 
-                                    WHEN discount > 0 THEN 
+                                CASE
+                                    WHEN discount > 0 THEN
                                         price - (price * discount / 100)
-                                    ELSE 
-                                        price 
+                                    ELSE
+                                        price
                                 END
                             ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
                     END ASC
@@ -1328,21 +1328,21 @@ class FrontendController extends Controller
                 break;
             case 'price_high_low':
                 $productQuery->orderByRaw('
-                    CASE 
-                        WHEN has_variants = false THEN 
-                            CASE 
-                                WHEN base_discount > 0 THEN 
+                    CASE
+                        WHEN has_variants = false THEN
+                            CASE
+                                WHEN base_discount > 0 THEN
                                     base_price - (base_price * base_discount / 100)
-                                ELSE 
-                                    base_price 
+                                ELSE
+                                    base_price
                             END
-                        ELSE 
+                        ELSE
                             (SELECT MAX(
-                                CASE 
-                                    WHEN discount > 0 THEN 
+                                CASE
+                                    WHEN discount > 0 THEN
                                         price - (price * discount / 100)
-                                    ELSE 
-                                        price 
+                                    ELSE
+                                        price
                                 END
                             ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
                     END DESC
@@ -1873,11 +1873,9 @@ class FrontendController extends Controller
         // Related products already loaded via eager loading
         $related_products = $product_detail->rel_prods;
 
-        // Get recent products with caching
-        $cacheKey = 'recent_products_' . (Auth::id() ?? Session::getId());
-        $recent_products = Cache::remember($cacheKey, 300, function () {
-            return $this->recentProductService->getRecentProducts();
-        });
+        // Get recent products - always fetch fresh to show latest views
+        // (Recently viewed changes frequently, so caching causes stale data issues)
+        $recent_products = $this->recentProductService->getRecentProducts();
 
         // Track product view asynchronously
         dispatch(function () use ($product_detail) {
@@ -2242,21 +2240,21 @@ class FrontendController extends Controller
                 $products->orderBy('title', 'ASC');
             } elseif ($_GET['sortBy'] == 'price') {
                 $products->orderByRaw('
-                    CASE 
-                        WHEN has_variants = false THEN 
-                            CASE 
-                                WHEN base_discount > 0 THEN 
+                    CASE
+                        WHEN has_variants = false THEN
+                            CASE
+                                WHEN base_discount > 0 THEN
                                     base_price - (base_price * base_discount / 100)
-                                ELSE 
-                                    base_price 
+                                ELSE
+                                    base_price
                             END
-                        ELSE 
+                        ELSE
                             (SELECT MIN(
-                                CASE 
-                                    WHEN discount > 0 THEN 
+                                CASE
+                                    WHEN discount > 0 THEN
                                         price - (price * discount / 100)
-                                    ELSE 
-                                        price 
+                                    ELSE
+                                        price
                                 END
                             ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
                     END ASC
@@ -2271,11 +2269,11 @@ class FrontendController extends Controller
                     $query->where(function ($q) use ($price) {
                         $q->where('has_variants', false)
                             ->whereRaw('
-                            CASE 
-                                WHEN base_discount > 0 THEN 
+                            CASE
+                                WHEN base_discount > 0 THEN
                                     base_price - (base_price * base_discount / 100)
-                                ELSE 
-                                    base_price 
+                                ELSE
+                                    base_price
                             END BETWEEN ? AND ?', [(float)$price[0], (float)$price[1]]);
                     })
                         ->orWhere(function ($q) use ($price) {
@@ -2283,11 +2281,11 @@ class FrontendController extends Controller
                                 ->whereHas('variants', function ($subQuery) use ($price) {
                                     $subQuery->where('status', 'active')
                                         ->whereRaw('
-                                        CASE 
-                                            WHEN discount > 0 THEN 
+                                        CASE
+                                            WHEN discount > 0 THEN
                                                 price - (price * discount / 100)
-                                            ELSE 
-                                                price 
+                                            ELSE
+                                                price
                                         END BETWEEN ? AND ?', [(float)$price[0], (float)$price[1]]);
                                 });
                         });
@@ -2372,7 +2370,7 @@ class FrontendController extends Controller
 
     public function productSubCat(Request $request, $encryptedPath)
     {
-        // try {
+        try {
             $slugPath = UrlEncryptor::decodePath($encryptedPath);
             $segments = explode('/', trim($slugPath, '/'));
             $currentCategory = Category::whereNull('parent_id')
@@ -2413,12 +2411,9 @@ class FrontendController extends Controller
             $this->applyFiltersToQuery($productQuery, $request);
 
             $perPage = $request->input('show', 12);
-            $products = RedisHelper::remember($cacheKey . '_results_' . $request->input('page', 1), self::CACHE_TTL, function () use ($productQuery, $perPage, $request, $encryptedPath) {
-                $products = $productQuery->paginate($perPage);
-                $products->setPath("/product-cat/" . $encryptedPath);
-                $products->appends($request->except(['page', '_token']));
-                return $products;
-            });
+            $products = $productQuery->paginate($perPage);
+            $products->setPath("/product-cat/" . $encryptedPath);
+            $products->appends($request->except(['page', '_token']));
 
             $totalProducts = RedisHelper::remember($cacheKey, self::CACHE_TTL, function () use ($productQuery) {
                 return $productQuery->count();
@@ -2432,21 +2427,21 @@ class FrontendController extends Controller
                     })
                     ->selectRaw('
                         MAX(
-                            CASE 
-                                WHEN has_variants = false THEN 
-                                    CASE 
-                                        WHEN base_discount > 0 THEN 
+                            CASE
+                                WHEN has_variants = false THEN
+                                    CASE
+                                        WHEN base_discount > 0 THEN
                                             base_price - (base_price * base_discount / 100)
-                                        ELSE 
-                                            base_price 
+                                        ELSE
+                                            base_price
                                     END
-                                ELSE 
+                                ELSE
                                     (SELECT MAX(
-                                        CASE 
-                                            WHEN discount > 0 THEN 
+                                        CASE
+                                            WHEN discount > 0 THEN
                                                 price - (price * discount / 100)
-                                            ELSE 
-                                                price 
+                                            ELSE
+                                                price
                                         END
                                     ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
                             END
@@ -2501,22 +2496,22 @@ class FrontendController extends Controller
                 'applied_filters' => $appliedFilters,
                 'has_filters' => $this->hasFiltersApplied($request),
             ]);
-        // } catch (\Exception $e) {
-        //     Log::error('Product category filter error: ' . $e->getMessage(), [
-        //         'encrypted_path' => $encryptedPath,
-        //         'request_data' => $request->all(),
-        //         'trace' => $e->getTraceAsString()
-        //     ]);
+        } catch (\Exception $e) {
+            Log::error('Product category filter error: ' . $e->getMessage(), [
+                'encrypted_path' => $encryptedPath,
+                'request_data' => $request->all(),
+                'trace' => $e->getTraceAsString()
+            ]);
 
-        //     if ($request->wantsJson()) {
-        //         return response()->json([
-        //             'success' => false,
-        //             'message' => 'Failed to apply filters: ' . $e->getMessage(),
-        //         ], 500);
-        //     }
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to apply filters: ' . $e->getMessage(),
+                ], 500);
+            }
 
-        //     abort(500, 'Error loading category: ' . $e->getMessage());
-        // }
+            abort(500, 'Error loading category: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -2584,21 +2579,21 @@ class FrontendController extends Controller
                     })
                     ->selectRaw('
                         MAX(
-                            CASE 
-                                WHEN has_variants = false THEN 
-                                    CASE 
-                                        WHEN base_discount > 0 THEN 
+                            CASE
+                                WHEN has_variants = false THEN
+                                    CASE
+                                        WHEN base_discount > 0 THEN
                                             base_price - (base_price * base_discount / 100)
-                                        ELSE 
-                                            base_price 
+                                        ELSE
+                                            base_price
                                     END
-                                ELSE 
+                                ELSE
                                     (SELECT MAX(
-                                        CASE 
-                                            WHEN discount > 0 THEN 
+                                        CASE
+                                            WHEN discount > 0 THEN
                                                 price - (price * discount / 100)
-                                            ELSE 
-                                                price 
+                                            ELSE
+                                                price
                                         END
                                     ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
                             END
@@ -2734,23 +2729,23 @@ class FrontendController extends Controller
                 if ($product->has_variants && $product->variants->count() > 0) {
                     $minVariant = $product->variants
                         ->sortBy(function ($variant) {
-                            return $variant->discount > 0 
-                                ? $variant->price - ($variant->price * $variant->discount / 100) 
+                            return $variant->discount > 0
+                                ? $variant->price - ($variant->price * $variant->discount / 100)
                                 : $variant->price;
                         })
                         ->first();
-                    
+
                     if ($minVariant) {
-                        $product->discounted_price = $minVariant->discount > 0 
-                            ? $minVariant->price - ($minVariant->price * $minVariant->discount / 100) 
+                        $product->discounted_price = $minVariant->discount > 0
+                            ? $minVariant->price - ($minVariant->price * $minVariant->discount / 100)
                             : $minVariant->price;
-                        
+
                         // Get variant's primary image
                         $primaryImage = $minVariant->images->first();
                         if ($primaryImage) {
                             $imagePath = $primaryImage->image_path;
                             $thumbnailPath = $primaryImage->thumbnail_path ?? $primaryImage->image_path;
-                            
+
                             // Ensure proper storage path
                             if (strpos($imagePath, 'storage/') !== 0) {
                                 $imagePath = 'storage/' . ltrim($imagePath, '/');
@@ -2758,7 +2753,7 @@ class FrontendController extends Controller
                             if (strpos($thumbnailPath, 'storage/') !== 0) {
                                 $thumbnailPath = 'storage/' . ltrim($thumbnailPath, '/');
                             }
-                            
+
                             $product->primary_image = [
                                 'image_path' => $imagePath,
                                 'thumbnail_path' => $thumbnailPath,
@@ -2776,13 +2771,13 @@ class FrontendController extends Controller
                     $product->discounted_price = $product->base_discount > 0
                         ? $product->base_price - ($product->base_price * $product->base_discount / 100)
                         : $product->base_price;
-                    
+
                     // Get product's primary image
                     $primaryImage = $product->images->first();
                     if ($primaryImage) {
                         $imagePath = $primaryImage->image_path;
                         $thumbnailPath = $primaryImage->thumbnail_path ?? $primaryImage->image_path;
-                        
+
                         // Ensure proper storage path
                         if (strpos($imagePath, 'storage/') !== 0) {
                             $imagePath = 'storage/' . ltrim($imagePath, '/');
@@ -2790,7 +2785,7 @@ class FrontendController extends Controller
                         if (strpos($thumbnailPath, 'storage/') !== 0) {
                             $thumbnailPath = 'storage/' . ltrim($thumbnailPath, '/');
                         }
-                        
+
                         $product->primary_image = [
                             'image_path' => $imagePath,
                             'thumbnail_path' => $thumbnailPath,
@@ -3011,13 +3006,21 @@ class FrontendController extends Controller
     public function loginSubmit(Request $request)
     {
         $data = $request->all();
+        // Capture pre-login session id from cookie (Laravel will regenerate the session id on successful login)
+        $sessionCookieName = config('session.cookie');
+        $preLoginSessionId = $request->cookie($sessionCookieName) ?: $request->session()->getId();
+
         if (Auth::attempt(['email' => $data['email'], 'password' => $data['password'], 'status' => 'active'])) {
             Session::put('user', $data['email']);
-            request()->session()->flash('success', 'Successfully login');
+
+            // Merge session recent products to user account using the pre-login session id
+            $this->recentProductService->handleUserLogin(Auth::id(), $preLoginSessionId);
+
+            Session::flash('success', 'Successfully login');
             return redirect()->route('home');
         }
 
-        request()->session()->flash('error', 'Invalid email and password please try again!');
+        Session::flash('error', 'Invalid email and password please try again!');
         return redirect()->back();
     }
 
@@ -3030,7 +3033,7 @@ class FrontendController extends Controller
     {
         Session::forget('user');
         Auth::logout();
-        request()->session()->flash('success', 'Logout successfully');
+        Session::flash('success', 'Logout successfully');
         return back();
     }
 
@@ -3063,11 +3066,11 @@ class FrontendController extends Controller
         Session::put('user', $data['email']);
 
         if ($check) {
-            request()->session()->flash('success', 'Successfully registered');
+            Session::flash('success', 'Successfully registered');
             return redirect()->route('home');
         }
 
-        request()->session()->flash('error', 'Please try again!');
+        Session::flash('error', 'Please try again!');
         return back();
     }
 
@@ -3108,15 +3111,15 @@ class FrontendController extends Controller
         if (!Newsletter::isSubscribed($request->email)) {
             Newsletter::subscribePending($request->email);
             if (Newsletter::lastActionSucceeded()) {
-                request()->session()->flash('success', 'Subscribed! Please check your email');
+                Session::flash('success', 'Subscribed! Please check your email');
                 return redirect()->route('home');
             }
 
-            request()->session()->flash('error', 'Something went wrong! please try again');
+            Session::flash('error', 'Something went wrong! please try again');
             return back();
         }
 
-        request()->session()->flash('error', 'Already Subscribed');
+        Session::flash('error', 'Already Subscribed');
         return back();
     }
 

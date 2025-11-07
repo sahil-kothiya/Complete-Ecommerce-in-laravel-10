@@ -43,7 +43,7 @@ class RecentProductService
     public function getRecentProductsForWidget($limit = 5)
     {
         $products = $this->getRecentProducts($limit);
-        
+
         return $products->map(function ($product) {
             return [
                 'id' => $product->id,
@@ -54,8 +54,8 @@ class RecentProductService
                 'images' => $product->images,
                 'stock' => $product->stock,
                 'discounted_price' => $product->price - ($product->price * $product->discount / 100),
-                'image_url' => $product->images->first() ? 
-                    asset($product->images->first()->image_path) : 
+                'image_url' => $product->images->first() ?
+                    asset($product->images->first()->image_path) :
                     asset('frontend/img/default-product.png')
             ];
         });
@@ -64,9 +64,11 @@ class RecentProductService
     /**
      * Handle user login - merge session data
      */
-    public function handleUserLogin($userId)
+    public function handleUserLogin($userId, $sessionId = null)
     {
-        $sessionId = Session::getId();
+        // Allow caller to provide the pre-login session id (Laravel regenerates the session id on login).
+        // If not provided, fall back to current session id.
+        $sessionId = $sessionId ?? Session::getId();
         RecentProduct::mergeSessionToUser($userId, $sessionId);
     }
 

@@ -30,6 +30,18 @@ class CartController extends Controller
     public function singleAddToCart(Request $request)
     {
         try {
+            // Check if user is authenticated
+            if (!Auth::check()) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Please login to add items to cart.',
+                        'redirect' => route('login')
+                    ], 401);
+                }
+                return redirect()->route('login')->with('error', 'Please login to add items to cart.');
+            }
+
             // Validate request
             $validated = $request->validate([
                 'slug' => 'required|exists:products,slug',
@@ -125,7 +137,7 @@ class CartController extends Controller
                     if ($stock < $newQuantity) {
                         // Calculate how many more can be added
                         $canAddMore = $stock - $cart->quantity;
-                        
+
                         if ($canAddMore <= 0) {
                             DB::rollBack();
                             return $this->jsonOrRedirect(
@@ -436,8 +448,8 @@ class CartController extends Controller
                         continue;
                     }
 
-                    $quantity = isset($quantities[$cartId]) 
-                        ? max(1, min(100, (int)$quantities[$cartId])) 
+                    $quantity = isset($quantities[$cartId])
+                        ? max(1, min(100, (int)$quantities[$cartId]))
                         : 1;
 
                     // Get stock limit
@@ -446,9 +458,9 @@ class CartController extends Controller
                         if (!$variant) {
                             continue;
                         }
-                        
+
                         $stock = (int) $variant->stock;
-                        
+
                         if ($stock < $quantity) {
                             DB::rollBack();
                             return response()->json([
@@ -456,7 +468,7 @@ class CartController extends Controller
                                 'message' => "Insufficient stock for variant. Only {$stock} available."
                             ], 422);
                         }
-                        
+
                         $originalPrice = $variant->price ?? 0;
                         $discount = $variant->discount ?? 0;
                     } else {
@@ -464,9 +476,9 @@ class CartController extends Controller
                         if (!$product) {
                             continue;
                         }
-                        
+
                         $stock = (int) $product->base_stock;
-                        
+
                         if ($stock < $quantity) {
                             DB::rollBack();
                             return response()->json([
@@ -474,7 +486,7 @@ class CartController extends Controller
                                 'message' => "Insufficient stock. Only {$stock} available."
                             ], 422);
                         }
-                        
+
                         $originalPrice = $product->base_price ?? 0;
                         $discount = $product->base_discount ?? 0;
                     }
@@ -548,17 +560,17 @@ class CartController extends Controller
         $cartSubtotal = $cartItems->sum('amount');
 
         $categorySaved = $cartItems->sum(function ($item) {
-            $original = $item->variant 
+            $original = $item->variant
                 ? ($item->variant->price ?? 0)
                 : ($item->product->base_price ?? 0);
-            
-            $discount = $item->variant 
+
+            $discount = $item->variant
                 ? ($item->variant->discount ?? 0)
                 : ($item->product->base_discount ?? 0);
-            
+
             $discounted = $original * (1 - $discount / 100);
             $savings = ($original - $discounted) * $item->quantity;
-            
+
             return $savings;
         });
 

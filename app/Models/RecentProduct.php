@@ -41,22 +41,50 @@ class RecentProduct extends Model
         $userId = Auth::id();
         $sessionId = Session::getId();
 
+        // Log for debugging
+        if (config('app.debug')) {
+            Log::debug('RecentProduct::addProduct called', [
+                'product_id' => $productId,
+                'user_id' => $userId,
+                'session_id' => $sessionId
+            ]);
+        }
+
         // Remove existing entry to avoid duplicates
         self::where(function ($query) use ($userId, $sessionId) {
             if ($userId) {
-                $query->where('user_id', $userId);
+                $query->where('user_id', $userId)
+                      ->whereNull('session_id');
             } else {
-                $query->where('session_id', $sessionId);
+                $query->where('session_id', $sessionId)
+                      ->whereNull('user_id');
             }
         })->where('product_id', $productId)->delete();
 
         // Add new entry
-        self::create([
-            'user_id' => $userId,
-            'session_id' => $userId ? null : $sessionId,
-            'product_id' => $productId,
-            'viewed_at' => now()
-        ]);
+        try {
+            self::create([
+                'user_id' => $userId,
+                'session_id' => $userId ? null : $sessionId,
+                'product_id' => $productId,
+                'viewed_at' => now()
+            ]);
+
+            if (config('app.debug')) {
+                Log::debug('RecentProduct::addProduct success', [
+                    'product_id' => $productId,
+                    'user_id' => $userId,
+                    'session_id' => $sessionId
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('RecentProduct::addProduct failed', [
+                'product_id' => $productId,
+                'user_id' => $userId,
+                'session_id' => $sessionId,
+                'error' => $e->getMessage()
+            ]);
+        }
 
         // Keep only last 20 recent products per user/session
         self::cleanupOldEntries($userId, $sessionId);
@@ -73,16 +101,30 @@ class RecentProduct extends Model
         $userId = Auth::id();
         $sessionId = Session::getId();
 
-        $query = self::with(['product.images' => function ($query) {
-                $query->select(['id', 'image_path', 'product_id', 'is_primary'])
-                    ->orderBy('is_primary', 'desc')
-                    ->orderBy('sort_order', 'asc');
-            }])
+        if (config('app.debug')) {
+            Log::debug('RecentProduct::getRecentProducts called', [
+                'user_id' => $userId,
+                'session_id' => $sessionId,
+                'limit' => $limit
+            ]);
+        }
+
+        $query = self::with([
+                'product.images' => function ($query) {
+                    $query->select(['id', 'image_path', 'product_id', 'is_primary'])
+                        ->orderBy('is_primary', 'desc')
+                        ->orderBy('sort_order', 'asc');
+                },
+                'product.activeVariants.primaryImage',
+                'product.inStockVariants'
+            ])
             ->where(function ($query) use ($userId, $sessionId) {
                 if ($userId) {
-                    $query->where('user_id', $userId);
+                    $query->where('user_id', $userId)
+                          ->whereNull('session_id');
                 } else {
-                    $query->where('session_id', $sessionId);
+                    $query->where('session_id', $sessionId)
+                          ->whereNull('user_id');
                 }
             })
             ->whereHas('product', function ($query) {
@@ -92,7 +134,7 @@ class RecentProduct extends Model
             ->limit($limit)
             ->get();
 
-        $products = $query->pluck('product');
+        $products = $query->pluck('product')->filter();
 
         if (config('app.debug')) {
             Log::debug('getRecentProducts: Fetched recent products', [
@@ -114,9 +156,11 @@ class RecentProduct extends Model
     {
         $query = self::where(function ($query) use ($userId, $sessionId) {
             if ($userId) {
-                $query->where('user_id', $userId);
+                $query->where('user_id', $userId)
+                      ->whereNull('session_id');
             } else {
-                $query->where('session_id', $sessionId);
+                $query->where('session_id', $sessionId)
+                      ->whereNull('user_id');
             }
         })->orderBy('viewed_at', 'desc');
 
@@ -133,6 +177,18 @@ class RecentProduct extends Model
      */
     public static function mergeSessionToUser($userId, $sessionId)
     {
+        // If no session id provided, nothing to merge. Avoid merging using null which could
+        // accidentally match userless rows.
+        if (empty($sessionId)) {
+            if (config('app.debug')) {
+                Log::debug('RecentProduct::mergeSessionToUser skipped - no session id provided', [
+                    'user_id' => $userId,
+                    'session_id' => $sessionId
+                ]);
+            }
+            return;
+        }
+
         $sessionProducts = self::where('session_id', $sessionId)->get();
 
         foreach ($sessionProducts as $sessionProduct) {

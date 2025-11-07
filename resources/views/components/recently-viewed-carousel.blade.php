@@ -7,49 +7,50 @@
                 <h2 class="carousel-title mb-0">{{ $title }}</h2>
             </div>
             <div class="carousel-nav-btns">
-                <x-carousel-nav-button 
+                <x-carousel-nav-button
                     :id="$prevButtonId"
-                    aria-label="Previous products"
+                    :aria-label="'Previous ' . strtolower($title)"
                     icon="ti-angle-left"
                     :direction="-1"
-                    :background-color="$defaultBackgroundColor"
-                    :text-color="$defaultTextColor"
+                    :background-color="$defaultBackgroundColor ?? '#6c757d'"
+                    :text-color="$defaultTextColor ?? 'white'"
                     :hover-scale="$defaultHoverScale"
                     :hover-shadow="$defaultHoverShadow"
                     :auto-scroll-speed="$defaultAutoScrollSpeed"
                     :scroll-amount="$defaultScrollAmount"
                     :shimmer-animation="$defaultShimmer"
-                    carousel-id="{{ $carouselId }}" />
+                    :carousel-id="$carouselId" />
 
-                <x-carousel-nav-button 
+                <x-carousel-nav-button
                     :id="$nextButtonId"
-                    aria-label="Next products"
+                    :aria-label="'Next ' . strtolower($title)"
                     icon="ti-angle-right"
                     :direction="1"
-                    :background-color="$defaultBackgroundColor"
-                    :text-color="$defaultTextColor"
+                    :background-color="$defaultBackgroundColor ?? '#6c757d'"
+                    :text-color="$defaultTextColor ?? 'white'"
                     :hover-scale="$defaultHoverScale"
                     :hover-shadow="$defaultHoverShadow"
                     :auto-scroll-speed="$defaultAutoScrollSpeed"
                     :scroll-amount="$defaultScrollAmount"
                     :shimmer-animation="$defaultShimmer"
-                    carousel-id="{{ $carouselId }}" />
+                    :carousel-id="$carouselId" />
             </div>
         </div>
         <div class="carousel-viewport position-relative">
             <div class="carousel-track flipkart-carousel" id="{{ $carouselId }}">
+                @php $tabindex = $startingTabIndex; @endphp
+
                 @if($products && $products->count() > 0)
-                    @foreach($products as $index => $product)
+                    @foreach($products as $product)
                         @php
                             $inWishlist = Helper::isProductInWishlist($product->slug);
-                            $tabindex = 47 + $index * 4;
                             $hasVariants = $product->has_variants ?? false;
-                            
+
                             // Price logic - prioritize base_price, fallback to price, then check variants
                             $basePrice = 0;
                             $baseDiscount = 0;
                             $baseStock = 0;
-                            
+
                             if ($hasVariants && $product->activeVariants && $product->activeVariants->count() > 0) {
                                 // Get price from first active variant
                                 $firstVariant = $product->activeVariants->first();
@@ -62,12 +63,12 @@
                                 $baseDiscount = $product->base_discount ?? $product->discount ?? 0;
                                 $baseStock = $product->base_stock ?? $product->stock ?? 0;
                             }
-                            
+
                             $discountedPrice = $baseDiscount > 0 ? $basePrice - ($basePrice * $baseDiscount / 100) : $basePrice;
 
                             // Determine image source with proper path handling
                             $imageUrl = asset('images/no-image.png'); // Default fallback
-                            
+
                             if ($hasVariants && $product->activeVariants && $product->activeVariants->first()) {
                                 // Check for variant image
                                 $variantImage = $product->activeVariants->first()->primaryImage;
@@ -81,7 +82,7 @@
                                     }
                                 }
                             }
-                            
+
                             // Fallback to product image if variant image not found or no variants
                             if ($imageUrl === asset('images/no-image.png')) {
                                 $productImage = $product->images->first();
@@ -145,6 +146,8 @@
                                 </div>
                             </div>
                         </div>
+
+                        @php $tabindex++; @endphp
                     @endforeach
                 @else
                     <div class="carousel-item text-center" style="min-width: {{ $itemMinWidth }}; max-width: {{ $itemMaxWidth }}; opacity: 0.7;">
@@ -166,12 +169,12 @@
         height: auto;
         object-fit: cover;
     }
-    
+
     /* Price styling */
     .flipkart-card-price {
         min-height: 24px;
     }
-    
+
     .flipkart-price-discounted {
         font-weight: 600;
     }
