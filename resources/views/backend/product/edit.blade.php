@@ -7,7 +7,7 @@
         <form method="POST" action="{{ route('product.update', $product->id) }}" enctype="multipart/form-data" id="product-form">
             @csrf
             @method('PATCH')
-            
+
             <!-- Core Product Details Section -->
             <section class="mb-5">
                 <h6 class="mb-3 text-uppercase font-weight-bold">Core Product Information</h6>
@@ -488,7 +488,7 @@
 <script src="/vendor/laravel-filemanager/js/stand-alone-button.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
-    $(document).ready(function() {       
+    $(document).ready(function() {
         // Initialize Summernote
         $('.summernote').summernote({
             height: 200,
@@ -643,26 +643,26 @@ $('#load-types').click(function() {
             const variantTypes = [];
             const allTypeOptions = new Map(); // typeId → all available options
             const optionToTypes = new Map(); // optionText → [typeIds that have this option]
-            
+
             $('.type-select').each(function () {
                 const $select = $(this);
                 const typeId = $select.data('type-id');
                 const typeName = $select.prev('label').text().trim();
                 const selectedIds = $select.val() || [];
-                
+
                 // Skip if nothing selected
                 if (selectedIds.length === 0) {
-                    console.log(`%c⊘ Skipping "${typeName}" (no options selected)`, 
+                    console.log(`%c⊘ Skipping "${typeName}" (no options selected)`,
                             'color:#9E9E9E;font-style:italic');
                     return;
                 }
-                
+
                 // Collect ALL available options for this type
                 const allOptions = [];
                 $select.find('option').each(function() {
                     const optId = $(this).val();
                     const optText = $(this).text().trim().toLowerCase();
-                    
+
                     if (optId && optId !== 'Select Options' && optText) {
                         allOptions.push({
                             id: optId,
@@ -670,7 +670,7 @@ $('#load-types').click(function() {
                             textLower: optText,
                             selected: selectedIds.includes(optId)
                         });
-                        
+
                         // Track which types have this option (for cross-validation)
                         if (!optionToTypes.has(optText)) {
                             optionToTypes.set(optText, []);
@@ -681,9 +681,9 @@ $('#load-types').click(function() {
                         });
                     }
                 });
-                
+
                 allTypeOptions.set(typeId, allOptions);
-                
+
                 variantTypes.push({
                     id: typeId,
                     name: typeName,
@@ -697,7 +697,7 @@ $('#load-types').click(function() {
                 return;
             }
 
-            console.log(`%c📦 Active Variant Types: ${variantTypes.map(t => t.name).join(', ')}`, 
+            console.log(`%c📦 Active Variant Types: ${variantTypes.map(t => t.name).join(', ')}`,
                         'color:#9C27B0;font-weight:bold');
 
             // 2. Build option ID to text mapping
@@ -710,25 +710,25 @@ $('#load-types').click(function() {
 
             // 3. CROSS-VALIDATION: Remove options that appear in multiple variant types
             console.groupCollapsed('%c🔍 Cross-Validation Check', 'color:#FF9800;font-weight:bold');
-            
+
             const validatedTypes = variantTypes.map(type => {
                 const validIds = [];
                 const invalidIds = [];
-                
+
                 type.selectedIds.forEach(optId => {
                     const optText = optionMap.get(optId).toLowerCase();
                     const appearingInTypes = optionToTypes.get(optText) || [];
-                    
+
                     // Check if this option appears in OTHER variant types
                     const otherTypes = appearingInTypes.filter(t => t.typeId !== type.id);
-                    
+
                     if (otherTypes.length > 0) {
                         invalidIds.push({
                             id: optId,
                             text: optionMap.get(optId),
                             conflictsWith: otherTypes.map(t => t.typeName).join(', ')
                         });
-                        
+
                         console.warn(
                             `⚠️ "${type.name}" option "${optionMap.get(optId)}" ` +
                             `also exists in: ${otherTypes.map(t => t.typeName).join(', ')}`
@@ -737,20 +737,20 @@ $('#load-types').click(function() {
                         validIds.push(optId);
                     }
                 });
-                
+
                 return {
                     ...type,
                     validIds: validIds,
                     invalidIds: invalidIds
                 };
             });
-            
+
             console.groupEnd();
 
             // 4. Show validation summary
             const totalInvalid = validatedTypes.reduce((sum, t) => sum + t.invalidIds.length, 0);
             if (totalInvalid > 0) {
-                console.log(`%c🚫 Filtered ${totalInvalid} conflicting option(s)`, 
+                console.log(`%c🚫 Filtered ${totalInvalid} conflicting option(s)`,
                         'color:#F44336;font-weight:bold');
                 validatedTypes.forEach(type => {
                     if (type.invalidIds.length > 0) {
@@ -765,7 +765,7 @@ $('#load-types').click(function() {
             // 5. Build arrays for cartesian product
             const combinationArrays = [];
             const typeSequence = [];
-            
+
             validatedTypes.forEach(type => {
                 if (type.validIds.length > 0) {
                     combinationArrays.push(type.validIds);
@@ -778,28 +778,28 @@ $('#load-types').click(function() {
                 return;
             }
 
-            console.log(`%c🔗 Generation Sequence: ${typeSequence.join(' → ')}`, 
+            console.log(`%c🔗 Generation Sequence: ${typeSequence.join(' → ')}`,
                         'color:#2196F3;font-weight:bold;font-size:13px');
 
             // 6. Generate all combinations
             const allCombinations = cartesianProduct(combinationArrays);
-            console.log(`%c🔢 Generated ${allCombinations.length} combinations`, 
+            console.log(`%c🔢 Generated ${allCombinations.length} combinations`,
                         'color:#4CAF50;font-weight:bold');
 
             // 7. Get existing variant names (saved + new)
             const existingVariantNames = new Set();
-            
+
             $('#variant-preview tbody tr[data-variant-id]').each(function () {
                 const name = $(this).find('td:first').text().trim();
                 if (name) existingVariantNames.add(name);
             });
-            
+
             $('#variant-preview tbody tr[data-new-variant]').each(function () {
                 const name = $(this).attr('data-new-variant');
                 if (name) existingVariantNames.add(name);
             });
 
-            console.log(`%c📋 Existing variants: ${existingVariantNames.size}`, 
+            console.log(`%c📋 Existing variants: ${existingVariantNames.size}`,
                         'color:#FF9800;font-weight:bold');
 
             // 8. Process combinations
@@ -809,9 +809,11 @@ $('#load-types').click(function() {
             allCombinations.forEach(combo => {
                 // Map option IDs to display text in EXACT selection order
                 const displayValues = combo.map(optId => optionMap.get(optId));
-                
-                const variantName = displayValues.join(', ');
-                const slugName = displayValues
+
+                // Sort display values for consistent naming (matches backend logic and existing variants)
+                const sortedDisplayValues = [...displayValues].sort();
+                const variantName = sortedDisplayValues.join(' / '); // Match backend format
+                const slugName = sortedDisplayValues
                     .map(v => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
                     .join('-');
 
@@ -834,7 +836,7 @@ $('#load-types').click(function() {
 
             // 9. Log ignored variants
             if (ignoredCombinations.length > 0) {
-                console.groupCollapsed(`%c🚫 IGNORED (${ignoredCombinations.length})`, 
+                console.groupCollapsed(`%c🚫 IGNORED (${ignoredCombinations.length})`,
                                     'color:#F44336;font-weight:bold');
                 ignoredCombinations.forEach((item, i) => {
                     console.log(`${i + 1}. "${item.name}" → ${item.reason}`);
@@ -871,8 +873,8 @@ $('#load-types').click(function() {
                 }
 
                 const serverVariantMap = {};
-                response.variants.forEach(v => { 
-                    if (v.name) serverVariantMap[v.name] = v; 
+                response.variants.forEach(v => {
+                    if (v.name) serverVariantMap[v.name] = v;
                 });
 
                 let newVariantIndex = $('#variant-preview tbody tr').length;
@@ -911,7 +913,7 @@ $('#load-types').click(function() {
                             .replace(/"/g, '&quot;')
                             .replace(/'/g, '&#39;');
                     }
-    
+
                     var rowHtml = '';
                     rowHtml += '<tr data-new-variant="' + escapeHtml(item.name) + '">';
                     rowHtml += '    <td><strong>' + escapeHtml(item.name) + '</strong></td>';
@@ -944,27 +946,46 @@ $('#load-types').click(function() {
                     rowHtml += '        </button>';
                     rowHtml += '    </td>';
                     rowHtml += '</tr>';
-                    
+
                     $('#variant-preview tbody').append(rowHtml);
                     newVariantIndex++;
                 });
 
                 $('.lfm-variant').filemanager('image');
 
-                console.log(`%c✅ SUCCESS: ${newCombinations.length} variants added!`, 
+                // ✨ AUTO-SELECT NEW OPTIONS IN DROPDOWNS
+                // After generating variants, ensure all option IDs are selected in their respective dropdowns
+                validatedTypes.forEach(type => {
+                    const $select = $(`.type-select[data-type-id="${type.id}"]`);
+                    if ($select.length) {
+                        // Get currently selected values
+                        const currentValues = $select.val() || [];
+
+                        // Add all valid IDs from this generation
+                        const allValues = [...new Set([...currentValues, ...type.validIds.map(String)])];
+
+                        // Update select2
+                        $select.val(allValues).trigger('change');
+
+                        console.log(`%c🔄 Updated ${type.name} dropdown: ${allValues.length} options selected`,
+                                    'color:#9C27B0;font-size:12px');
+                    }
+                });
+
+                console.log(`%c✅ SUCCESS: ${newCombinations.length} variants added!`,
                         'color:#4CAF50;font-weight:bold;font-size:14px');
-                
+
                 const summary = [
                     `${newCombinations.length} variant(s) created`,
                     totalInvalid > 0 ? `${totalInvalid} conflict(s) filtered` : null
                 ].filter(Boolean).join(', ');
-                
+
                 showNotification(summary, 'success');
             })
             .fail(function (xhr) {
                 console.error('❌ AJAX Error:', xhr.responseJSON || xhr);
                 showNotification(
-                    xhr.responseJSON?.message || 'Failed to generate variants.', 
+                    xhr.responseJSON?.message || 'Failed to generate variants.',
                     'error'
                 );
             });
@@ -973,7 +994,7 @@ $('#load-types').click(function() {
         // Cartesian Product Helper
         function cartesianProduct(arrays) {
             if (arrays.length === 0) return [[]];
-            
+
             return arrays.reduce((acc, curr) => {
                 const result = [];
                 acc.forEach(a => {
@@ -1008,7 +1029,7 @@ $('#load-types').click(function() {
         if (typeof cartesianProduct === 'undefined') {
             function cartesianProduct(arrays) {
                 if (arrays.length === 0) return [[]];
-                
+
                 return arrays.reduce((acc, curr) => {
                     const result = [];
                     acc.forEach(a => {

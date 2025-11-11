@@ -910,7 +910,7 @@
 
 	/* Wishlist Button - Rounded Style */
 	.btn-wishlist-rounded {
-		display: inline-flex;
+		display: inline-flex !important;
 		align-items: center;
 		justify-content: center;
 		width: 40px;
@@ -1376,11 +1376,59 @@ document.addEventListener('DOMContentLoaded', function() {
         lastChangedType = variantType.toLowerCase();
         selectedVariantOptions[variantType] = variantValue;
 
-        // Update UI for color variants
+        // Clear selections for other variant types (Storage, RAM) when color changes
+        // This allows auto-selection of the cheapest variant with the new color
+        const allVariantTypes = [...new Set(variants.flatMap(v => {
+            const vals = getVariantValuesNormalized(v);
+            return Object.keys(vals);
+        }))];
+
+        allVariantTypes.forEach(type => {
+            if (type !== 'color') {
+                delete selectedVariantOptions[type];
+            }
+        });
+
+        // Update UI for color variants - clear all first
         document.querySelectorAll(`input[name="${variantType}"]`).forEach(inp => {
+            const colorItem = inp.closest('.color-variant-item');
+            if (colorItem) {
+                const label = colorItem.querySelector('.color-variant-label');
+                if (label) {
+                    const imageBox = label.querySelector('.color-image-box');
+                    if (imageBox) {
+                        imageBox.style.borderColor = '#c2c2c2';
+                        imageBox.style.borderWidth = '1.5px';
+                    }
+                    const colorName = label.querySelector('.color-name');
+                    if (colorName) {
+                        colorName.style.color = '#212121';
+                        colorName.style.fontWeight = '400';
+                    }
+                }
+            }
+
             const label = inp.nextElementSibling;
             if (label) label.classList.remove('active');
         });
+
+        // Set selected color as active
+        const colorItem = input.closest('.color-variant-item');
+        if (colorItem) {
+            const label = colorItem.querySelector('.color-variant-label');
+            if (label) {
+                const imageBox = label.querySelector('.color-image-box');
+                if (imageBox) {
+                    imageBox.style.borderColor = '#2874f0';
+                    imageBox.style.borderWidth = '2px';
+                }
+                const colorName = label.querySelector('.color-name');
+                if (colorName) {
+                    colorName.style.color = '#2874f0';
+                    colorName.style.fontWeight = '600';
+                }
+            }
+        }
 
         const selectedLabel = input.nextElementSibling;
         if (selectedLabel) selectedLabel.classList.add('active');
@@ -1590,7 +1638,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        if (normSelected.color && !normSelected.storage && !normSelected.ram) {
+        // When only color is selected (or color just changed), auto-select cheapest variant with that color
+        if (normSelected.color && (lastChangedType === 'color' || (!normSelected.storage && !normSelected.ram))) {
             const matchingVariants = variants.filter(v => {
                 if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
                 const normVals = getVariantValuesNormalized(v);
@@ -1598,6 +1647,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             if (matchingVariants.length > 0) {
+                // Sort by price to get cheapest variant
                 matchingVariants.sort((a, b) => {
                     const priceA = parseFloat(a.price) * (1 - (parseFloat(a.discount) || 0) / 100);
                     const priceB = parseFloat(b.price) * (1 - (parseFloat(b.discount) || 0) / 100);
@@ -1609,12 +1659,39 @@ document.addEventListener('DOMContentLoaded', function() {
                     ? JSON.parse(selectedVariant.variant_values)
                     : selectedVariant.variant_values;
 
+                // Auto-select ALL other variant types (Storage, RAM, etc.)
                 Object.entries(vals).forEach(([type, value]) => {
                     const typeLower = type.toLowerCase();
                     if (typeLower !== 'color') {
                         selectedVariantOptions[type] = value;
 
                         const valueLower = normalizeVal(value);
+
+                        // Clear all buttons of this type first
+                        document.querySelectorAll('.variant-btn-flipkart').forEach(btn => {
+                            if ((btn.dataset.variantType || '').toLowerCase() === typeLower) {
+                                btn.classList.remove('active');
+                            }
+                        });
+
+                        document.querySelectorAll('.variant-option-btn').forEach(btn => {
+                            if ((btn.dataset.variantType || '').toLowerCase() === typeLower) {
+                                btn.classList.remove('active');
+                            }
+                        });
+
+                        // Set the selected button as active
+                        document.querySelectorAll('.variant-btn-flipkart').forEach(btn => {
+                            if ((btn.dataset.variantType || '').toLowerCase() === typeLower) {
+                                const btnVal = normalizeVal(btn.dataset.variantValue);
+                                if (btnVal === valueLower) {
+                                    btn.classList.add('active');
+                                    btn.classList.remove('disabled');
+                                    btn.removeAttribute('disabled');
+                                }
+                            }
+                        });
+
                         document.querySelectorAll('.variant-option-btn').forEach(btn => {
                             if ((btn.dataset.variantType || '').toLowerCase() === typeLower) {
                                 const btnVal = normalizeVal(btn.dataset.variantValue);
@@ -1622,8 +1699,6 @@ document.addEventListener('DOMContentLoaded', function() {
                                     btn.classList.add('active');
                                     btn.classList.remove('disabled');
                                     btn.removeAttribute('disabled');
-                                } else {
-                                    btn.classList.remove('active');
                                 }
                             }
                         });
@@ -1899,12 +1974,31 @@ document.addEventListener('DOMContentLoaded', function() {
             ? JSON.parse(variant.variant_values)
             : variant.variant_values;
 
+        // Clear all selections first
+        document.querySelectorAll('.variant-btn-flipkart').forEach(btn => {
+            btn.classList.remove('active');
+        });
+
+        document.querySelectorAll('input[type="radio"]').forEach(inp => {
+            inp.checked = false;
+        });
+
+        // Apply the cheapest variant selections
         Object.entries(vals).forEach(([type, value]) => {
             selectedVariantOptions[type] = value;
 
             const typeLower = type.toLowerCase();
             const valueLower = normalizeVal(value);
 
+            // Handle Flipkart-style buttons
+            document.querySelectorAll('.variant-btn-flipkart').forEach(btn => {
+                if ((btn.dataset.variantType || '').toLowerCase() === typeLower &&
+                    normalizeVal(btn.dataset.variantValue) === valueLower) {
+                    btn.classList.add('active');
+                }
+            });
+
+            // Handle old-style buttons
             document.querySelectorAll('.variant-option-btn').forEach(btn => {
                 if ((btn.dataset.variantType || '').toLowerCase() === typeLower &&
                     normalizeVal(btn.dataset.variantValue) === valueLower) {
@@ -1912,10 +2006,31 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
 
+            // Handle radio inputs (color variants)
             document.querySelectorAll('input[type="radio"]').forEach(inp => {
                 const dt = ((inp.dataset.variantType || inp.name) || '').toLowerCase();
                 if (dt === typeLower && normalizeVal(inp.value) === valueLower) {
                     inp.checked = true;
+
+                    // Update visual state for color variant items
+                    const colorItem = inp.closest('.color-variant-item');
+                    if (colorItem) {
+                        const label = colorItem.querySelector('.color-variant-label');
+                        if (label) {
+                            const imageBox = label.querySelector('.color-image-box');
+                            if (imageBox) {
+                                imageBox.style.borderColor = '#2874f0';
+                                imageBox.style.borderWidth = '2px';
+                            }
+                            const colorName = label.querySelector('.color-name');
+                            if (colorName) {
+                                colorName.style.color = '#2874f0';
+                                colorName.style.fontWeight = '600';
+                            }
+                        }
+                    }
+
+                    // Old color swatch support
                     const sw = inp.closest('.color-swatch');
                     if (sw) {
                         sw.querySelector('.color-swatch-checkmark')?.classList.remove('d-none');
@@ -1927,7 +2042,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
         currentVariant = variant;
         if (variantIdInput) variantIdInput.value = variant.id || '';
-        updateVariantWithLoading();
+
+        // Update the display immediately without calling updateVariantWithLoading to avoid recursion
+        updateProductDisplay(variant);
+        updateAvailableOptions();
+        updateWishlistHref();
     }
 
     /* ===============================

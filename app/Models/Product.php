@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use App\Models\Cart;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use App\Models\ProductVariantOption;
 
 class Product extends Model
 {
@@ -185,10 +186,17 @@ class Product extends Model
 
     public function loadVariantTypes(): void
     {
-        // 1. Load ALL variant types (global)
-        $typeIds = ProductVariantType::query()
-            ->orderBy('sort_order')
-            ->pluck('id');
+        // 1. Try to load variant types from product_variant_type_selections first
+        $typeIds = DB::table('product_variant_type_selections')
+            ->where('product_id', $this->id)
+            ->pluck('product_variant_type_id');
+
+        // Fallback: If no selections saved, load ALL variant types (for backward compatibility)
+        if ($typeIds->isEmpty()) {
+            $typeIds = ProductVariantType::query()
+                ->orderBy('sort_order')
+                ->pluck('id');
+        }
 
         // 2. Load all options for those types
         $options = ProductVariantOption::whereIn('variant_type_id', $typeIds)
@@ -204,6 +212,41 @@ class Product extends Model
             ->flatten()
             ->unique()
             ->all();
+
+        // 4. FALLBACK: If no option IDs found (old variants without assignments),
+        //    try to extract from SKUs or variant display names
+        if (empty($selectedOptionIds) && $this->variants->isNotEmpty()) {
+            // Extract option values from existing variant SKUs or names
+            $allOptions = ProductVariantOption::whereIn('variant_type_id', $typeIds)->get();
+
+            foreach ($this->variants as $variant) {
+                // Check variant SKU for option values
+                $sku = strtoupper($variant->sku);
+
+                foreach ($allOptions as $option) {
+                    $optionValue = strtoupper($option->display_value);
+
+                    // Direct match: full value or without spaces/with dashes
+                    if (strpos($sku, $optionValue) !== false ||
+                        strpos($sku, str_replace(' ', '', $optionValue)) !== false ||
+                        strpos($sku, str_replace(' ', '-', $optionValue)) !== false) {
+                        $selectedOptionIds[] = $option->id;
+                        continue;
+                    }
+
+                    // Partial match: check if SKU contains first 3+ chars of option value
+                    // This handles abbreviations like "GOL" for "GOLD", "SIL" for "SILVER"
+                    if (strlen($optionValue) >= 3) {
+                        $prefix = substr($optionValue, 0, 3);
+                        if (strpos($sku, $prefix) !== false) {
+                            $selectedOptionIds[] = $option->id;
+                        }
+                    }
+                }
+            }
+
+            $selectedOptionIds = array_unique($selectedOptionIds);
+        }
 
         // 4. Build final collection with 'selected' flag
         $types = ProductVariantType::whereIn('id', $typeIds)

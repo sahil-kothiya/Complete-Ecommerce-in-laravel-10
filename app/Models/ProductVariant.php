@@ -98,18 +98,41 @@ class ProductVariant extends Model
     public function getDisplayNameAttribute()
     {
         if ($this->relationLoaded('variantOptions') && $this->variantOptions->isNotEmpty()) {
+            // Sort by display_value alphabetically for consistent naming across the system
             return $this->variantOptions
-                ->sortBy(fn($opt) => optional($opt->variantType)->sort_order ?? 999)
                 ->pluck('display_value')
                 ->filter()
-                ->join(', ');
+                ->sort()
+                ->values()
+                ->join(' / '); // Match backend and frontend format
         }
 
         // Fallback to variant_values
         if (is_array($this->variant_values) && !empty($this->variant_values)) {
             return collect($this->variant_values)
                 ->map(fn($val) => ucfirst($val))
-                ->join(', ');
+                ->sort()
+                ->join(' / ');
+        }
+
+        // Fallback: Parse from SKU (for old variants without option assignments)
+        // Expected SKU format: PREFIX-VALUE1-VALUE2-VALUE3 or similar
+        if ($this->sku) {
+            $parts = explode('-', $this->sku);
+            // Remove common prefixes (PROD, PRE, product slug, etc.)
+            $parts = array_filter($parts, function($part) {
+                $part = strtoupper($part);
+                return !in_array($part, ['PROD', 'PRE', 'S24'])
+                    && !is_numeric($part) // Skip numeric parts like timestamps
+                    && strlen($part) > 1; // Skip single character parts
+            });
+
+            if (!empty($parts)) {
+                // Capitalize and join with " / "
+                return collect($parts)
+                    ->map(fn($part) => ucwords(strtolower($part)))
+                    ->join(' / ');
+            }
         }
 
         return 'Variant #' . $this->id;

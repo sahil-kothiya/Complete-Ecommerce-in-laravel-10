@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Helpers\RedisHelper;
 use Illuminate\Http\Request;
-use App\Models\{Product, Category, Brand, ProductImage, ProductVariant, VariantImage, ProductVariantOption};
+use App\Models\{Product, Category, Brand, ProductImage, ProductVariant, VariantImage, ProductVariantOption, ProductVariantTypeSelection};
 use Illuminate\Support\Facades\{DB, Log, Redis, Storage};
 use Illuminate\Support\Str;
 use Intervention\Image\Facades\Image;
@@ -371,7 +371,7 @@ class ProductController extends Controller
             }
 
             $typeOptions = ProductVariantOption::whereIn('id', $optionIds)
-                ->select('id', 'display_value', 'variant_type_id')
+                ->select('id', 'display_value', 'value', 'variant_type_id')
                 ->get()
                 ->toArray();
 
@@ -384,17 +384,39 @@ class ProductController extends Controller
             throw new \Exception('No valid variant options found');
         }
 
-        $combinations = [['values' => []]];
+        $combinations = [['values' => [], 'display_values' => [], 'option_ids' => []]];
         foreach ($options as $typeId => $typeOptions) {
             $newCombs = [];
             foreach ($combinations as $comb) {
                 foreach ($typeOptions as $option) {
                     $newComb = $comb;
                     $newComb['values'][$typeId] = $option['id'];
+                    $newComb['display_values'][] = $option['display_value'];
+                    $newComb['option_ids'][] = $option['id'];
                     $newCombs[] = $newComb;
                 }
             }
             $combinations = $newCombs;
+        }
+
+        // Add proper SKU to each combination with uniqueness guarantee
+        $timestamp = substr((string)time(), -4);
+        foreach ($combinations as $index => &$combo) {
+            // Build SKU parts from display values
+            $skuParts = [];
+            foreach ($combo['display_values'] as $val) {
+                // Clean and uppercase the value
+                $cleaned = strtoupper(preg_replace('/[^a-z0-9]+/i', '-', trim($val)));
+                $cleaned = trim($cleaned, '-'); // Remove leading/trailing hyphens
+                if ($cleaned) {
+                    $skuParts[] = $cleaned;
+                }
+            }
+
+            // Format: PRODUCTCODE-VARIANT1-VARIANT2-TIMESTAMP-INDEX
+            // Example: PROD-RED-128GB-4GB-7919-0
+            $baseSku = implode('-', $skuParts);
+            $combo['sku'] = "PROD-{$baseSku}-{$timestamp}-{$index}";
         }
 
         return $combinations;
@@ -425,6 +447,14 @@ class ProductController extends Controller
 
     public function update(Request $request, $id)
     {
+        Log::info('Product update request received', [
+            'product_id' => $id,
+            'has_variants' => $request->has('has_variants'),
+            'new_variants_count' => count($request->input('new_variants', [])),
+            'existing_variants_count' => count($request->input('variants', [])),
+            'variant_options_count' => !empty($request->input('variant_options')) ? count($request->input('variant_options')) : 0
+        ]);
+
         $product = Product::with(['images', 'variants', 'variants.images'])->findOrFail($id);
         $requestData = $this->normalizeImageUrls($request->all());
         $request->merge($requestData);
@@ -457,6 +487,7 @@ class ProductController extends Controller
             $rules['photo'] = $product->images->isEmpty() ? 'required|string' : 'nullable|string';
         } else {
             $rules['variants'] = 'required|array|min:1';
+            $rules['variants.*.id'] = 'nullable|integer|exists:product_variants,id';
             $rules['variants.*.sku'] = 'required|string|max:255';
             $rules['variants.*.price'] = 'required|numeric|min:0';
             $rules['variants.*.discount'] = 'nullable|numeric|min:0|max:100';
@@ -491,6 +522,8 @@ class ProductController extends Controller
                     }
                 }
             }];
+            $rules['variant_options'] = 'nullable|array';
+            $rules['variant_options.*'] = 'nullable|array';
         }
 
         $messages = [
@@ -563,6 +596,11 @@ class ProductController extends Controller
                 }
 
                 $this->updateVariants($request, $product, $validatedData);
+
+                // Sync variant type selections (track which types are active for this product)
+                if (!empty($validatedData['variant_options'])) {
+                    $this->syncVariantTypeSelections($product, $validatedData['variant_options']);
+                }
             }
 
             DB::commit();
@@ -687,9 +725,10 @@ class ProductController extends Controller
 
     private function updateVariants(Request $request, Product $product, array $validatedData)
     {
-        $existingVariantsData = $request->input('variants', []);
-        $newVariantsData = $request->input('new_variants', []);
-        $variantOptions = $request->input('variant_options', []);
+        // Use validated data instead of raw request input
+        $existingVariantsData = $validatedData['variants'] ?? [];
+        $newVariantsData = $validatedData['new_variants'] ?? [];
+        $variantOptions = $validatedData['variant_options'] ?? [];
 
         Log::debug('Handling variants', ['product_id' => $product->id, 'existing_count' => count($existingVariantsData), 'new_count' => count($newVariantsData)]);
 
@@ -705,12 +744,40 @@ class ProductController extends Controller
                 continue;
             }
 
+            // Check if the new SKU conflicts with another variant (excluding this one)
+            if (!empty($variantData['sku']) && $variantData['sku'] !== $variant->sku) {
+                $skuConflict = ProductVariant::where('sku', $variantData['sku'])
+                    ->where('id', '!=', $variant->id)
+                    ->first();
+
+                if ($skuConflict) {
+                    Log::warning('Skipping variant update - SKU already in use', [
+                        'product_id' => $product->id,
+                        'variant_id' => $variant->id,
+                        'attempted_sku' => $variantData['sku'],
+                        'conflict_variant_id' => $skuConflict->id,
+                        'conflict_product_id' => $skuConflict->product_id
+                    ]);
+                    continue;
+                }
+            }
+
             $variant->update([
                 'sku' => $variantData['sku'],
                 'price' => $variantData['price'],
                 'discount' => $variantData['discount'] ?? null,
                 'stock' => $variantData['stock'],
             ]);
+
+            // Sync variant option assignments from variant_options array
+            if (!empty($variantOptions)) {
+                Log::debug('Syncing option assignments for existing variant', [
+                    'variant_id' => $variant->id,
+                    'sku' => $variantData['sku'],
+                    'variant_options_types' => array_keys($variantOptions)
+                ]);
+                $this->syncVariantOptionAssignments($variant, $variantData['sku'], $variantOptions);
+            }
 
             if (!empty($variantData['images'])) {
                 Log::debug('Syncing variant images', ['variant_id' => $variant->id, 'images' => $variantData['images']]);
@@ -723,39 +790,165 @@ class ProductController extends Controller
         }
 
         if (!empty($newVariantsData)) {
+            // Generate all combinations from variant_options
             $combinations = !empty($variantOptions) ? $this->generateCombinations($variantOptions) : [];
+
+            // Build a map of SKU => combination for matching
+            $skuToCombinationMap = [];
+            foreach ($combinations as $combo) {
+                if (!isset($combo['sku'])) continue;
+                $skuToCombinationMap[$combo['sku']] = $combo;
+            }
+
+            Log::debug('New variants processing', [
+                'product_id' => $product->id,
+                'new_variants_count' => count($newVariantsData),
+                'combinations_count' => count($combinations),
+                'variant_options_count' => count($variantOptions),
+                'variant_options_types' => array_keys($variantOptions)
+            ]);
 
             foreach ($newVariantsData as $index => $variantData) {
                 if (empty($variantData['sku']) || empty($variantData['price']) || empty($variantData['images'])) {
-                    Log::warning('Skipping new variant - missing data', ['product_id' => $product->id, 'variant_index' => $index]);
+                    Log::warning('Skipping new variant - missing required data', [
+                        'product_id' => $product->id,
+                        'variant_index' => $index,
+                        'sku' => $variantData['sku'] ?? 'N/A',
+                        'price' => $variantData['price'] ?? 'N/A',
+                        'images' => !empty($variantData['images']) ? 'present' : 'missing'
+                    ]);
                     continue;
                 }
 
+                // Check if SKU already exists in database
+                $existingSku = ProductVariant::where('sku', $variantData['sku'])->first();
+                if ($existingSku) {
+                    Log::warning('Skipping new variant - SKU already exists', [
+                        'product_id' => $product->id,
+                        'variant_index' => $index,
+                        'sku' => $variantData['sku'],
+                        'existing_variant_id' => $existingSku->id,
+                        'existing_product_id' => $existingSku->product_id
+                    ]);
+                    continue;
+                }
+
+                // Try to find matching combination by SKU (exact match)
+                $matchingCombo = $skuToCombinationMap[$variantData['sku']] ?? null;
+
+                // If no exact match, try fuzzy matching by comparing SKU parts
+                if (!$matchingCombo) {
+                    // Extract meaningful parts from the submitted SKU (remove common prefixes/suffixes)
+                    $submittedSkuParts = array_map('strtoupper', array_filter(explode('-', $variantData['sku'])));
+
+                    // Try to find a combination that has similar variant option values
+                    foreach ($skuToCombinationMap as $comboSku => $combo) {
+                        $comboSkuParts = array_map('strtoupper', array_filter(explode('-', $comboSku)));
+
+                        // Check if all submitted SKU parts are in the combo SKU parts
+                        $matchCount = 0;
+                        foreach ($submittedSkuParts as $part) {
+                            if (in_array($part, $comboSkuParts)) {
+                                $matchCount++;
+                            }
+                        }
+
+                        // If most parts match, consider it a match
+                        if ($matchCount >= count($submittedSkuParts) * 0.8) {
+                            $matchingCombo = $combo;
+                            Log::info('Found fuzzy SKU match', [
+                                'submitted_sku' => $variantData['sku'],
+                                'matched_sku' => $comboSku,
+                                'match_count' => $matchCount,
+                                'total_parts' => count($submittedSkuParts)
+                            ]);
+                            break;
+                        }
+                    }
+                }
+
+                // Extract variant values and option IDs
+                $variantValues = [];
+                $variantOptionIds = [];
+
+                if ($matchingCombo) {
+                    $variantValues = $matchingCombo['values'] ?? [];
+                    $variantOptionIds = $matchingCombo['option_ids'] ?? [];
+                    Log::debug('Found matching combination', [
+                        'sku' => $variantData['sku'],
+                        'matched_sku' => $matchingCombo['sku'] ?? 'N/A',
+                        'values' => $variantValues,
+                        'option_ids' => $variantOptionIds
+                    ]);
+                } else {
+                    // Fallback: Try to parse variant info from SKU or variant_options
+                    Log::warning('No matching combination found for SKU, will use empty variant_values', [
+                        'sku' => $variantData['sku'],
+                        'available_skus' => array_keys($skuToCombinationMap)
+                    ]);
+                }
+
+                // Create the variant
                 $variant = $product->variants()->create([
                     'product_id' => $product->id,
                     'sku' => $variantData['sku'],
                     'price' => $variantData['price'],
                     'discount' => $variantData['discount'] ?? null,
                     'stock' => $variantData['stock'] ?? 0,
-                    'variant_values' => json_encode($combinations[$index]['values'] ?? []),
+                    'variant_values' => json_encode($variantValues),
                     'status' => 'active',
                 ]);
 
-                // 🔥 FIX: Use correct column name
-                if (isset($combinations[$index]['values'])) {
-                    foreach ($combinations[$index]['values'] as $typeId => $optionId) {
-                        $variant->optionAssignments()->create([
-                            'product_variant_option_id' => $optionId  // ✅ Changed from 'variant_option_id'
+                // Create option assignments
+                // First try using matched combination
+                if (!empty($variantOptionIds)) {
+                    foreach ($variantOptionIds as $optionId) {
+                        try {
+                            $variant->optionAssignments()->create([
+                                'product_variant_option_id' => $optionId
+                            ]);
+                        } catch (\Exception $e) {
+                            Log::error('Failed to create option assignment', [
+                                'variant_id' => $variant->id,
+                                'option_id' => $optionId,
+                                'error' => $e->getMessage()
+                            ]);
+                        }
+                    }
+                } elseif (!empty($variantOptions)) {
+                    // Fallback: Use SKU matching to find appropriate options
+                    Log::debug('Using SKU matching for new variant options', [
+                        'variant_id' => $variant->id,
+                        'sku' => $variantData['sku'],
+                        'variant_options_types' => array_keys($variantOptions)
+                    ]);
+                    $this->syncVariantOptionAssignments($variant, $variantData['sku'], $variantOptions);
+                }
+
+                // Process images
+                $imageUrls = array_filter(array_map('trim', explode(',', $variantData['images'])));
+                if (!empty($imageUrls)) {
+                    try {
+                        $this->storeVariantImages($variant, $imageUrls);
+                        Log::info('Variant images stored', [
+                            'variant_id' => $variant->id,
+                            'image_count' => count($imageUrls)
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::error('Failed to store variant images', [
+                            'variant_id' => $variant->id,
+                            'error' => $e->getMessage()
                         ]);
                     }
                 }
 
-                $imageUrls = array_filter(array_map('trim', explode(',', $variantData['images'])));
-                if (!empty($imageUrls)) {
-                    $this->storeVariantImages($variant, $imageUrls);
-                }
-
-                Log::info('New variant created', ['product_id' => $product->id, 'variant_id' => $variant->id, 'sku' => $variant->sku]);
+                Log::info('New variant created successfully', [
+                    'product_id' => $product->id,
+                    'variant_id' => $variant->id,
+                    'sku' => $variant->sku,
+                    'price' => $variant->price,
+                    'stock' => $variant->stock
+                ]);
             }
         }
 
@@ -876,6 +1069,157 @@ class ProductController extends Controller
         Log::info('NEW VARIANT IMAGES STORED', ['variant_id' => $variant->id, 'stored_count' => count($webpPaths)]);
     }
 
+    /**
+     * Sync variant option assignments by matching SKU against variant_options
+     * This populates the product_variant_option_assignments table
+     */
+    private function syncVariantOptionAssignments(ProductVariant $variant, string $sku, array $variantOptions)
+    {
+        // Get all option IDs from variant_options array
+        $allOptionIds = [];
+        foreach ($variantOptions as $typeId => $optionIds) {
+            $allOptionIds = array_merge($allOptionIds, $optionIds);
+        }
+
+        if (empty($allOptionIds)) {
+            Log::debug('No variant options to sync', ['variant_id' => $variant->id]);
+            return;
+        }
+
+        // Match SKU against option display values to find which options this variant uses
+        $matchedOptionIds = [];
+        $skuUpper = strtoupper($sku);
+
+        $options = ProductVariantOption::whereIn('id', $allOptionIds)->get();
+
+        foreach ($options as $option) {
+            $optionValue = strtoupper($option->display_value);
+
+            // Check if SKU contains this option value (full match or partial)
+            if (strpos($skuUpper, $optionValue) !== false ||
+                strpos($skuUpper, str_replace(' ', '', $optionValue)) !== false ||
+                strpos($skuUpper, str_replace(' ', '-', $optionValue)) !== false) {
+                $matchedOptionIds[] = $option->id;
+                continue;
+            }
+
+            // Check abbreviations (first 3 chars)
+            if (strlen($optionValue) >= 3) {
+                $prefix = substr($optionValue, 0, 3);
+                if (strpos($skuUpper, $prefix) !== false) {
+                    $matchedOptionIds[] = $option->id;
+                }
+            }
+        }
+
+        if (empty($matchedOptionIds)) {
+            Log::warning('No matching options found for variant SKU', [
+                'variant_id' => $variant->id,
+                'sku' => $sku,
+                'available_option_ids' => $allOptionIds
+            ]);
+            return;
+        }
+
+        // Delete existing assignments
+        $variant->optionAssignments()->delete();
+
+        // Create new assignments
+        foreach ($matchedOptionIds as $optionId) {
+            try {
+                $variant->optionAssignments()->create([
+                    'product_variant_option_id' => $optionId
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to create option assignment', [
+                    'variant_id' => $variant->id,
+                    'option_id' => $optionId,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        Log::info('Variant option assignments synced', [
+            'variant_id' => $variant->id,
+            'matched_option_ids' => $matchedOptionIds,
+            'assignment_count' => count($matchedOptionIds)
+        ]);
+    }
+
+    /**
+     * Sync product variant type selections
+     * Stores which variant types are active for this product in product_variant_type_selections table
+     */
+    private function syncVariantTypeSelections(Product $product, array $variantOptions)
+    {
+        // Get all variant type IDs from the variant_options array
+        // variant_options format: ['type_id' => [option_id1, option_id2], ...]
+        $variantTypeIds = array_keys($variantOptions);
+
+        if (empty($variantTypeIds)) {
+            Log::debug('No variant types to sync', ['product_id' => $product->id]);
+            return;
+        }
+
+        // Get current selections
+        $currentTypeIds = ProductVariantTypeSelection::where('product_id', $product->id)
+            ->pluck('product_variant_type_id')
+            ->toArray();
+
+        // Determine what to add and what to remove
+        $typesToAdd = array_diff($variantTypeIds, $currentTypeIds);
+        $typesToRemove = array_diff($currentTypeIds, $variantTypeIds);
+
+        // Remove types no longer selected
+        if (!empty($typesToRemove)) {
+            ProductVariantTypeSelection::where('product_id', $product->id)
+                ->whereIn('product_variant_type_id', $typesToRemove)
+                ->delete();
+        }
+
+        // Add new types
+        foreach ($typesToAdd as $typeId) {
+            ProductVariantTypeSelection::create([
+                'product_id' => $product->id,
+                'product_variant_type_id' => $typeId,
+            ]);
+        }
+
+        Log::info('Variant type selections synced', [
+            'product_id' => $product->id,
+            'active_type_ids' => $variantTypeIds,
+            'added_count' => count($typesToAdd),
+            'removed_count' => count($typesToRemove)
+        ]);
+    }
+
+    public function deleteVariant($variantId)
+    {
+        try {
+            $variant = ProductVariant::findOrFail($variantId);
+
+            Log::info('DELETING VARIANT', ['variant_id' => $variantId, 'sku' => $variant->sku]);
+
+            // Delete all associated images first
+            foreach ($variant->images as $image) {
+                if (Storage::exists('public/' . $image->image_path)) {
+                    Storage::delete('public/' . $image->image_path);
+                }
+                $image->delete();
+            }
+
+            // Delete the variant itself
+            $variant->delete();
+
+            Log::info('VARIANT DELETED SUCCESSFULLY', ['variant_id' => $variantId]);
+
+            return response()->json(['success' => true, 'message' => 'Variant deleted successfully.']);
+        } catch (\Exception $e) {
+            Log::error('VARIANT DELETION FAILED', ['variant_id' => $variantId, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return response()->json(['success' => false, 'message' => 'Failed to delete variant: ' . $e->getMessage()], 400);
+        }
+    }
+
     public function deleteVariantImage($variantId, $imageId)
     {
         try {
@@ -935,17 +1279,15 @@ class ProductController extends Controller
             $variants = [];
 
             foreach ($combinations as $idx => $combo) {
-                // Build variant name from combination
-                $displayValues = array_map(function ($opt) {
-                    return $opt['display_value'] ?? $opt['value'] ?? 'Unknown';
-                }, $combo);
+                // Build variant name from display_values
+                $displayValues = $combo['display_values'] ?? [];
 
                 // Sort the values for consistent naming
                 sort($displayValues);
                 $name = implode(' / ', $displayValues);
 
-                // Generate SKU
-                $sku = $this->generateSKU($name, $idx);
+                // Use the SKU generated by generateCombinations - it's already unique
+                $sku = $combo['sku'] ?? $this->generateSKU($name, $idx);
 
                 // Prepare variant data
                 $variantData = [

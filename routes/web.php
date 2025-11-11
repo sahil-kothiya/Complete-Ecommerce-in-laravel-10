@@ -200,6 +200,7 @@ Route::post('/mollie/webhook', [MollieController::class, 'webhook'])->name('moll
 
 Route::get('/category/{category}/brands', [BrandController::class, 'getBrandsByCategory'])->name('category.brands');
 
+Route::delete('/admin/product/variant/{variantId}/delete', [ProductController::class, 'deleteVariant'])->name('variant.delete');
 Route::delete('/admin/product/variant/{variantId}/image/{imageId}/delete', [ProductController::class, 'deleteVariantImage'])->name('variant.image.delete');
 // Admin
 Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
