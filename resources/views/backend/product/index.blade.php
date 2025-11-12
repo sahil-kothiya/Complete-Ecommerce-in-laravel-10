@@ -78,9 +78,12 @@
                         $displaySku = $product->base_sku ?? 'N/A';
                         $displaySize = 'N/A';
                     }
+
+                    // Calculate proper serial number for current page (maintains desc order display)
+                    $serialNumber = ($products->currentPage() - 1) * $products->perPage() + $loop->iteration;
                     @endphp
                     <tr>
-                        <td>{{ $loop->iteration }}</td>
+                        <td>{{ $serialNumber }}</td>
                         <td tabindex="{{ $loop->iteration + 1 }}">{{ $product->title }} {{ $product->has_variants ? '(Variants)' : '' }}</td>
                         <td>
                             {{ $product->cat_info->title ?? 'N/A' }}
@@ -177,7 +180,7 @@
 
 @push('styles')
 <link href="{{ asset('backend/vendor/datatables/dataTables.bootstrap4.min.css') }}" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert2.min.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" />
 <style>
     .zoom {
         transition: transform 0.2s;
@@ -214,7 +217,7 @@
 @push('scripts')
 <script src="{{ asset('backend/vendor/datatables/jquery.dataTables.min.js') }}"></script>
 <script src="{{ asset('backend/vendor/datatables/dataTables.bootstrap4.min.js') }}"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/2.1.2/sweetalert2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
     $(document).ready(function() {
@@ -225,7 +228,7 @@
             searching: true,
             scrollX: true,
             order: [
-                [0, 'desc']
+                [0, 'asc']  // Sort S.N. in ascending order (1, 2, 3... top to bottom)
             ],
             columnDefs: [{
                 orderable: false,

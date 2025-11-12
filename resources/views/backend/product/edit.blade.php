@@ -317,7 +317,23 @@
                                 <tbody>
                                     @foreach($product->variants as $index => $variant)
                                     <tr data-variant-id="{{ $variant->id }}">
-                                        <td>{{ $variant->display_name }}</td>
+                                        @php
+                                            // Rebuild a safe, explicit display name to avoid RAM/Storage duplication issues
+                                            // Sort by variant type sort_order if available
+                                            $rebuiltParts = $variant->variantOptions
+                                                ->sortBy(function($opt){ return $opt->variantType->sort_order ?? 999; })
+                                                ->map(function($opt){
+                                                    $typeLabel = $opt->variantType->display_name ?? $opt->variantType->name ?? 'Option';
+                                                    $val = $opt->display_value ?? $opt->value;
+                                                    return $typeLabel . ': ' . $val;
+                                                });
+                                            $rebuiltName = $rebuiltParts->join(' / ');
+                                            // Fallback to stored display_name if rebuild produced empty string
+                                            if (trim($rebuiltName) === '') { $rebuiltName = $variant->display_name; }
+                                        @endphp
+                                        <td style="max-width: 200px; word-wrap: break-word; white-space: normal;" title="{{ $rebuiltName }}">
+                                            <strong>{{ $rebuiltName }}</strong>
+                                        </td>
                                         <td>
                                             <input type="hidden" name="variants[{{ $index }}][id]" value="{{ $variant->id }}">
                                             <input type="text" name="variants[{{ $index }}][sku]" value="{{ old('variants.' . $index . '.sku', $variant->sku) }}" class="form-control" required>
@@ -474,10 +490,27 @@
     .image-container.deleting { opacity: 0.6; pointer-events: none; position: relative; }
     .image-container.deleting::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255, 255, 255, 0.9); border-radius: 8px; z-index: 15; display: flex; align-items: center; justify-content: center; }
     .image-container.deleting::after { content: '🗑️ Deleting...'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 8px 12px; border-radius: 6px; font-size: 12px; color: #dc3545; font-weight: bold; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); z-index: 16; white-space: nowrap; border: 1px solid #dee2e6; }
+    /* Variant name column styling */
+    .table td:first-child {
+        min-width: 150px;
+        max-width: 200px;
+        word-wrap: break-word;
+        white-space: normal;
+        font-weight: 500;
+        color: #333;
+    }
+    .table th:first-child {
+        min-width: 150px;
+        max-width: 200px;
+    }
     @media (max-width: 768px) {
         #type-selections { flex-direction: column; }
         .variant-type-group { width: 100%; }
         .image-preview, .image-not-found { width: 100px; height: 100px; }
+        .table td:first-child, .table th:first-child {
+            min-width: 120px;
+            max-width: 150px;
+        }
     }
 </style>
 @endpush
@@ -632,9 +665,9 @@ $('#load-types').click(function() {
 });
 
         // ============================================================
-        // FULLY DYNAMIC VARIANT GENERATION
+        // FULLY DYNAMIC VARIANT GENERATION - FIXED
         // Works with ANY variant types from database
-        // Validates cross-contamination automatically
+        // Generates ALL possible combinations correctly
         // ============================================================
         $('#generate-preview').click(function () {
             console.log('%c🔄 GENERATE PREVIEW CLICKED', 'color:#2196F3;font-weight:bold;font-size:14px');
@@ -642,7 +675,6 @@ $('#load-types').click(function() {
             // 1. Collect ALL variant type data dynamically
             const variantTypes = [];
             const allTypeOptions = new Map(); // typeId → all available options
-            const optionToTypes = new Map(); // optionText → [typeIds that have this option]
 
             $('.type-select').each(function () {
                 const $select = $(this);
@@ -669,15 +701,6 @@ $('#load-types').click(function() {
                             text: $(this).text().trim(), // Keep original case
                             textLower: optText,
                             selected: selectedIds.includes(optId)
-                        });
-
-                        // Track which types have this option (for cross-validation)
-                        if (!optionToTypes.has(optText)) {
-                            optionToTypes.set(optText, []);
-                        }
-                        optionToTypes.get(optText).push({
-                            typeId: typeId,
-                            typeName: typeName
                         });
                     }
                 });
@@ -708,59 +731,24 @@ $('#load-types').click(function() {
                 });
             });
 
-            // 3. CROSS-VALIDATION: Remove options that appear in multiple variant types
-            console.groupCollapsed('%c🔍 Cross-Validation Check', 'color:#FF9800;font-weight:bold');
+            console.log(`%c🔗 Total options collected: ${optionMap.size}`,
+                        'color:#2196F3;font-weight:bold');
 
+            // 3. CROSS-VALIDATION: REMOVED - This was incorrectly filtering out valid options
+            // Variant options SHOULD be able to have same text in different types
+            // e.g., Color:Blue + Size:Medium is a valid combination
+
+            // 4. Use all selected options directly without filtering
             const validatedTypes = variantTypes.map(type => {
-                const validIds = [];
-                const invalidIds = [];
-
-                type.selectedIds.forEach(optId => {
-                    const optText = optionMap.get(optId).toLowerCase();
-                    const appearingInTypes = optionToTypes.get(optText) || [];
-
-                    // Check if this option appears in OTHER variant types
-                    const otherTypes = appearingInTypes.filter(t => t.typeId !== type.id);
-
-                    if (otherTypes.length > 0) {
-                        invalidIds.push({
-                            id: optId,
-                            text: optionMap.get(optId),
-                            conflictsWith: otherTypes.map(t => t.typeName).join(', ')
-                        });
-
-                        console.warn(
-                            `⚠️ "${type.name}" option "${optionMap.get(optId)}" ` +
-                            `also exists in: ${otherTypes.map(t => t.typeName).join(', ')}`
-                        );
-                    } else {
-                        validIds.push(optId);
-                    }
-                });
-
                 return {
                     ...type,
-                    validIds: validIds,
-                    invalidIds: invalidIds
+                    validIds: type.selectedIds,  // Use ALL selected options
+                    invalidIds: []  // No filtering needed
                 };
             });
 
-            console.groupEnd();
-
-            // 4. Show validation summary
-            const totalInvalid = validatedTypes.reduce((sum, t) => sum + t.invalidIds.length, 0);
-            if (totalInvalid > 0) {
-                console.log(`%c🚫 Filtered ${totalInvalid} conflicting option(s)`,
-                        'color:#F44336;font-weight:bold');
-                validatedTypes.forEach(type => {
-                    if (type.invalidIds.length > 0) {
-                        console.log(
-                            `   ${type.name}: ${type.invalidIds.map(i => i.text).join(', ')} ` +
-                            `(conflicts with other types)`
-                        );
-                    }
-                });
-            }
+            console.log(`%c✅ Using ALL selected options without cross-filtering`,
+                        'color:#4CAF50;font-weight:bold');
 
             // 5. Build arrays for cartesian product
             const combinationArrays = [];
@@ -785,69 +773,35 @@ $('#load-types').click(function() {
             const allCombinations = cartesianProduct(combinationArrays);
             console.log(`%c🔢 Generated ${allCombinations.length} combinations`,
                         'color:#4CAF50;font-weight:bold');
-
-            // 7. Get existing variant names (saved + new)
-            const existingVariantNames = new Set();
-
-            $('#variant-preview tbody tr[data-variant-id]').each(function () {
-                const name = $(this).find('td:first').text().trim();
-                if (name) existingVariantNames.add(name);
-            });
-
-            $('#variant-preview tbody tr[data-new-variant]').each(function () {
-                const name = $(this).attr('data-new-variant');
-                if (name) existingVariantNames.add(name);
-            });
-
-            console.log(`%c📋 Existing variants: ${existingVariantNames.size}`,
+            console.log(`%c📊 Expected combinations: ${combinationArrays.map(arr => arr.length).join(' × ')} = ${combinationArrays.reduce((a, b) => a * b.length, 1)}`,
                         'color:#FF9800;font-weight:bold');
 
-            // 8. Process combinations
-            const newCombinations = [];
-            const ignoredCombinations = [];
+            // 7. Server-side validation - no client-side duplicate detection needed
+            // This ensures accuracy by checking database directly via option combination IDs
 
-            allCombinations.forEach(combo => {
-                // Map option IDs to display text in EXACT selection order
+            // 8. Don't filter combinations client-side - server will determine what's new
+            // Client-side filtering can be inaccurate because it only checks displayed variants
+            // Server checks database directly using option combination IDs for accuracy
+            const newCombinations = allCombinations.map(combo => {
                 const displayValues = combo.map(optId => optionMap.get(optId));
-
-                // Sort display values for consistent naming (matches backend logic and existing variants)
                 const sortedDisplayValues = [...displayValues].sort();
-                const variantName = sortedDisplayValues.join(' / '); // Match backend format
+                const variantName = sortedDisplayValues.join(' / ');
                 const slugName = sortedDisplayValues
                     .map(v => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
                     .join('-');
 
-                if (existingVariantNames.has(variantName)) {
-                    ignoredCombinations.push({
-                        name: variantName,
-                        reason: 'Already exists',
-                        combo: displayValues
-                    });
-                } else {
-                    newCombinations.push({
-                        combo,
-                        name: variantName,
-                        slugName,
-                        displayValues
-                    });
-                    existingVariantNames.add(variantName);
-                }
+                return {
+                    combo,
+                    name: variantName,
+                    slugName,
+                    displayValues
+                };
             });
 
-            // 9. Log ignored variants
-            if (ignoredCombinations.length > 0) {
-                console.groupCollapsed(`%c🚫 IGNORED (${ignoredCombinations.length})`,
-                                    'color:#F44336;font-weight:bold');
-                ignoredCombinations.forEach((item, i) => {
-                    console.log(`${i + 1}. "${item.name}" → ${item.reason}`);
-                });
-                console.groupEnd();
-            }
+            // 9. (Skipped - no client-side filtering)
 
-            if (newCombinations.length === 0) {
-                showNotification('All combinations already exist or were filtered.', 'info');
-                return;
-            }
+            console.log(`%c� Sending ${newCombinations.length} combinations to server`,
+                        'color:#2196F3;font-weight:bold');
 
             // 10. Get product slug
             const productSlug = $('#slug').val().trim() || 'product';
@@ -867,16 +821,14 @@ $('#load-types').click(function() {
                 product_id: '{{ $product->id }}'
             })
             .done(function (response) {
+                console.log('✅ Variant preview response:', response);
+
                 if (!response.variants || !Array.isArray(response.variants)) {
                     showNotification('Invalid server response.', 'error');
                     return;
                 }
 
-                const serverVariantMap = {};
-                response.variants.forEach(v => {
-                    if (v.name) serverVariantMap[v.name] = v;
-                });
-
+                // Get existing variant count to start indexing new variants
                 let newVariantIndex = $('#variant-preview tbody tr').length;
 
                 // Create table if needed
@@ -899,10 +851,15 @@ $('#load-types').click(function() {
                     `);
                 }
 
-                // Add new rows
-                newCombinations.forEach(item => {
-                    const serverData = serverVariantMap[item.name] || {};
-                    const autoSku = serverData.sku || `${productSlug}-${item.slugName}`.toUpperCase();
+                // Filter to get only new variants (not existing in database)
+                const newVariants = response.variants.filter(v => !v.existing);
+
+                console.log(`📦 Processing ${newVariants.length} new variants from server`);
+
+                // Add new rows directly from server response
+                newVariants.forEach((serverData, idx) => {
+                    const displayName = serverData.name || 'Unnamed Variant';
+                    const displaySku = serverData.sku || '';  // Use server-generated SKU
 
                     // Small helper to escape values inserted into HTML fragments
                     function escapeHtml(str) {
@@ -915,10 +872,12 @@ $('#load-types').click(function() {
                     }
 
                     var rowHtml = '';
-                    rowHtml += '<tr data-new-variant="' + escapeHtml(item.name) + '">';
-                    rowHtml += '    <td><strong>' + escapeHtml(item.name) + '</strong></td>';
+                    rowHtml += '<tr data-new-variant="' + escapeHtml(displayName) + '">';
+                    rowHtml += '    <td style="max-width: 200px; word-wrap: break-word; white-space: normal;" title="' + escapeHtml(displayName) + '">';
+                    rowHtml += '        <strong>' + escapeHtml(displayName) + '</strong>';
+                    rowHtml += '    </td>';
                     rowHtml += '    <td>';
-                    rowHtml += '        <input type="text" name="new_variants[' + newVariantIndex + '][sku]" value="' + escapeHtml(autoSku) + '" class="form-control" required>';
+                    rowHtml += '        <input type="text" name="new_variants[' + newVariantIndex + '][sku]" value="' + escapeHtml(displaySku) + '" class="form-control" required>';
                     rowHtml += '    </td>';
                     rowHtml += '    <td>';
                     rowHtml += '        <input type="number" name="new_variants[' + newVariantIndex + '][price]" step="0.01" min="0" value="' + escapeHtml(serverData.price || '') + '" class="form-control" placeholder="0.00" required>';
@@ -947,37 +906,28 @@ $('#load-types').click(function() {
                     rowHtml += '    </td>';
                     rowHtml += '</tr>';
 
+                    // Add hidden inputs for option_ids
+                    if (serverData.option_ids && Array.isArray(serverData.option_ids)) {
+                        serverData.option_ids.forEach(optionId => {
+                            rowHtml += '<input type="hidden" name="new_variants[' + newVariantIndex + '][option_ids][]" value="' + optionId + '">';
+                        });
+                    }
+
                     $('#variant-preview tbody').append(rowHtml);
                     newVariantIndex++;
                 });
 
                 $('.lfm-variant').filemanager('image');
 
-                // ✨ AUTO-SELECT NEW OPTIONS IN DROPDOWNS
-                // After generating variants, ensure all option IDs are selected in their respective dropdowns
-                validatedTypes.forEach(type => {
-                    const $select = $(`.type-select[data-type-id="${type.id}"]`);
-                    if ($select.length) {
-                        // Get currently selected values
-                        const currentValues = $select.val() || [];
-
-                        // Add all valid IDs from this generation
-                        const allValues = [...new Set([...currentValues, ...type.validIds.map(String)])];
-
-                        // Update select2
-                        $select.val(allValues).trigger('change');
-
-                        console.log(`%c🔄 Updated ${type.name} dropdown: ${allValues.length} options selected`,
-                                    'color:#9C27B0;font-size:12px');
-                    }
-                });
-
-                console.log(`%c✅ SUCCESS: ${newCombinations.length} variants added!`,
+                console.log(`%c✅ SUCCESS: ${newVariants.length} variants added!`,
                         'color:#4CAF50;font-weight:bold;font-size:14px');
 
+                const totalVariants = response.variants.length;
+                const existingCount = totalVariants - newVariants.length;
+
                 const summary = [
-                    `${newCombinations.length} variant(s) created`,
-                    totalInvalid > 0 ? `${totalInvalid} conflict(s) filtered` : null
+                    `${newVariants.length} new variant(s) created`,
+                    existingCount > 0 ? `${existingCount} existing variant(s) preserved` : null
                 ].filter(Boolean).join(', ');
 
                 showNotification(summary, 'success');
@@ -1006,7 +956,7 @@ $('#load-types').click(function() {
             }, [[]]);
         }
 
-        console.log('✅ Fully dynamic variant generation loaded (works with ANY variant types)');
+        console.log('✅ FIXED: Fully dynamic variant generation loaded - generates ALL possible combinations correctly');
 
         // Remove new variant
         /* --------------------------------------------------------------

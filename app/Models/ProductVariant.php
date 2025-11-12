@@ -18,6 +18,7 @@ class ProductVariant extends Model
         'price',
         'discount',
         'stock',
+        'display_name',
         'variant_values',
         'status'
     ];
@@ -98,13 +99,25 @@ class ProductVariant extends Model
     public function getDisplayNameAttribute()
     {
         if ($this->relationLoaded('variantOptions') && $this->variantOptions->isNotEmpty()) {
-            // Sort by display_value alphabetically for consistent naming across the system
-            return $this->variantOptions
-                ->pluck('display_value')
-                ->filter()
-                ->sort()
-                ->values()
-                ->join(' / '); // Match backend and frontend format
+            // Sort by variant type sort_order for consistent naming (Color → Size → Storage → RAM → etc.)
+            $sorted = $this->variantOptions->sortBy(function($option) {
+                // Load variantType relationship if not already loaded
+                if (!$option->relationLoaded('variantType')) {
+                    $option->load('variantType:id,name,display_name,sort_order');
+                }
+                return $option->variantType->sort_order ?? 999;
+            });
+
+            // Build concise display name - just the values separated by slashes
+            // Format: "Red / 64GB / 8GB" instead of "Color: Red / Storage: 64GB / RAM: 8GB"
+            $parts = $sorted->map(function($option) {
+                return $option->display_value ?? $option->value;
+            })->filter()->values();
+
+            // Return the concise format
+            if ($parts->isNotEmpty()) {
+                return $parts->join(' / ');
+            }
         }
 
         // Fallback to variant_values
@@ -115,30 +128,110 @@ class ProductVariant extends Model
                 ->join(' / ');
         }
 
-        // Fallback: Parse from SKU (for old variants without option assignments)
-        // Expected SKU format: PREFIX-VALUE1-VALUE2-VALUE3 or similar
-        if ($this->sku) {
-            $parts = explode('-', $this->sku);
-            // Remove common prefixes (PROD, PRE, product slug, etc.)
-            $parts = array_filter($parts, function($part) {
-                $part = strtoupper($part);
-                return !in_array($part, ['PROD', 'PRE', 'S24'])
-                    && !is_numeric($part) // Skip numeric parts like timestamps
-                    && strlen($part) > 1; // Skip single character parts
-            });
-
-            if (!empty($parts)) {
-                // Capitalize and join with " / "
-                return collect($parts)
-                    ->map(fn($part) => ucwords(strtolower($part)))
-                    ->join(' / ');
-            }
-        }
-
-        return 'Variant #' . $this->id;
+        // Fallback to SKU parsing
+        return $this->parseSkuForDisplay();
     }
 
     /**
+     * Parse SKU to extract variant information for display
+     */
+    private function parseSkuForDisplay()
+    {
+        $parts = $this->parseSkuParts();
+        return !empty($parts) ? collect($parts)->join(' / ') : 'Variant #' . $this->id;
+    }
+
+    /**
+     * Parse SKU into component parts for display
+     */
+    private function parseSkuParts()
+    {
+        if (!$this->sku) {
+            return [];
+        }
+
+        $parts = explode('-', $this->sku);
+
+        // Remove common prefixes and the final ID part
+        $cleanParts = [];
+        foreach ($parts as $index => $part) {
+            $part = trim($part);
+            $upperPart = strtoupper($part);
+
+            // Skip common prefixes
+            if (in_array($upperPart, ['PROD', 'PRE', 'S24', 'SMA'])) {
+                continue;
+            }
+
+            // Skip the last part if it's purely numeric (likely an ID)
+            if ($index === count($parts) - 1 && is_numeric($part) && strlen($part) >= 1) {
+                continue;
+            }
+
+            // Skip very long numeric parts that look like timestamps
+            if (is_numeric($part) && strlen($part) > 4) {
+                continue;
+            }
+
+            $cleanParts[] = $part;
+        }
+
+        if (empty($cleanParts)) {
+            return [];
+        }
+
+        // Process parts to create meaningful display
+        $processedParts = [];
+        foreach ($cleanParts as $index => $part) {
+            // Convert color codes to readable names
+            $colorMap = [
+                'BL' => 'Blue', 'RE' => 'Red', 'GO' => 'Gold', 'GR' => 'Green',
+                'WH' => 'White', 'SI' => 'Silver', 'BK' => 'Black', 'PK' => 'Pink'
+            ];
+
+            $upperPart = strtoupper($part);
+            if (isset($colorMap[$upperPart])) {
+                $processedParts[] = $colorMap[$upperPart];
+                continue;
+            }
+
+            // Determine if this is storage or RAM based on position and pattern
+            if (preg_match('/^(\d+)G$/i', $part, $matches)) {
+                // Parts with 'G' suffix are likely storage (4G, 8G, etc.)
+                $processedParts[] = $matches[1] . 'GB Storage';
+                continue;
+            }
+
+            if (is_numeric($part)) {
+                $num = (int) $part;
+
+                // Determine based on position first
+                if ($index >= 2) { // 3rd position or later (after color and storage)
+                    // These are likely RAM codes
+                    $ramMap = [
+                        '4' => '4GB RAM', '8' => '8GB RAM', '12' => '4GB RAM', '16' => '16GB RAM',
+                        '25' => '8GB RAM', '32' => '32GB RAM', '51' => '4GB RAM', '64' => '64GB RAM'
+                    ];
+                    $processedParts[] = $ramMap[$part] ?? '4GB RAM'; // Default to 4GB for unknown codes
+                    continue;
+                }
+
+                // For positions 0-1, larger numbers are likely storage
+                if ($num >= 64 || $num == 32) {
+                    $processedParts[] = $part . 'GB Storage';
+                    continue;
+                }
+
+                // Numbers in early positions but small values
+                $processedParts[] = $part . 'GB Storage';
+                continue;
+            }
+
+            $processedParts[] = ucwords(strtolower($part));
+        }
+
+        return $processedParts;
+    }    /**
      * Get variant option values as associative array
      */
     public function getVariantValuesArrayAttribute()

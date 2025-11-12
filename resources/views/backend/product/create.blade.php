@@ -396,6 +396,15 @@
         color: #fff;
     }
 
+    .remove-new-variant-btn {
+        transition: all 0.2s;
+    }
+
+    .remove-new-variant-btn:hover {
+        transform: scale(1.1);
+        box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
+    }
+
     @media (max-width: 768px) {
         #type-selections {
             flex-direction: column;
@@ -524,42 +533,166 @@
                 _token: '{{ csrf_token() }}',
                 selections: selections
             }, function(response) {
+                console.log('✅ Variant preview response:', response);
+
+                if (!response.variants || response.variants.length === 0) {
+                    showNotification('No variants generated. Please check your selections.', 'error');
+                    return;
+                }
+
                 let html = `
                     <table class="table table-bordered table-hover">
                         <thead class="thead-light">
                             <tr>
-                                <th>Variant Name</th>
-                                <th>SKU <span class="text-danger">*</span></th>
-                                <th>Price (NRS) <span class="text-danger">*</span></th>
-                                <th>Discount (%)</th>
-                                <th>Stock <span class="text-danger">*</span></th>
+                                <th style="width: 180px;">Variant Name</th>
+                                <th style="width: 300px;">SKU <span class="text-danger">*</span></th>
+                                <th style="width: 120px;">Price (NRS) <span class="text-danger">*</span></th>
+                                <th style="width: 100px;">Discount (%)</th>
+                                <th style="width: 100px;">Stock <span class="text-danger">*</span></th>
                                 <th>Images <span class="text-danger">*</span></th>
+                                <th style="width: 80px;">Action</th>
                             </tr>
                         </thead>
                         <tbody>`;
+
+                // Add hidden inputs for variant_options to preserve selections
+                if (response.selections) {
+                    Object.keys(response.selections).forEach(typeId => {
+                        const optionIds = response.selections[typeId];
+                        optionIds.forEach(optionId => {
+                            html += `<input type="hidden" name="variant_options[${typeId}][]" value="${optionId}">`;
+                        });
+                    });
+                }
+
                 response.variants.forEach((variant, idx) => {
+                    const displayName = variant.name || 'Unnamed Variant';
+                    const displaySku = variant.sku || '';
+
                     html += `
-                        <tr>
-                            <td>${variant.name}</td>
-                            <td><input type="text" name="variants[${idx}][sku]" value="${variant.sku || ''}" class="form-control" required></td>
-                            <td><input type="number" name="variants[${idx}][price]" step="0.01" min="0" value="${variant.price || ''}" class="form-control" required></td>
-                            <td><input type="number" name="variants[${idx}][discount]" min="0" max="100" value="${variant.discount || ''}" class="form-control"></td>
-                            <td><input type="number" name="variants[${idx}][stock]" min="0" value="${variant.stock || ''}" class="form-control" required></td>
+                        <tr data-variant-index="${idx}" data-new-variant="${displayName}">
+                            <td class="font-weight-bold text-primary">${displayName}</td>
                             <td>
-                                <div class="input-group">
-                                    <input type="text" name="variants[${idx}][images]" id="variant-images-${idx}" class="form-control" readonly required>
+                                <input type="text"
+                                       name="variants[${idx}][sku]"
+                                       value="${displaySku}"
+                                       class="form-control form-control-sm"
+                                       required
+                                       placeholder="SKU">
+                            </td>
+                            <td>
+                                <input type="number"
+                                       name="variants[${idx}][price]"
+                                       step="0.01"
+                                       min="0"
+                                       value="${variant.price || ''}"
+                                       class="form-control form-control-sm"
+                                       required
+                                       placeholder="0.00">
+                            </td>
+                            <td>
+                                <input type="number"
+                                       name="variants[${idx}][discount]"
+                                       min="0"
+                                       max="100"
+                                       value="${variant.discount || ''}"
+                                       class="form-control form-control-sm"
+                                       placeholder="0">
+                            </td>
+                            <td>
+                                <input type="number"
+                                       name="variants[${idx}][stock]"
+                                       min="0"
+                                       value="${variant.stock || 10}"
+                                       class="form-control form-control-sm"
+                                       required
+                                       placeholder="10">
+                            </td>
+                            <td>
+                                <div class="input-group input-group-sm">
+                                    <input type="text"
+                                           name="variants[${idx}][images]"
+                                           id="variant-images-${idx}"
+                                           class="form-control"
+                                           readonly
+                                           required
+                                           placeholder="Choose images">
                                     <div class="input-group-append">
-                                        <a class="btn btn-primary lfm-variant" data-input="variant-images-${idx}" data-preview="variant-holder-${idx}"><i class="fa fa-picture-o"></i> Choose</a>
+                                        <a class="btn btn-primary lfm-variant"
+                                           data-input="variant-images-${idx}"
+                                           data-preview="variant-holder-${idx}">
+                                            <i class="fa fa-picture-o"></i> Choose
+                                        </a>
                                     </div>
                                 </div>
-                                <div id="variant-holder-${idx}" class="mt-2 d-flex flex-wrap gap-2"></div>
+                                <div id="variant-holder-${idx}" class="mt-2 d-flex flex-wrap gap-2" style="gap: 0.5rem;"></div>
+                            </td>
+                            <td class="text-center">
+                                <button type="button" class="btn btn-danger btn-sm remove-new-variant-btn" title="Remove Variant">
+                                    <i class="fa fa-trash"></i>
+                                </button>
                             </td>
                         </tr>`;
                 });
+
                 html += `</tbody></table>`;
+
                 $('#variant-preview').html(html);
                 $('.lfm-variant').filemanager('image');
-            }).fail(() => showNotification('Failed to generate variants.', 'error'));
+
+                const count = response.variants.length;
+                const summary = `✅ Generated ${count} variant${count > 1 ? 's' : ''} successfully!`;
+                showNotification(summary, 'success');
+
+                console.log(`📦 Variants generated: ${count}`);
+                console.log('Sample SKUs:', response.variants.slice(0, 3).map(v => v.sku));
+            }).fail(function(xhr) {
+                console.error('❌ Variant generation failed:', xhr);
+                const errorMsg = xhr.responseJSON?.message || 'Failed to generate variants. Please try again.';
+                showNotification(errorMsg, 'error');
+            });
+        });
+
+        // Remove new variant (preview row)
+        $(document).on('click', '.remove-new-variant-btn', function() {
+            const $row = $(this).closest('tr');
+            const name = $row.find('td:first').text().trim();
+
+            // Direct removal with fade-out animation
+            $row.fadeOut(300, function() {
+                $(this).remove();
+
+                // Reindex remaining variant rows
+                $('#variant-preview tbody tr').each(function(newIndex) {
+                    $(this).attr('data-variant-index', newIndex);
+
+                    // Update input names
+                    $(this).find('input').each(function() {
+                        const currentName = $(this).attr('name');
+                        if (currentName && currentName.includes('variants[')) {
+                            const fieldName = currentName.match(/\[([^\]]+)\]$/)[1];
+                            $(this).attr('name', `variants[${newIndex}][${fieldName}]`);
+                        }
+
+                        // Update IDs for image inputs
+                        const currentId = $(this).attr('id');
+                        if (currentId && currentId.includes('variant-images-')) {
+                            $(this).attr('id', `variant-images-${newIndex}`);
+                        }
+                    });
+
+                    // Update lfm-variant button data attributes
+                    $(this).find('.lfm-variant').each(function() {
+                        $(this).attr('data-input', `variant-images-${newIndex}`);
+                        $(this).attr('data-preview', `variant-holder-${newIndex}`);
+                    });
+
+                    // Update preview holder ID
+                    $(this).find('[id^="variant-holder-"]').attr('id', `variant-holder-${newIndex}`);
+                });
+
+                showNotification(`Variant "${name}" removed.`, 'info');
+            });
         });
 
         // Form validation
