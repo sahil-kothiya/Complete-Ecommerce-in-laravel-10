@@ -19,8 +19,10 @@ class DatabaseSeeder extends Seeder
         $this->call(BannerSeeder::class);
         $this->call(SettingsTableSeeder::class);
         $this->call(CouponSeeder::class);
-        $this->call(OptimizedVariantMasterSeederNew::class);
+        $this->call(CategoryBrandVariantBaseSeeder::class);
+        // $this->call(OptimizedVariantMasterSeederNew::class);
         $this->call(ShippingSeeder::class);
+        $this->call(PostgresMassiveProductSeeder::class);
         // $this->call(MasterSeeder::class);
         // $this->call(ProductSeeder::class);
         // $this->call(BrandsTableSeeder::class);

@@ -8,6 +8,8 @@ use App\Models\Cart;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use App\Models\ProductVariantOption;
+use App\Models\ProductVariantType;
+use App\Models\ProductVariantTypeSelection;
 
 class Product extends Model
 {
@@ -70,6 +72,21 @@ class Product extends Model
     public function primaryImage()
     {
         return $this->hasOne(ProductImage::class)->where('is_primary', true);
+    }
+
+    public function variantTypeSelections()
+    {
+        return $this->hasMany(ProductVariantTypeSelection::class);
+    }
+
+    public function variantTypePivot()
+    {
+        return $this->belongsToMany(
+            ProductVariantType::class,
+            'product_variant_type_selections',
+            'product_id',
+            'product_variant_type_id'
+        )->withTimestamps();
     }
 
     public function cat_info()

@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\View;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
 
 use App\Helpers\RedisHelper;
 
@@ -81,6 +83,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->registerObservers();
+        $this->ensureStorageLink();
 
         // Skip processing for backend routes - early return for performance
         if ($this->shouldSkipRoutes()) {
@@ -93,6 +96,50 @@ class AppServiceProvider extends ServiceProvider
         View::composer('*', function ($view) {
             $view->with('discountService', app(DiscountService::class));
         });
+    }
+
+    /**
+     * Ensure storage link exists - removes and recreates on every command
+     */
+    private function ensureStorageLink(): void
+    {
+        if ($this->app->runningInConsole()) {
+            $publicStorage = public_path('storage');
+            $storageApp = storage_path('app/public');
+
+            try {
+                // Always remove existing link/directory first
+                if (File::exists($publicStorage)) {
+                    if (windows_os()) {
+                        // Windows: use rmdir for junction points, del for symbolic links
+                        if (is_dir($publicStorage)) {
+                            exec("rmdir \"{$publicStorage}\" 2>nul");
+                        } else {
+                            exec("del \"{$publicStorage}\" 2>nul");
+                        }
+                    } else {
+                        // Unix: standard removal
+                        if (is_link($publicStorage)) {
+                            @unlink($publicStorage);
+                        } else {
+                            File::deleteDirectory($publicStorage);
+                        }
+                    }
+                }
+
+                // Create fresh symbolic link (only if removed successfully)
+                if (!File::exists($publicStorage)) {
+                    if (windows_os()) {
+                        $mode = File::isDirectory($storageApp) ? 'J' : 'H';
+                        exec("mklink /{$mode} \"{$publicStorage}\" \"{$storageApp}\" 2>nul");
+                    } else {
+                        File::link($storageApp, $publicStorage);
+                    }
+                }
+            } catch (\Exception $e) {
+                // Silent fail - storage link creation is not critical for all operations
+            }
+        }
     }
 
     /**

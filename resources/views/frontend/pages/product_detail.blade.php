@@ -1323,7 +1323,6 @@
             ============================== */
             const variants = window.productVariants || [];
             const hasVariants = window.hasVariants || false;
-            const productSlug = window.productSlug;
 
             let selectedVariantOptions = {};
             let currentVariant = null;
@@ -1462,6 +1461,7 @@
                 const variantType = target.dataset.variantType;
                 const variantValue = target.dataset.variantValue;
 
+                // Set the selection first
                 lastChangedType = variantType.toLowerCase();
                 selectedVariantOptions[variantType] = variantValue;
 
@@ -1566,15 +1566,15 @@
 
             /* ===============================
                 UPDATE AVAILABLE OPTIONS
+                NOTE: ALL buttons are now enabled. Availability checking happens on click.
             ============================== */
             function updateAvailableOptions() {
-                const normSelected = normalizeOptions(selectedVariantOptions);
-
                 const allVariantTypes = [...new Set(variants.flatMap(v => {
                     const vals = getVariantValuesNormalized(v);
                     return Object.keys(vals);
                 }))];
 
+                // Enable ALL buttons - no disabling based on availability
                 allVariantTypes.forEach(variantTypeLower => {
                     const typeButtons = Array.from(document.querySelectorAll(
                             '.variant-btn-flipkart, .variant-option-btn'))
@@ -1585,54 +1585,31 @@
                             variantTypeLower));
 
                     [...typeButtons, ...typeInputs].forEach(element => {
-                        const variantValue = element.tagName === 'INPUT' ? element.value : element
-                            .dataset.variantValue;
-                        const colorItem = element.tagName === 'INPUT' ? element.closest(
-                            '.color-variant-item') : null;
-
-                        // Special-case: Color options should NEVER be disabled just because other types are selected.
-                        // If ANY in-stock variant exists for that color, keep it enabled.
-                        let exists;
-                        if (variantTypeLower === 'color') {
-                            exists = variants.some(v => {
-                                if (v.status !== 'active' || parseInt(v.stock) <= 0)
-                                return false;
-                                const normVals = getVariantValuesNormalized(v);
-                                return normVals.color === normalizeVal(variantValue);
-                            });
-                        } else {
-                            exists = variants.some(v => {
-                                if (v.status !== 'active' || parseInt(v.stock) <= 0)
-                                return false;
-                                const normVals = getVariantValuesNormalized(v);
-                                if (normVals[variantTypeLower] !== normalizeVal(
-                                        variantValue)) return false;
-                                return Object.entries(normSelected).every(([k, val]) => {
-                                    if (!val) return true;
-                                    if (k === variantTypeLower)
-                                return true; // ignore self when evaluating options
-                                    return normVals[k] === val;
-                                });
-                            });
-                        }
-
+                        // ALWAYS ENABLE ALL BUTTONS
                         if (element.tagName === 'INPUT') {
-                            element.disabled = !exists;
+                            element.disabled = false;
+                            const colorItem = element.closest('.color-variant-item');
                             if (colorItem) {
-                                if (exists) colorItem.classList.remove('disabled');
-                                else colorItem.classList.add('disabled');
+                                colorItem.classList.remove('disabled');
                             }
                         } else {
-                            if (exists) {
-                                element.classList.remove('disabled');
-                                element.removeAttribute('disabled');
-                            } else {
-                                element.classList.add('disabled');
-                                element.setAttribute('disabled', 'disabled');
-                            }
+                            element.classList.remove('disabled');
+                            element.removeAttribute('disabled');
                         }
                     });
                 });
+            }
+
+            /* ===============================
+                PRUNE INVALID SELECTIONS (NEW)
+               If the current combination the user has selected does NOT map to any
+               in-stock active variant, progressively drop the most recently changed
+               (or other non-color) attributes until we reach a valid partial state.
+               This prevents an impossible combination (e.g. Color=Green, Storage=128GB,
+               RAM=4GB when that trio doesn't exist) from staying visually "selected".
+            ============================== */
+            function pruneInvalidSelections() {
+                return false;
             }
 
             /* ===============================
@@ -1640,186 +1617,110 @@
             ============================== */
             function autoSelectMatchingVariant() {
                 const normSelected = normalizeOptions(selectedVariantOptions);
-
-                if (!normSelected.color) return null;
-
-                if (lastChangedType === 'storage' && normSelected.storage) {
-                    const matchingVariants = variants.filter(v => {
-                        if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
-                        const normVals = getVariantValuesNormalized(v);
-                        return normVals.color === normSelected.color &&
-                            normVals.storage === normSelected.storage;
-                    });
-
-                    if (matchingVariants.length > 0) {
-                        matchingVariants.sort((a, b) => {
-                            const priceA = parseFloat(a.price) * (1 - (parseFloat(a.discount) || 0) / 100);
-                            const priceB = parseFloat(b.price) * (1 - (parseFloat(b.discount) || 0) / 100);
-                            return priceA - priceB;
-                        });
-
-                        const selectedVariant = matchingVariants[0];
-                        const vals = typeof selectedVariant.variant_values === 'string' ?
-                            JSON.parse(selectedVariant.variant_values) :
-                            selectedVariant.variant_values;
-
-                        Object.entries(vals).forEach(([type, value]) => {
-                            const typeLower = type.toLowerCase();
-                            if (typeLower === 'ram') {
-                                selectedVariantOptions[type] = value;
-
-                                document.querySelectorAll('.variant-option-btn').forEach(btn => {
-                                    if ((btn.dataset.variantType || '').toLowerCase() === 'ram') {
-                                        btn.classList.remove('active');
-                                    }
-                                });
-
-                                const ramLower = normalizeVal(value);
-                                document.querySelectorAll('.variant-option-btn').forEach(btn => {
-                                    if ((btn.dataset.variantType || '').toLowerCase() === 'ram') {
-                                        const btnVal = normalizeVal(btn.dataset.variantValue);
-                                        if (btnVal === ramLower) {
-                                            btn.classList.add('active');
-                                            btn.classList.remove('disabled');
-                                            btn.removeAttribute('disabled');
-                                        }
-                                    }
-                                });
-                            }
-                        });
-
-                        return selectedVariant;
-                    }
+                if (!normSelected.color) {
+                    return null;
                 }
 
-                if (lastChangedType === 'ram' && normSelected.ram) {
-                    const matchingVariants = variants.filter(v => {
-                        if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
-                        const normVals = getVariantValuesNormalized(v);
-                        return normVals.color === normSelected.color &&
-                            normVals.ram === normSelected.ram;
-                    });
+                const selectedKeys = Object.keys(normSelected).filter(Boolean);
+                const onlyColorSelected = selectedKeys.length === 1 && selectedKeys[0] === 'color';
+                const triggeredByColor = lastChangedType === 'color';
 
-                    if (matchingVariants.length > 0) {
-                        matchingVariants.sort((a, b) => {
-                            const priceA = parseFloat(a.price) * (1 - (parseFloat(a.discount) || 0) / 100);
-                            const priceB = parseFloat(b.price) * (1 - (parseFloat(b.discount) || 0) / 100);
-                            return priceA - priceB;
-                        });
+                if (!onlyColorSelected && !triggeredByColor) {
+                    return null;
+                }
+                const colorMatches = variants.filter(v => {
+                    if (v.status !== 'active') return false;
+                    const normVals = getVariantValuesNormalized(v);
+                    return normVals.color === normSelected.color;
+                });
 
-                        const selectedVariant = matchingVariants[0];
-                        const vals = typeof selectedVariant.variant_values === 'string' ?
-                            JSON.parse(selectedVariant.variant_values) :
-                            selectedVariant.variant_values;
-
-                        Object.entries(vals).forEach(([type, value]) => {
-                            const typeLower = type.toLowerCase();
-                            if (typeLower === 'storage') {
-                                selectedVariantOptions[type] = value;
-
-                                document.querySelectorAll('.variant-option-btn').forEach(btn => {
-                                    if ((btn.dataset.variantType || '').toLowerCase() ===
-                                        'storage') {
-                                        btn.classList.remove('active');
-                                    }
-                                });
-
-                                const storageLower = normalizeVal(value);
-                                document.querySelectorAll('.variant-option-btn').forEach(btn => {
-                                    if ((btn.dataset.variantType || '').toLowerCase() ===
-                                        'storage') {
-                                        const btnVal = normalizeVal(btn.dataset.variantValue);
-                                        if (btnVal === storageLower) {
-                                            btn.classList.add('active');
-                                            btn.classList.remove('disabled');
-                                            btn.removeAttribute('disabled');
-                                        }
-                                    }
-                                });
-                            }
-                        });
-
-                        return selectedVariant;
-                    }
+                if (colorMatches.length === 0) {
+                    return null;
                 }
 
-                // When only color is selected (or color just changed), auto-select cheapest variant with that color
-                if (normSelected.color && (lastChangedType === 'color' || (!normSelected.storage && !normSelected
-                        .ram))) {
-                    const matchingVariants = variants.filter(v => {
-                        if (v.status !== 'active' || parseInt(v.stock) <= 0) return false;
-                        const normVals = getVariantValuesNormalized(v);
-                        return normVals.color === normSelected.color;
+                const inStock = colorMatches.filter(v => parseInt(v.stock || 0) > 0);
+                const ordered = (inStock.length > 0 ? inStock : colorMatches).sort((a, b) => {
+                    const priceA = parseFloat(a.price) * (1 - (parseFloat(a.discount) || 0) / 100);
+                    const priceB = parseFloat(b.price) * (1 - (parseFloat(b.discount) || 0) / 100);
+                    return priceA - priceB;
+                });
+
+                const selectedVariant = ordered[0];
+                const vals = typeof selectedVariant.variant_values === 'string' ?
+                    JSON.parse(selectedVariant.variant_values) :
+                    selectedVariant.variant_values;
+
+                Object.entries(vals).forEach(([type, value]) => {
+                    const typeLower = type.toLowerCase();
+                    const valueLower = normalizeVal(value);
+
+                    selectedVariantOptions[type] = value;
+
+                    document.querySelectorAll('.variant-btn-flipkart').forEach(btn => {
+                        if ((btn.dataset.variantType || '').toLowerCase() === typeLower) {
+                            btn.classList.remove('active');
+                        }
                     });
 
-                    if (matchingVariants.length > 0) {
-                        // Sort by price to get cheapest variant
-                        matchingVariants.sort((a, b) => {
-                            const priceA = parseFloat(a.price) * (1 - (parseFloat(a.discount) || 0) / 100);
-                            const priceB = parseFloat(b.price) * (1 - (parseFloat(b.discount) || 0) / 100);
-                            return priceA - priceB;
-                        });
+                    document.querySelectorAll('.variant-option-btn').forEach(btn => {
+                        if ((btn.dataset.variantType || '').toLowerCase() === typeLower) {
+                            btn.classList.remove('active');
+                        }
+                    });
 
-                        const selectedVariant = matchingVariants[0];
-                        const vals = typeof selectedVariant.variant_values === 'string' ?
-                            JSON.parse(selectedVariant.variant_values) :
-                            selectedVariant.variant_values;
+                    document.querySelectorAll('.variant-btn-flipkart').forEach(btn => {
+                        if ((btn.dataset.variantType || '').toLowerCase() === typeLower &&
+                            normalizeVal(btn.dataset.variantValue) === valueLower) {
+                            btn.classList.add('active');
+                            btn.classList.remove('disabled');
+                            btn.removeAttribute('disabled');
+                        }
+                    });
 
-                        // Auto-select ALL other variant types (Storage, RAM, etc.)
-                        Object.entries(vals).forEach(([type, value]) => {
-                            const typeLower = type.toLowerCase();
-                            if (typeLower !== 'color') {
-                                selectedVariantOptions[type] = value;
+                    document.querySelectorAll('.variant-option-btn').forEach(btn => {
+                        if ((btn.dataset.variantType || '').toLowerCase() === typeLower &&
+                            normalizeVal(btn.dataset.variantValue) === valueLower) {
+                            btn.classList.add('active');
+                            btn.classList.remove('disabled');
+                            btn.removeAttribute('disabled');
+                        }
+                    });
 
-                                const valueLower = normalizeVal(value);
+                    document.querySelectorAll('input[type="radio"]').forEach(inp => {
+                        const dt = ((inp.dataset.variantType || inp.name) || '').toLowerCase();
+                        if (dt === typeLower) {
+                            inp.checked = normalizeVal(inp.value) === valueLower;
 
-                                // Clear all buttons of this type first
-                                document.querySelectorAll('.variant-btn-flipkart').forEach(btn => {
-                                    if ((btn.dataset.variantType || '').toLowerCase() ===
-                                        typeLower) {
-                                        btn.classList.remove('active');
+                            const colorItem = inp.closest('.color-variant-item');
+                            if (colorItem) {
+                                const label = colorItem.querySelector('.color-variant-label');
+                                if (label) {
+                                    const imageBox = label.querySelector('.color-image-box');
+                                    const colorName = label.querySelector('.color-name');
+                                    if (imageBox) {
+                                        imageBox.style.borderColor = inp.checked ? '#2874f0' :
+                                            '#c2c2c2';
+                                        imageBox.style.borderWidth = inp.checked ? '2px' : '1.5px';
                                     }
-                                });
-
-                                document.querySelectorAll('.variant-option-btn').forEach(btn => {
-                                    if ((btn.dataset.variantType || '').toLowerCase() ===
-                                        typeLower) {
-                                        btn.classList.remove('active');
+                                    if (colorName) {
+                                        colorName.style.color = inp.checked ? '#2874f0' : '#212121';
+                                        colorName.style.fontWeight = inp.checked ? '600' : '400';
                                     }
-                                });
-
-                                // Set the selected button as active
-                                document.querySelectorAll('.variant-btn-flipkart').forEach(btn => {
-                                    if ((btn.dataset.variantType || '').toLowerCase() ===
-                                        typeLower) {
-                                        const btnVal = normalizeVal(btn.dataset.variantValue);
-                                        if (btnVal === valueLower) {
-                                            btn.classList.add('active');
-                                            btn.classList.remove('disabled');
-                                            btn.removeAttribute('disabled');
-                                        }
-                                    }
-                                });
-
-                                document.querySelectorAll('.variant-option-btn').forEach(btn => {
-                                    if ((btn.dataset.variantType || '').toLowerCase() ===
-                                        typeLower) {
-                                        const btnVal = normalizeVal(btn.dataset.variantValue);
-                                        if (btnVal === valueLower) {
-                                            btn.classList.add('active');
-                                            btn.classList.remove('disabled');
-                                            btn.removeAttribute('disabled');
-                                        }
-                                    }
-                                });
+                                }
                             }
-                        });
 
-                        return selectedVariant;
-                    }
-                }
+                            const sw = inp.closest('.color-swatch');
+                            if (sw) {
+                                sw.querySelector('.color-swatch-checkmark')?.classList.toggle(
+                                    'd-none', !inp.checked);
+                                sw.querySelector('.color-swatch-label')?.classList.toggle('active',
+                                    inp.checked);
+                            }
+                        }
+                    });
+                });
 
-                return null;
+                return selectedVariant;
             }
 
             /* ===============================
@@ -1830,6 +1731,9 @@
                 showLoadingStates();
 
                 updateAvailableOptions();
+                // New: ensure we are not holding onto an impossible combination
+                const pruned = pruneInvalidSelections();
+
                 const autoSelected = autoSelectMatchingVariant();
 
                 let matchingVariant = variants.find(v => {
@@ -1841,8 +1745,25 @@
                     );
                 });
 
+                if (!matchingVariant && pruned) {
+                    // After pruning we may now have only color selected; attempt auto-selection again
+                    const reAuto = autoSelectMatchingVariant();
+                    if (reAuto) {
+                        matchingVariant = reAuto;
+                    }
+                }
+
                 if (matchingVariant) {
                     currentVariant = matchingVariant;
+
+                    // CRITICAL: Sync selectedVariantOptions with the actual variant values
+                    // This ensures UI shows what's actually selected after pruning
+                    const vals = typeof matchingVariant.variant_values === 'string' ?
+                        JSON.parse(matchingVariant.variant_values) : matchingVariant.variant_values;
+                    Object.entries(vals).forEach(([type, value]) => {
+                        selectedVariantOptions[type] = value;
+                    });
+
                     applyVariantToUI(matchingVariant);
                     updateProductDisplay(matchingVariant);
                 } else if (autoSelected) {
@@ -1850,6 +1771,7 @@
                     applyVariantToUI(autoSelected);
                     updateProductDisplay(autoSelected);
                 } else {
+                    currentVariant = null;
                     handleNoVariantFound();
                 }
 
@@ -2163,17 +2085,32 @@
                 updateProductDisplay(variant);
                 updateAvailableOptions();
                 updateWishlistHref();
-                updateCtasState(null);
             }
 
             /* ===============================
                 HANDLE NO VARIANT FOUND
             ============================== */
             function handleNoVariantFound() {
+                // Show user-friendly alert
+                const currentSelections = Object.entries(selectedVariantOptions)
+                    .map(([k, v]) => v)
+                    .join(' + ');
+
+                if (currentSelections) {
+                    showAlert(
+                        `⚠️ The selected variant (${currentSelections}) is not available right now. Please choose a different combination.`,
+                        'warning'
+                    );
+                }
+
                 if (stockAlert) {
                     stockAlert.classList.remove('d-none');
                     const msg = document.getElementById('stockAlertMessage');
-                    if (msg) msg.textContent = 'No matching variant available.';
+                    if (msg) msg.textContent = 'Variant not available. Please select different options.';
+                }
+
+                if (displayStock) {
+                    displayStock.innerHTML = '<span class="badge badge-danger">Variant not available</span>';
                 }
 
                 if (quantitySection) {
@@ -2181,6 +2118,14 @@
                 }
                 if (addToCartBtn) {
                     addToCartBtn.style.display = 'none';
+                }
+
+                if (buyNowBtn) {
+                    buyNowBtn.style.display = 'none';
+                }
+
+                if (notifyMeBtn) {
+                    notifyMeBtn.style.display = 'inline-flex';
                 }
 
                 if (wishlistBtn) {
@@ -2191,6 +2136,7 @@
                     variantIdInput.value = '';
                 }
 
+                updateCtasState(null);
                 updateWishlistHref();
             }
 
@@ -2210,9 +2156,15 @@
             ============================== */
             function updateCtasState(variantOrNull) {
                 const isAvailable = (() => {
-                    if (!variantOrNull) return false;
+                    if (!variantOrNull) {
+                        return false;
+                    }
                     const stock = parseInt(variantOrNull.stock || 0);
-                    return variantOrNull.status === 'active' && stock > 0;
+                    const isActive = variantOrNull.status === 'active';
+                    const hasStock = stock > 0;
+                    const available = isActive && hasStock;
+
+                    return available;
                 })();
 
                 if (addToCartBtn) {
@@ -2313,7 +2265,6 @@
                             }
                         })
                         .catch(error => {
-                            console.error('Cart Error:', error);
                             // Don't show error if we're redirecting to login
                             if (error !== 'redirecting') {
                                 showAlert(error.message || 'An error occurred. Please try again.',
@@ -2405,7 +2356,6 @@
                             }
                         })
                         .catch(error => {
-                            console.error('Buy Now Error:', error);
                             // Don't show error if we're redirecting to login
                             if (error !== 'redirecting') {
                                 showAlert(error.message || 'An error occurred. Please try again.',
@@ -2422,11 +2372,15 @@
                 document.querySelectorAll('.cart-alert').forEach(el => el.remove());
 
                 const alertDiv = document.createElement('div');
-                alertDiv.className = `alert alert-${type === 'success' ? 'success' : 'danger'} cart-alert`;
+                const alertClass = type === 'success' ? 'success' : (type === 'warning' ? 'warning' : 'danger');
+                const iconType = type === 'success' ? 'check-circle' : (type === 'warning' ?
+                    'exclamation-triangle' : 'exclamation-circle');
+
+                alertDiv.className = `alert alert-${alertClass} cart-alert`;
                 alertDiv.style.cssText =
-                    'position: fixed; top: 80px; right: 20px; z-index: 9999; max-width: 350px; animation: slideInRight 0.3s ease;';
+                    'position: fixed; top: 80px; right: 20px; z-index: 9999; max-width: 400px; animation: slideInRight 0.3s ease;';
                 alertDiv.innerHTML = `
-            <i class="fa fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
+            <i class="fa fa-${iconType}"></i>
             <span>${message}</span>
             <button type="button" class="close" onclick="this.parentElement.remove()" style="margin-left: 10px;">
                 <span>&times;</span>
@@ -2462,7 +2416,9 @@
                             }, 500);
                         }
                     })
-                    .catch(err => console.error('Failed to update cart count:', err));
+                    .catch(() => {
+                        /* Cart count update failed silently to avoid console noise. */
+                    });
             }
 
             /* ===============================

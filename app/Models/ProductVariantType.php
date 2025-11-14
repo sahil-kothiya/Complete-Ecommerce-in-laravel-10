@@ -16,6 +16,16 @@ class ProductVariantType extends Model
         return $this->hasMany(ProductVariantOption::class, 'variant_type_id');
     }
 
+    public function products()
+    {
+        return $this->belongsToMany(
+            Product::class,
+            'product_variant_type_selections',
+            'product_variant_type_id',
+            'product_id'
+        );
+    }
+
     public function scopeActive($query)
     {
         return $query->where('status', 'active');
