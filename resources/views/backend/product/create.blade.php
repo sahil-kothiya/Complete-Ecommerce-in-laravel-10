@@ -1691,9 +1691,27 @@
                 $altToggle.show();
 
                 images.forEach((url, index) => {
+                    // Process URL to ensure it's properly formatted for display
+                    let imageUrl = url;
+
+                    // If URL is already a full URL (starts with http:// or https://), use it as is
+                    if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
+                        // Remove any leading slashes and 'storage/' prefix if present
+                        imageUrl = imageUrl.replace(/^\/+/, '').replace(/^storage\//, '');
+
+                        // Construct the full storage URL
+                        imageUrl = '{{ asset('storage') }}/' + imageUrl;
+                    }
+
+                    console.log('🖼️ Image URL processing:', {
+                        original: url,
+                        processed: imageUrl,
+                        index: index
+                    });
+
                     const container = $('<div class="image-container"></div>');
                     const img = $('<img />', {
-                        src: url,
+                        src: imageUrl,
                         class: 'image-preview',
                         alt: `Product Image ${index + 1}`,
                         'data-index': index,
@@ -1734,10 +1752,17 @@
                 const isPrimary = index === 0;
                 const tabIndex = 21 + index;
 
+                // Process URL for alt text preview as well
+                let processedImageUrl = imageUrl;
+                if (!processedImageUrl.startsWith('http://') && !processedImageUrl.startsWith('https://')) {
+                    processedImageUrl = processedImageUrl.replace(/^\/+/, '').replace(/^storage\//, '');
+                    processedImageUrl = '{{ asset('storage') }}/' + processedImageUrl;
+                }
+
                 const html = `
                 <div class="col-md-6 alt-text-item" data-index="${index}">
                     <div class="d-flex align-items-start">
-                        <img src="${imageUrl}" class="alt-text-preview mr-3" alt="Preview" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                        <img src="${processedImageUrl}" class="alt-text-preview mr-3" alt="Preview" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
                         <div class="alt-text-fallback d-none"><i class="fa fa-image"></i><span>Image not available</span></div>
                         <div class="flex-fill">
                             <label class="font-weight-bold">Alt Text for Image ${index + 1} ${isPrimary ? '<span class="badge badge-success badge-sm ml-1">Primary</span>' : ''}</label>
