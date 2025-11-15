@@ -94,21 +94,13 @@
                                         @else
                                             @foreach ($allImages as $index => $image)
                                                 @php
-                                                    $thumbPath = $image->thumbnail_path ?? $image->image_path;
-                                                    if ($thumbPath) {
-                                                        $thumbPath = ltrim($thumbPath, '/');
-                                                        if (strpos($thumbPath, 'storage/') !== 0) {
-                                                            $thumbPath = 'storage/' . $thumbPath;
-                                                        }
-                                                    }
+                                                    $thumbUrl = $image->thumbnail_url ?? $image->url;
                                                 @endphp
                                                 <div class="thumbnail-item mx-1" style="flex:0 0 auto;">
-                                                    <img src="{{ $thumbPath ? asset($thumbPath) : asset('images/no-image.png') }}"
-                                                        alt="Thumbnail {{ $index + 1 }}"
+                                                    <img src="{{ $thumbUrl }}" alt="Thumbnail {{ $index + 1 }}"
                                                         class="img-fluid thumbnail-image {{ $index == 0 ? 'active' : '' }}"
                                                         style="width:80px;height:80px;object-fit:cover;border-radius:5px;cursor:pointer;border:2px solid {{ $index == 0 ? '#2874f0' : '#eee' }};"
-                                                        data-index="{{ $index }}"
-                                                        data-full="{{ $image->image_path ? asset($image->image_path) : asset('images/no-image.png') }}">
+                                                        data-index="{{ $index }}" data-full="{{ $image->url }}">
                                                 </div>
                                             @endforeach
                                         @endif

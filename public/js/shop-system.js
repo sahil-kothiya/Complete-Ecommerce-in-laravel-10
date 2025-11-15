@@ -6,30 +6,30 @@
     }
     const appUrl = window.location.origin;
     let e = {
-            maxPrice: window.maxPrice || 100,
-            filterDebounceTime: 300,
-            sliderAnimationSpeed: 800,
-            cartAnimationDelay: 800,
-            cartSuccessDelay: 1500,
-            paginationDelay: 50,
-            animationSpeed: 300,
-            currency: "$",
-            endpoints: { filterData: "/api/filters" },
-            sortOptions: [
-                { value: "latest", text: "Latest" },
-                { value: "price_low_high", text: "Price: Low to High" },
-                { value: "price_high_low", text: "Price: High to Low" },
-                { value: "rating_high_low", text: "Rating: High to Low" },
-                { value: "name_a_z", text: "Name: A to Z" },
-                { value: "name_z_a", text: "Name: Z to A" },
-            ],
-            showOptions: [
-                { value: "12", text: "12" },
-                { value: "24", text: "24" },
-                { value: "36", text: "36" },
-                { value: "48", text: "48" },
-            ],
-        },
+        maxPrice: window.maxPrice || 100,
+        filterDebounceTime: 300,
+        sliderAnimationSpeed: 800,
+        cartAnimationDelay: 800,
+        cartSuccessDelay: 1500,
+        paginationDelay: 50,
+        animationSpeed: 300,
+        currency: "$",
+        endpoints: { filterData: "/api/filters" },
+        sortOptions: [
+            { value: "latest", text: "Latest" },
+            { value: "price_low_high", text: "Price: Low to High" },
+            { value: "price_high_low", text: "Price: High to Low" },
+            { value: "rating_high_low", text: "Rating: High to Low" },
+            { value: "name_a_z", text: "Name: A to Z" },
+            { value: "name_z_a", text: "Name: Z to A" },
+        ],
+        showOptions: [
+            { value: "12", text: "12" },
+            { value: "24", text: "24" },
+            { value: "36", text: "36" },
+            { value: "48", text: "48" },
+        ],
+    },
         t = {
             debounce(e, t) {
                 let i;
@@ -102,14 +102,14 @@
                     (Array.from(t.options)
                         .slice(1)
                         .forEach((e) => e.remove()),
-                    e.sortOptions.forEach((e) => {
-                        let i = document.createElement("option");
-                        (i.value = e.value), (i.textContent = e.text), t.value === e.value && (i.selected = !0), t.appendChild(i);
-                    })),
+                        e.sortOptions.forEach((e) => {
+                            let i = document.createElement("option");
+                            (i.value = e.value), (i.textContent = e.text), t.value === e.value && (i.selected = !0), t.appendChild(i);
+                        })),
                     i &&
-                        (Array.from(i.options)
-                            .slice(1)
-                            .forEach((e) => e.remove()),
+                    (Array.from(i.options)
+                        .slice(1)
+                        .forEach((e) => e.remove()),
                         e.showOptions.forEach((e) => {
                             let t = document.createElement("option");
                             (t.value = e.value), (t.textContent = e.text), i.value === e.value && (t.selected = !0), i.appendChild(t);
@@ -132,21 +132,21 @@
             d && ([r, n] = d.split("-").map(parseFloat)),
                 void 0 !== $.ui && $.ui.slider
                     ? ($(i).slider({
-                          range: !0,
-                          min: s,
-                          max: l,
-                          values: [r, n],
-                          slide(e, i) {
-                              (a.value = `${t.formatPrice(i.values[0])} - ${t.formatPrice(i.values[1])}`), (document.getElementById("price_range").value = `${i.values[0]}-${i.values[1]}`);
-                          },
-                          change: (e, t) => {
-                              this.applyFilters();
-                          },
-                      }),
-                      (a.value = `${t.formatPrice(r)} - ${t.formatPrice(n)}`))
+                        range: !0,
+                        min: s,
+                        max: l,
+                        values: [r, n],
+                        slide(e, i) {
+                            (a.value = `${t.formatPrice(i.values[0])} - ${t.formatPrice(i.values[1])}`), (document.getElementById("price_range").value = `${i.values[0]}-${i.values[1]}`);
+                        },
+                        change: (e, t) => {
+                            this.applyFilters();
+                        },
+                    }),
+                        (a.value = `${t.formatPrice(r)} - ${t.formatPrice(n)}`))
                     : console.warn(
-                          'jQuery UI Slider not loaded. Add <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/ui-lightness/jquery-ui.css"> and <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script> to layout.'
-                      );
+                        'jQuery UI Slider not loaded. Add <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/ui-lightness/jquery-ui.css"> and <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script> to layout.'
+                    );
         }
         applyFilters() {
             window.unifiedShopSystem?.applyFilters();
@@ -173,23 +173,22 @@
             (i.style.width = "100%"),
                 (i.style.transform = "translateX(0)"),
                 a.forEach((e) => {
-                    (e.style.flex = "0 0 100%"),
-                        (e.style.width = "100%"),
+                    (e.style.width = "100%"),
                         e.complete
                             ? e.setAttribute("loaded", "")
                             : (e.addEventListener("load", () => e.setAttribute("loaded", "")),
-                              e.addEventListener("error", () => {
-                                  (e.src = `${appUrl}/images/no-image.png`), e.setAttribute("loaded", "");
-                              }));
+                                e.addEventListener("error", () => {
+                                    (e.src = `${appUrl}/images/no-image.png`), e.setAttribute("loaded", "");
+                                }));
                 }),
                 (i.style.width = "100%"),
                 1 !== a.length &&
-                    (t.addEventListener("mouseenter", () => {
-                        l && clearInterval(l),
-                            (l = setInterval(() => {
-                                (s = (s + 1) % a.length), (i.style.transform = `translateX(-${100 * s}%)`);
-                            }, e.sliderAnimationSpeed));
-                    }),
+                (t.addEventListener("mouseenter", () => {
+                    l && clearInterval(l),
+                        (l = setInterval(() => {
+                            (s = (s + 1) % a.length), (i.style.transform = `translateX(-${100 * s}%)`);
+                        }, e.sliderAnimationSpeed));
+                }),
                     t.addEventListener("mouseleave", () => {
                         l && clearInterval(l);
                     }));
@@ -256,20 +255,20 @@
         initializeFiltersFromURL() {
             let t = new URLSearchParams(window.location.search),
                 i = !1;
-            
+
             // Clear all active filters first
             this.activeFilters = {};
-            
+
             // Clear all checkboxes first
             document.querySelectorAll('#productFilterForm input[type="checkbox"]').forEach((e) => (e.checked = !1));
-            
+
             // Map URL parameter names to input field names
             const filterMapping = {
                 'brands': { inputName: 'brand', filterType: 'brand' },
                 'ratings': { inputName: 'min_rating', filterType: 'rating' },
                 'discounts': { inputName: 'min_discount', filterType: 'discount' }
             };
-            
+
             // Process brands, ratings, and discounts
             Object.entries(filterMapping).forEach(([urlParam, config]) => {
                 let urlValue = t.get(urlParam);
@@ -284,7 +283,7 @@
                     });
                 }
             });
-            
+
             // Process availability
             let a = t.get("availability");
             if (a) {
@@ -297,7 +296,7 @@
                     }
                 });
             }
-            
+
             // Process price range
             let s = t.get("price_range");
             if (s && s !== `0-${e.maxPrice}`) {
@@ -309,7 +308,7 @@
                     i = true;
                 }
             }
-            
+
             // Process sortBy
             let sortByValue = t.get("sortBy");
             let sortBySelect = document.getElementById("sortBy");
@@ -323,7 +322,7 @@
                     }
                 }
             }
-            
+
             // Process show (items per page)
             let showValue = t.get("show");
             let showSelect = document.getElementById("show");
@@ -334,7 +333,7 @@
                     i = true;
                 }
             }
-            
+
             return i;
         }
         initializePriceRange() {
@@ -374,18 +373,18 @@
                 'min_discount': 'discount',
                 'availability': 'availability'
             };
-            
+
             let inputName = e.name.replace("[]", "");
             let filterType = inputNameToFilterType[inputName] || inputName;
             let filterValue = e.value;
             let filterLabel = e.dataset.filterLabel || filterValue;
-            
+
             if (e.checked) {
                 this.addToActiveFilters(filterType, filterValue, filterLabel);
             } else {
                 this.removeFromActiveFilters(filterType, filterValue);
             }
-            
+
             this.updateActiveFiltersDisplay();
             this.debouncedApply(1);
         }
@@ -393,46 +392,46 @@
             let value = selectElement.value;
             let selectedOption = selectElement.querySelector(`option[value="${value}"]`);
             let label = selectedOption ? selectedOption.textContent : value;
-            
+
             // Remove previous sortBy filter if exists
             this.removeFromActiveFilters("sortBy");
-            
+
             // Only add to active filters if not default
             if (value && value !== "latest") {
                 this.addToActiveFilters("sortBy", value, `Sort: ${label}`);
             }
-            
+
             this.updateActiveFiltersDisplay();
             this.debouncedApply(1);
         }
         handleShowChange(selectElement) {
             let value = selectElement.value;
-            
+
             // Remove previous show filter if exists
             this.removeFromActiveFilters("show");
-            
+
             // Only add to active filters if not default
             if (value && value !== "12") {
                 this.addToActiveFilters("show", value, `Show: ${value} items`);
             }
-            
+
             this.updateActiveFiltersDisplay();
             this.debouncedApply(1);
         }
         handlePriceRangeChange(minPrice, maxPrice, currency) {
             // Remove previous price filter if exists
             this.removeFromActiveFilters("price");
-            
+
             // Only add to active filters if not default range
             let defaultMin = 0;
             let defaultMax = e.maxPrice;
-            
+
             if (minPrice !== defaultMin || maxPrice !== defaultMax) {
                 let priceValue = `${minPrice}-${maxPrice}`;
                 let priceLabel = `Price: ${currency}${minPrice} - ${currency}${maxPrice}`;
                 this.addToActiveFilters("price", priceValue, priceLabel);
             }
-            
+
             this.updateActiveFiltersDisplay();
         }
         addToActiveFilters(e, t, i) {
@@ -454,20 +453,20 @@
                     'availability': 'availability',
                     'price': 'price_range'
                 };
-                
+
                 let inputName = filterNameMap[t] || t;
-                
+
                 // Uncheck the corresponding checkbox
                 let checkbox = document.querySelector(`input[name="${inputName}[]"][value="${i}"]`);
                 if (checkbox) {
                     checkbox.checked = false;
                 }
-                
+
                 // Handle price range separately
                 if ("price" === t) {
                     this.resetPriceRange();
                 }
-                
+
                 // Handle sortBy - reset to default
                 if ("sortBy" === t) {
                     let sortBySelect = document.getElementById("sortBy");
@@ -475,7 +474,7 @@
                         sortBySelect.value = "latest";
                     }
                 }
-                
+
                 // Handle show - reset to default
                 if ("show" === t) {
                     let showSelect = document.getElementById("show");
@@ -483,7 +482,7 @@
                         showSelect.value = "12";
                     }
                 }
-                
+
                 // Remove from active filters
                 this.removeFromActiveFilters(t, i);
                 this.updateActiveFiltersDisplay();
@@ -495,35 +494,35 @@
             e.forEach((e, t) => {
                 setTimeout(() => e.classList.add("removing"), 50 * t);
             });
-            
+
             setTimeout(() => {
                 // Uncheck all filter checkboxes (brands, ratings, discounts, availability)
                 document.querySelectorAll('#productFilterForm input[type="checkbox"][name^="brand"], #productFilterForm input[type="checkbox"][name^="min_rating"], #productFilterForm input[type="checkbox"][name^="min_discount"], #productFilterForm input[type="checkbox"][name^="availability"]').forEach((e) => (e.checked = !1));
-                
+
                 // Reset price range
                 this.resetPriceRange();
-                
+
                 // Reset sortBy to default
                 let sortBySelect = document.getElementById("sortBy");
                 if (sortBySelect) {
                     sortBySelect.value = "latest";
                 }
-                
+
                 // Reset show to default
                 let showSelect = document.getElementById("show");
                 if (showSelect) {
                     showSelect.value = "12";
                 }
-                
+
                 // Clear active filters
                 this.activeFilters = {};
                 this.updateActiveFiltersDisplay();
-                
+
                 // Update URL
                 let e = new URL(window.location);
                 e.search = "";
                 history.replaceState({}, "", e);
-                
+
                 this.debouncedApply(1);
             }, 500);
         }
@@ -536,7 +535,7 @@
                 jQuery(t).slider("values", [0, s]);
                 i && (i.value = `0-${s}`);
                 a && (a.value = `${e.currency}0 - ${e.currency}${s}`);
-                
+
                 // Remove price filter from active filters
                 this.removeFromActiveFilters("price");
             }
@@ -636,7 +635,7 @@
                                 Loaded ${o.m.tot} products in ${o.m.ms}ms
                                 ${o.m.ch ? "(Cache Hit)" : "(Cache Miss)"}
                             `),
-                            (v.style.display = "block"));
+                                (v.style.display = "block"));
                     }
                 } else t.showError(s, o.message || "Failed to apply filters.");
             } catch (y) {
@@ -650,13 +649,13 @@
             i =
                 e.i && e.i.length > 0
                     ? e.i
-                          .map((t) => {
-                              let imageSrc = `${appUrl}/storage/${t}`;
-                              return `<img src="${imageSrc}" class="slider-image lazy" alt="${e.t}"
+                        .map((t) => {
+                            let imageSrc = `${appUrl}/storage/${t}`;
+                            return `<img src="${imageSrc}" class="slider-image lazy" alt="${e.t}"
                             loading="lazy" width="235" height="235" decoding="async"
                             onerror="this.src='${appUrl}/images/no-image.png'; this.onerror=null;">`;
-                          })
-                          .join("")
+                        })
+                        .join("")
                     : `<img src="${appUrl}/images/no-image.png" class="slider-image lazy" alt="${e.t}"
                          loading="lazy" width="235" height="235" decoding="async">`;
             let a = e.b || { t: "", s: "" },
@@ -669,8 +668,8 @@
             r > 0
                 ? (c += `<span class="badge badge-primary badge-status badge-cg">${r}% Off</span>`)
                 : "new" === e.c
-                ? (c += '<span class="badge badge-cg badge-success badge-status">New</span>')
-                : d || (c += '<span class="badge badge-danger badge-status">Sold Out</span>');
+                    ? (c += '<span class="badge badge-cg badge-success badge-status">New</span>')
+                    : d || (c += '<span class="badge badge-danger badge-status">Sold Out</span>');
             let o = "";
             n.a > 0 &&
                 (o = `
@@ -708,8 +707,8 @@
 
                             <div class="mb-2 price-container">
                                 ${(u =
-                                    r > 0
-                                        ? `
+                    r > 0
+                        ? `
                     <span class="text-primary font-weight-bold current-price">
                         ${t.formatPrice(s)}
                     </span>
@@ -717,7 +716,7 @@
                         <del>${t.formatPrice(l)}</del>
                     </small>
                 `
-                                        : `
+                        : `
                     <span class="font-weight-bold text-primary current-price">
                         ${t.formatPrice(s)}
                     </span>

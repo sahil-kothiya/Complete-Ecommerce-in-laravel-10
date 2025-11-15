@@ -28,7 +28,8 @@ class Product extends Model
         'base_stock',
         'is_featured',
         'condition',
-        'has_variants'
+        'has_variants',
+        'size'
     ];
 
     protected $casts = [

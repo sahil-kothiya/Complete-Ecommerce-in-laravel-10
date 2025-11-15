@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
+use App\Helpers\ImageHelper;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Storage;
 
 class VariantImage extends Model
 {
@@ -36,16 +36,19 @@ class VariantImage extends Model
     }
 
     /**
-     * Attributes
+     * Get full URL for the image (filename-only storage optimization)
      */
     public function getUrlAttribute()
     {
-        return Storage::url($this->image_path);
+        return ImageHelper::variantImageUrl($this->image_path);
     }
 
+    /**
+     * Get full URL for the thumbnail (filename-only storage optimization)
+     */
     public function getThumbnailUrlAttribute()
     {
-        return $this->thumbnail_path ? Storage::url($this->thumbnail_path) : null;
+        return $this->thumbnail_path ? ImageHelper::variantImageUrl($this->thumbnail_path, true) : null;
     }
 
     /**

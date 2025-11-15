@@ -1140,7 +1140,7 @@
                 }
             });
 
-            // Photo validation
+            // Photo validation (exactly 3 images)
             $('#photo').on('change blur', function() {
                 if (!$('#has_variants').is(':checked')) {
                     validateField($(this), {

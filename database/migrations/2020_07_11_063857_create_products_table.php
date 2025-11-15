@@ -23,16 +23,18 @@ class CreateProductsTable extends Migration
             $table->enum('condition', ['default', 'new', 'hot'])->default('default');
             $table->enum('status', ['active', 'inactive'])->default('inactive');
             $table->boolean('is_featured')->default(false);
-            
+
             // NEW: Add variant mode flag
             $table->boolean('has_variants')->default(false);
-            
+
             // Base pricing (used when has_variants = false)
             $table->decimal('base_price', 10, 2)->nullable();
             $table->decimal('base_discount', 10, 2)->nullable();
             $table->integer('base_stock')->nullable();
             $table->string('base_sku')->nullable()->unique();
-            
+            // Optional size list for non-variant fashion products (JSON string of sizes)
+            $table->text('size')->nullable();
+
             $table->foreignId('cat_id')->nullable()->constrained('categories')->onDelete('set null');
             $table->foreignId('child_cat_id')->nullable()->constrained('categories')->onDelete('set null');
             $table->foreignId('brand_id')->nullable()->constrained('brands')->onDelete('set null');
@@ -56,7 +58,7 @@ class CreateProductsTable extends Migration
         DB::statement("CREATE INDEX idx_featured_active ON products (created_at DESC) WHERE status = 'active' AND is_featured = true;");
         DB::statement("CREATE INDEX idx_category_active ON products (cat_id, created_at DESC) WHERE status = 'active';");
         DB::statement("CREATE INDEX idx_brand_active ON products (brand_id, created_at DESC) WHERE status = 'active';");
-        
+
         // NEW: Partial indexes for variant/non-variant products
         DB::statement("CREATE INDEX idx_products_no_variants ON products (id, base_price) WHERE has_variants = false AND status = 'active';");
         DB::statement("CREATE INDEX idx_products_with_variants ON products (id) WHERE has_variants = true AND status = 'active';");

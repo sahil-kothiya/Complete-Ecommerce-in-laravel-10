@@ -46,18 +46,16 @@
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/",
             "Touhidurabir\\Filterable\\": "packages/laravel-filterable/src/"
-        }
+        },
+        "files": [
+            "app/Http/Helpers.php",
+            "app/Helpers/image_helpers.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {
             "Tests\\": "tests/"
-        },
-        "files": [
-            "app/Http/Helpers.php",
-            "app/Http/RedisHelper.php",
-            "app/Http/ImageOptimizer.php",
-            "app/Http/UrlEncryptor.php"
-        ]
+        }
     },
     "scripts": {
         "post-autoload-dump": [

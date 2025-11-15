@@ -11,28 +11,79 @@ use RuntimeException;
 class PostgresMassiveProductSeeder extends Seeder
 {
     /**
-     * High level configuration (override as needed or via env vars).
+     * ══════════════════════════════════════════════════════════════════════════
+     * SEEDER CONFIGURATION - Adjust these values as needed
+     * ══════════════════════════════════════════════════════════════════════════
      */
-    // protected int $totalProducts = 10_000_000;
-    protected int $totalProducts = 1_0;
-    protected ?int $variantProductTarget = 9;
-    // protected ?int $variantProductTarget = 9_500_000;
-    protected float $variantProductRatio = 0.95;
-    protected int $minVariantsPerProduct = 3;
 
-    protected int $maxVariantsPerProduct = 5;
-    protected int $minVariantTypesPerProduct = 2;
-    protected int $maxVariantTypesPerProduct = 3;
-    protected int $productImagesPerProduct = 2;
-    protected int $variantImagesPerVariant = 1;
-    protected int $batchSize = 5;
-    protected bool $truncateBeforeSeeding = false;
-    protected bool $syncSequencesAfterSeeding = true;
-    protected bool $useTransactions = true;
-    protected bool $allowEnvOverrides = true;
-    protected int $progressLogFrequency = 1;
-    protected bool $emitConsoleProgress = true;
-    protected bool $emitLaravelLog = true;
+    // Product generation settings
+    protected int $totalProducts = 10;                    // Total number of products to generate
+    protected ?int $variantProductTarget = 9;            // Target number of products with variants (null = use ratio)
+    protected float $variantProductRatio = 0.95;             // Ratio of variant products if target not set (0.95 = 95%)
+
+    // Variant configuration per product
+    protected int $minVariantsPerProduct = 3;                // Minimum variants per product
+    protected int $maxVariantsPerProduct = 5;                // Maximum variants per product
+    protected int $minVariantTypesPerProduct = 2;            // Minimum variant types (e.g., color + size)
+    protected int $maxVariantTypesPerProduct = 3;            // Maximum variant types
+
+    // Image configuration
+    protected int $productImagesPerProduct = 3;              // Images per product
+    protected int $variantImagesPerVariant = 3;              // Images per variant
+    protected bool $forceRefreshImageLists = false;          // Force rescan storage folders (true = rescan, false = use cache)
+
+    // Performance settings
+    protected int $batchSize = 5;                         // Number of products per batch insert
+    protected bool $streamInserts = true;                    // Flush partial batches during processing
+    protected int $streamFlushInterval = 500;                // Flush after this many products within batch
+    protected int $maxTrackInsertedIds = 100000;             // Don't track IDs beyond this threshold (saves memory)
+
+    // Database operations
+    protected bool $truncateBeforeSeeding = false;           // Truncate tables before seeding
+    protected bool $truncateProductTables = false;           // If truncating, include products table
+    protected bool $truncateRelatedTables = false;           // If truncating, include related tables
+    protected bool $syncSequencesAfterSeeding = true;        // Sync PostgreSQL sequences after seeding
+    protected bool $useTransactions = true;                  // Use database transactions for inserts
+
+    // Logging settings
+    protected int $progressLogFrequency = 1;                 // Log progress every N batches
+    protected bool $emitConsoleProgress = true;              // Show progress in console
+    protected bool $emitLaravelLog = true;                   // Write to Laravel log
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════
+     * QUICK PRESETS - Uncomment one to use predefined configurations
+     * ══════════════════════════════════════════════════════════════════════════
+     */
+
+    // SMALL TEST (100 products)
+    // protected int $totalProducts = 100;
+    // protected ?int $variantProductTarget = 95;
+
+    // MEDIUM TEST (1,000 products)
+    // protected int $totalProducts = 1_000;
+    // protected ?int $variantProductTarget = 950;
+
+    // LARGE DATASET (100,000 products)
+    // protected int $totalProducts = 100_000;
+    // protected ?int $variantProductTarget = 95_000;
+
+    // MASSIVE DATASET (1,000,000 products)
+    // protected int $totalProducts = 1_000_000;
+    // protected ?int $variantProductTarget = 950_000;
+    // protected int $batchSize = 10_000;
+    // protected int $streamFlushInterval = 1000;
+
+    // ULTRA MASSIVE (10,000,000 products)
+    // protected int $totalProducts = 10_000_000;
+    // protected ?int $variantProductTarget = 9_500_000;
+    // protected int $batchSize = 20_000;
+    // protected int $streamFlushInterval = 2000;
+    // protected int $maxTrackInsertedIds = 0; // Disable ID tracking
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════
+     */
 
     /**
      * Runtime counters.
@@ -47,6 +98,20 @@ class PostgresMassiveProductSeeder extends Seeder
     protected int $productsSeeded = 0;
     protected int $variantProductsSeeded = 0;
     protected int $nonVariantProductsSeeded = 0;
+
+    /**
+     * Tracking inserted product IDs and SKU sequences
+     */
+    protected array $insertedProductIds = [];
+    protected array $skuSequenceCounters = [];
+
+    /**
+     * When product count exceeds threshold we skip tracking IDs to save memory
+     */
+    protected function shouldTrackInsertedIds(): bool
+    {
+        return $this->totalProducts <= $this->maxTrackInsertedIds;
+    }
 
     /**
      * Cached metadata.
@@ -68,69 +133,73 @@ class PostgresMassiveProductSeeder extends Seeder
     protected int $brandCursor = 0;
 
     /**
+     * Category-specific variant type mappings
+     * Key can be exact slug match or partial match (contains)
+     */
+    protected array $categoryVariantMapping = [
+        // Electronics - RAM, Storage (no color for simplicity)
+        'smartphones' => ['color', 'ram', 'storage'],
+        'mobiles' => ['color', 'ram', 'storage'],
+        'mobile' => ['color', 'ram', 'storage'],
+        'phone' => ['color', 'ram', 'storage'],
+        'laptops' => ['color', 'ram', 'storage'],
+        'laptop' => ['color', 'ram', 'storage'],
+        'tablet' => ['color', 'ram', 'storage'],
+        'computer' => ['color', 'ram', 'storage'],
+
+        // TV/Displays - screen size
+        'tv' => ['size'],
+        'television' => ['size'],
+        'monitor' => ['size'],
+        'display' => ['size'],
+
+        // Audio - color only
+        'audio' => ['color'],
+        'headphone' => ['color'],
+        'speaker' => ['color'],
+        'earphone' => ['color'],
+
+        // Clothing/Fashion - color and size
+        'shirt' => ['color', 'size'],
+        'tshirt' => ['color', 'size'],
+        't-shirt' => ['color', 'size'],
+        'jeans' => ['color', 'size'],
+        'pant' => ['color', 'size'],
+        'trouser' => ['color', 'size'],
+        'dress' => ['color', 'size'],
+        'skirt' => ['color', 'size'],
+        'top' => ['color', 'size'],
+        'jacket' => ['color', 'size'],
+        'coat' => ['color', 'size'],
+        'sweater' => ['color', 'size'],
+        'hoodie' => ['color', 'size'],
+        'shoe' => ['color', 'size'],
+        'boot' => ['color', 'size'],
+        'sandal' => ['color', 'size'],
+        'sneaker' => ['color', 'size'],
+        'women' => ['color', 'size'],
+        'men' => ['color', 'size'],
+        'kids' => ['color', 'size'],
+        'boy' => ['color', 'size'],
+        'girl' => ['color', 'size'],
+        'clothing' => ['color', 'size'],
+
+        // Furniture - color only
+        'furniture' => ['color'],
+        'chair' => ['color'],
+        'table' => ['color'],
+        'sofa' => ['color'],
+        'bed' => ['color'],
+    ];
+
+    /**
      * Static pools - Using placeholder/default image that should exist
      */
     protected array $conditions = ['default', 'new', 'hot'];
 
-    // These will be populated from actual existing images in storage
-    protected array $productImagePool = [
-        "product_6889f81c5163c_1.webp", "product_6889f81c59696_2.webp", "product_6889f81c616e8_3.webp",
-        "product_6889f81c6a225_4.webp", "product_6889f9113eecd_0.webp", "product_6889f980ae308_0.webp",
-        "product_6889fd3e6fc02_0.webp", "product_6889ff20a3003_0.webp", "product_6889ff20ab21f_1.webp",
-        "product_6889ff20b31b8_2.webp", "product_688a005542712_0.webp", "product_688a0088c4999_0.webp",
-        "product_688a01254a8de_0.webp", "product_688a02ff4c13c_0.webp", "product_688a03fbc0e23_0.webp",
-        "product_688aefd6b5d92_0.webp", "product_688b3bcfd79b9_0.webp", "product_688b3d8672a03_0.webp",
-        "product_688b4fa2cea02_0.webp", "product_688b4fa2d7cae_1.webp", "product_688b51b8ae4fd_0.webp",
-        "product_688b5e59765d5_0.webp", "product_688b603325c06_0.webp", "product_688c3b3d8cd70_0.webp",
-        "product_688c51f279b9c_0.webp", "product_688c9e1305a57_0.webp", "product_688c9e130e22d_1.webp",
-        "product_68909d01452d4_0.webp", "product_68909d014e1e4_1.webp", "product_68909d015694f_2.webp",
-        "product_68909d015f199_3.webp", "product_68909d0168d61_4.webp", "product_68909d0170766_5.webp",
-        "product_68909d017985c_6.webp", "product_6892df81c7fe4_0.webp", "product_6892df81d0732_1.webp",
-        "product_6892fe3b5293e_0.webp", "product_6892fe3b5ba1b_1.webp", "product_6892fea723299_0.webp",
-        "product_6892fea72bb51_1.webp", "product_6892ffc4a0ae1_0.webp", "product_6892ffc4a8cea_1.webp",
-        "product_6892ffc4afd6d_2.webp", "product_6893008bb8af3_0.webp", "product_6893008bc2ce2_1.webp",
-        "product_6893008bcb95a_2.webp", "product_689300d5e7a6b_0.webp", "product_689300d5f0a7f_1.webp",
-        "product_689300d604793_2.webp", "product_6893012f60da8_0.webp", "product_6893012f69029_1.webp",
-        "product_6893012f70d3d_2.webp", "product_68e8d66387660_0.webp", "product_68e8d79a74aad_0.webp",
-        "product_6901faebb109b_0.webp", "product_6901fe4b2da2d_0.webp", "product_69020083e3b75_0.webp",
-        "product_690200b244587_0.webp", "product_690200b24efd9_1.webp", "product_690200b258067_2.webp",
-        "product_690200b260592_3.webp", "product_690200b26771a_4.webp", "product_690200b270dd5_5.webp",
-        "product_690200b27a849_6.webp", "product_690200b282a87_7.webp", "product_690200b28ab7d_8.webp",
-        "product_690200b292edf_9.webp", "product_690200b29bf1e_10.webp", "product_690200b2a5137_11.webp",
-        "product_690200b2add93_12.webp", "product_690200b2b62ac_13.webp", "product_690200b2be15d_14.webp",
-        "product_690200b2c79a1_15.webp", "product_690200b2cfbe7_16.webp", "product_690200b2d807d_17.webp",
-        "product_690200b2dfc85_18.webp", "product_690200b2e7ceb_19.webp", "product_690200b2f080e_20.webp",
-        "product_690200b304657_21.webp", "product_690200b30c797_22.webp", "product_690200b3148d2_23.webp",
-        "product_690200b31d457_24.webp", "product_6902e66def238_0.webp"
-    ];
-    protected array $variantImagePool = [
-         "variant_68e8c67d53c28_0.webp", "variant_68e8c73e05444_0.webp", "variant_68e8c824a9cf7_0.webp",
-        "variant_68e8ca99af65f_0.webp", "variant_68e8cdbf8f7b7_0.webp", "variant_68e8cf3d223f7_0.webp",
-        "variant_68e8cfdb27714_0.webp", "variant_68e8d02251456_0.webp", "variant_68e8d04846afc_0.webp",
-        "variant_68e8d10d7ef24_0.webp", "variant_68e8d2a66ff27_0.webp", "variant_68e8d3848c5eb_0.webp",
-        "variant_68e8d467679cf_0.webp", "variant_68e8d46771062_1.webp", "variant_68e8d46779626_2.webp",
-        "variant_68e8d53a7c3af_0.webp", "variant_68ec8d7cd47f3_1.webp", "variant_68ececa9e9fb8_0.webp",
-        "variant_68ececa9f2ee2_1.webp", "variant_68ececaa11db9_0.webp", "variant_68ececaa1abba_1.webp",
-        "variant_68ececaa2565a_2.webp", "variant_68ececaa33d4d_0.webp", "variant_68ececaa42765_0.webp",
-        "variant_68ececaa4bcec_1.webp", "variant_68edfabeda8af_0.webp", "variant_6901f4c839cad_0.webp",
-        "variant_6901f4c841ab6_1.webp", "variant_6901f4c849376_2.webp", "variant_6901f4c85d109_0.webp",
-        "variant_6901f4c864a76_1.webp", "variant_6901f4c86c824_2.webp", "variant_6901f4c876678_3.webp",
-        "variant_6901f4c87e9c8_4.webp", "variant_6901f4c88c5aa_0.webp", "variant_6901f4c893147_1.webp",
-        "variant_6901f4c89e529_0.webp", "variant_6901f4c8a616e_1.webp", "variant_6901f4c8addeb_2.webp",
-        "variant_690201b061c8f_0.webp", "variant_690201d1267f3_0.webp", "variant_6902021a2cec0_0.webp",
-        "variant_69020281e822d_0.webp", "variant_690202b9629f4_0.webp", "variant_690204516e31f_0.webp",
-        "variant_6902e6f9d2fd1_0.webp", "variant_6902eba45bd69_0.webp", "variant_69031fe530b80_0.webp",
-        "variant_69031fe53b9d9_1.webp", "variant_69031fe544ce7_2.webp", "variant_69031fe55ae68_0.webp",
-        "variant_69031fe563f1f_1.webp", "variant_69031fe56d523_2.webp", "variant_69031fe578027_0.webp",
-        "variant_69031fe58009a_1.webp", "variant_69031fe583d0a_2.webp", "variant_69031fe58a6f3_3.webp",
-        "variant_69031fe59a6a3_0.webp", "variant_69031fe5a3ed3_1.webp", "variant_69031fe5ad104_2.webp",
-        "variant_69031fe5b625a_3.webp", "variant_69031fe5bee4e_4.webp", "variant_69031fe5c8cde_5.webp",
-        "variant_69031fe5da70e_0.webp", "variant_69031fe5e39e9_1.webp", "variant_69031fe5ed204_2.webp",
-        "variant_69031fe6021ae_3.webp", "variant_69031fe60a53c_4.webp", "variant_69031fe62229e_0.webp",
-        "variant_69031fe62bd58_1.webp", "variant_69031fe6372d0_0.webp", "variant_69031fe64056a_1.webp",
-        "variant_69031fe64bbeb_2.webp", "variant_69031fe654739_3.webp", "variant_69031fe65dde7_4.webp",
-        "variant_69031fe667054_5.webp"
-    ];
+    // These will be populated dynamically from storage folder
+    protected array $productImagePool = [];
+    protected array $variantImagePool = [];
 
     public function run(): void
     {
@@ -152,11 +221,35 @@ class PostgresMassiveProductSeeder extends Seeder
 
     protected function initialize(): void
     {
-        DB::disableQueryLog();
+        $this->writeOutput('');
+        $this->writeOutput('╔════════════════════════════════════════════════════════════════════╗');
+        $this->writeOutput('║          POSTGRESQL MASSIVE PRODUCT SEEDER v2.0                    ║');
+        $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
 
-        if ($this->allowEnvOverrides) {
-            $this->applyEnvOverrides();
+        $dbName = DB::connection()->getDatabaseName();
+        $this->writeOutput('  Database: ' . $dbName);
+
+        // Increase memory limit for large scale seeding if possible (safe fallback)
+        $currentLimit = ini_get('memory_limit');
+        if ($currentLimit !== '-1') {
+            @ini_set('memory_limit', '512M');
+            $this->writeOutput('  Memory Limit: ' . $currentLimit . ' → 512M');
+        } else {
+            $this->writeOutput('  Memory Limit: Unlimited');
         }
+
+        DB::disableQueryLog();
+        $this->writeOutput('  Query Logging: Disabled (performance optimization)');
+
+        $this->writeOutput('');
+        $this->writeOutput('  Seeding Configuration:');
+        $this->writeOutput('    • Total Products:    ' . number_format($this->totalProducts));
+        $this->writeOutput('    • Variant Target:    ' . number_format($this->variantProductTarget ?? (int)($this->totalProducts * $this->variantProductRatio)));
+        $this->writeOutput('    • Batch Size:        ' . number_format($this->batchSize));
+        $this->writeOutput('    • Stream Inserts:    ' . ($this->streamInserts ? 'Enabled' : 'Disabled'));
+        $this->writeOutput('    • Use Transactions:  ' . ($this->useTransactions ? 'Enabled' : 'Disabled'));
+        $this->writeOutput('    • Refresh Images:    ' . ($this->forceRefreshImageLists ? 'Yes (rescan)' : 'No (use cache)'));
+        $this->writeOutput('═══════════════════════════════════════════════════════════════════════');
 
         if ($this->truncateBeforeSeeding) {
             $this->truncateTables();
@@ -175,79 +268,195 @@ class PostgresMassiveProductSeeder extends Seeder
         }
     }
 
-    protected function applyEnvOverrides(): void
-    {
-        $total = $this->getEnv('MASSIVE_PRODUCT_TOTAL');
-        if ($total !== null) {
-            $this->totalProducts = max(0, (int) $total);
-        }
 
-        $variantTarget = $this->getEnv('MASSIVE_PRODUCT_VARIANT_TARGET');
-        if ($variantTarget !== null) {
-            $this->variantProductTarget = max(0, (int) $variantTarget);
-        } else {
-            $variantRatio = $this->getEnv('MASSIVE_PRODUCT_VARIANT_RATIO');
-            if ($variantRatio !== null) {
-                $this->variantProductRatio = max(0.0, min(1.0, (float) $variantRatio));
-                $this->variantProductTarget = null; // recompute later using ratio
-            }
-        }
-
-        $batch = $this->getEnv('MASSIVE_PRODUCT_BATCH');
-        if ($batch !== null) {
-            $this->batchSize = max(1000, (int) $batch);
-        }
-
-        $variantsPerProduct = $this->getEnv('MASSIVE_PRODUCT_VARIANTS_PER_PRODUCT');
-        if ($variantsPerProduct !== null) {
-            $value = max(1, (int) $variantsPerProduct);
-            $this->minVariantsPerProduct = $value;
-            $this->maxVariantsPerProduct = $value;
-        }
-    }
 
     protected function truncateTables(): void
     {
-        DB::statement('TRUNCATE TABLE variant_images, product_variant_option_assignments, product_variant_type_selections, product_variants, product_images, products RESTART IDENTITY CASCADE');
+        $this->writeOutput('Truncation settings: Products=' . ($this->truncateProductTables ? 'YES' : 'NO') . ', Related=' . ($this->truncateRelatedTables ? 'YES' : 'NO'));
+
+        if ($this->truncateProductTables) {
+            $this->writeOutput('Truncating product tables...');
+            DB::statement('TRUNCATE TABLE products RESTART IDENTITY CASCADE');
+        }
+
+        if ($this->truncateRelatedTables) {
+            $this->writeOutput('Truncating related tables...');
+            DB::statement('TRUNCATE TABLE variant_images, product_variant_option_assignments, product_variant_type_selections, product_variants, product_images RESTART IDENTITY CASCADE');
+        }
     }
 
     protected function loadImagePools(): void
     {
-        $productDir = storage_path('app/public/products');
-        $variantDir = storage_path('app/public/products/variants');
+        $this->writeOutput('');
+        $this->writeOutput('╔════════════════════════════════════════════════════════════════════╗');
+        $this->writeOutput('║               IMAGE POOL INITIALIZATION                            ║');
+        $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
 
-        // Scan for actual product images
-        if (is_dir($productDir)) {
-            $files = scandir($productDir);
-            foreach ($files as $file) {
-                if (preg_match('/^product_.*\.(webp|jpg|jpeg|png)$/i', $file)) {
-                    $this->productImagePool[] = 'products/' . $file;
-                }
+        $productsDir = storage_path('app/public/products');
+        $variantsDir = storage_path('app/public/products/variants');
+
+        $productsListFile = storage_path('app/public/products_list.php');
+        $variantsListFile = storage_path('app/public/variants_list.php');
+        $productsTextFile = storage_path('app/public/products_list.txt');
+        $variantsTextFile = storage_path('app/public/variants_list.txt');
+
+        $this->writeOutput('');
+        $this->writeOutput('📂 Storage Directories:');
+        $this->writeOutput('   Products:    ' . $productsDir);
+        $this->writeOutput('   Variants:    ' . $variantsDir);
+        $this->writeOutput('');
+        $this->writeOutput('📄 List Files Configuration:');
+        $this->writeOutput('   Products PHP: ' . basename($productsListFile));
+        $this->writeOutput('   Products TXT: ' . basename($productsTextFile));
+        $this->writeOutput('   Variants PHP: ' . basename($variantsListFile));
+        $this->writeOutput('   Variants TXT: ' . basename($variantsTextFile));
+
+        $refresh = $this->forceRefreshImageLists;
+
+        if ($refresh) {
+            $this->writeOutput('');
+            $this->writeOutput('🔄 Force refresh mode enabled - rescanning storage directories...');
+        }
+
+        // Load or build products list (top-level files only; ignore subfolders like 'variants')
+        $productList = [];
+        $productSource = '';
+
+        $this->writeOutput('');
+        $this->writeOutput('─────────────────────────────────────────────────────────────────────');
+        $this->writeOutput('📦 PRODUCT IMAGES');
+        $this->writeOutput('─────────────────────────────────────────────────────────────────────');
+
+        if (!$refresh && file_exists($productsListFile)) {
+            $productList = $this->loadImageListFromPhpFile($productsListFile);
+            if (!empty($productList)) {
+                $productSource = 'cached';
+                $this->writeOutput('✓ Loaded from cache');
+                $this->writeOutput('  File:   ' . basename($productsListFile));
+                $this->writeOutput('  Count:  ' . number_format(count($productList)) . ' images');
+                $this->writeOutput('  Source: PHP array (cached)');
             }
         }
 
-        // Scan for actual variant images
-        if (is_dir($variantDir)) {
-            $files = scandir($variantDir);
-            foreach ($files as $file) {
-                if (preg_match('/^variant_.*\.(webp|jpg|jpeg|png)$/i', $file)) {
-                    $this->variantImagePool[] = 'products/variants/' . $file;
+        if (empty($productList)) {
+            $this->writeOutput('⚙ Scanning storage directory...');
+            $this->writeOutput('  Path: ' . $productsDir);
+            $topFiles = $this->scanTopLevelImages($productsDir);
+            $this->writeOutput('  Found: ' . number_format(count($topFiles)) . ' images (top-level only)');
+            $this->writeOutput('  Note:  Subdirectories (e.g., variants) are ignored');
+            $this->writeOutput('  Mode:  Filename-only storage (50% reduction vs full paths)');
+
+            $productList = $topFiles; // Store only filenames, not paths
+            $productSource = 'fresh scan';
+
+            if (!empty($productList)) {
+                $this->writeImageListPhpFile($productsListFile, $productList);
+                $this->writeImageListTextFile($productsTextFile, $productList);
+                $this->writeOutput('');
+                $this->writeOutput('  ✓ Generated cache files:');
+                $this->writeOutput('    • ' . basename($productsListFile) . ' (PHP array)');
+                $this->writeOutput('    • ' . basename($productsTextFile) . ' (text list)');
+
+                // Show first few images as sample
+                $sample = array_slice($productList, 0, 3);
+                if (!empty($sample)) {
+                    $this->writeOutput('');
+                    $this->writeOutput('  Sample images:');
+                    foreach ($sample as $img) {
+                        $this->writeOutput('    • ' . basename($img));
+                    }
                 }
+            } else {
+                $this->writeOutput('');
+                $this->writeOutput('  ⚠ WARNING: No images found in directory');
             }
         }
 
-        // Fallback to placeholder if no images found
+        // Load or build variants list (files directly under products/variants)
+        $variantList = [];
+        $variantSource = '';
+
+        $this->writeOutput('');
+        $this->writeOutput('─────────────────────────────────────────────────────────────────────');
+        $this->writeOutput('🎨 VARIANT IMAGES');
+        $this->writeOutput('─────────────────────────────────────────────────────────────────────');
+
+        if (!$refresh && file_exists($variantsListFile)) {
+            $variantList = $this->loadImageListFromPhpFile($variantsListFile);
+            if (!empty($variantList)) {
+                $variantSource = 'cached';
+                $this->writeOutput('✓ Loaded from cache');
+                $this->writeOutput('  File:   ' . basename($variantsListFile));
+                $this->writeOutput('  Count:  ' . number_format(count($variantList)) . ' images');
+                $this->writeOutput('  Source: PHP array (cached)');
+            }
+        }
+
+        if (empty($variantList)) {
+            $this->writeOutput('⚙ Scanning storage directory...');
+            $this->writeOutput('  Path: ' . $variantsDir);
+            $variantFiles = $this->scanTopLevelImages($variantsDir);
+            $this->writeOutput('  Found: ' . number_format(count($variantFiles)) . ' images');
+            $this->writeOutput('  Mode:  Filename-only storage (50% reduction vs full paths)');
+
+            $variantList = $variantFiles; // Store only filenames, not paths
+            $variantSource = 'fresh scan';
+
+            if (!empty($variantList)) {
+                $this->writeImageListPhpFile($variantsListFile, $variantList);
+                $this->writeImageListTextFile($variantsTextFile, $variantList);
+                $this->writeOutput('');
+                $this->writeOutput('  ✓ Generated cache files:');
+                $this->writeOutput('    • ' . basename($variantsListFile) . ' (PHP array)');
+                $this->writeOutput('    • ' . basename($variantsTextFile) . ' (text list)');
+
+                // Show first few images as sample
+                $sample = array_slice($variantList, 0, 3);
+                if (!empty($sample)) {
+                    $this->writeOutput('');
+                    $this->writeOutput('  Sample images:');
+                    foreach ($sample as $img) {
+                        $this->writeOutput('    • ' . basename($img));
+                    }
+                }
+            } else {
+                $this->writeOutput('');
+                $this->writeOutput('  ⚠ WARNING: No images found in directory');
+            }
+        }
+
+        // Apply lists or fallback
+        if (!empty($productList)) {
+            $this->productImagePool = $productList;
+        }
+        if (!empty($variantList)) {
+            $this->variantImagePool = $variantList;
+        }
+
+        // Fallback to placeholder if still empty
         if (empty($this->productImagePool)) {
-            $this->productImagePool = ['products/placeholder.webp'];
-            $this->writeOutput('Warning: No product images found in storage. Using placeholder.');
+            $this->productImagePool = ['default-product.webp'];
+            $this->writeOutput('');
+            $this->writeOutput('⚠ CRITICAL WARNING: No product images found!');
+            $this->writeOutput('  Using placeholder: default-product.webp');
+            $this->writeOutput('  Please add images to: ' . $productsDir);
         }
-
         if (empty($this->variantImagePool)) {
-            $this->variantImagePool = ['products/variants/placeholder.webp'];
-            $this->writeOutput('Warning: No variant images found in storage. Using placeholder.');
+            $this->variantImagePool = ['default-variant.webp'];
+            $this->writeOutput('');
+            $this->writeOutput('⚠ CRITICAL WARNING: No variant images found!');
+            $this->writeOutput('  Using placeholder: default-variant.webp');
+            $this->writeOutput('  Please add images to: ' . $variantsDir);
         }
 
-        $this->writeOutput('Loaded ' . count($this->productImagePool) . ' product images and ' . count($this->variantImagePool) . ' variant images.');
+        $this->writeOutput('');
+        $this->writeOutput('╔════════════════════════════════════════════════════════════════════╗');
+        $this->writeOutput('║                    IMAGE POOL SUMMARY                              ║');
+        $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
+        $this->writeOutput('  Product Images: ' . str_pad(number_format(count($this->productImagePool)), 10, ' ', STR_PAD_LEFT) . ' (' . $productSource . ')');
+        $this->writeOutput('  Variant Images: ' . str_pad(number_format(count($this->variantImagePool)), 10, ' ', STR_PAD_LEFT) . ' (' . $variantSource . ')');
+        $this->writeOutput('═══════════════════════════════════════════════════════════════════════');
+        $this->writeOutput('');
     }
 
     protected function loadLookups(): void
@@ -352,12 +561,29 @@ class PostgresMassiveProductSeeder extends Seeder
 
     protected function initializeSequenceCounters(): void
     {
-        $this->nextProductId = $this->nextIdFor('products');
+        $this->writeOutput('');
+        $this->writeOutput('╔════════════════════════════════════════════════════════════════════╗');
+        $this->writeOutput('║                 SEQUENCE INITIALIZATION                            ║');
+        $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
+
+        $lastProductId = DB::table('products')->max('id');
+        $this->nextProductId = $lastProductId ? ((int) $lastProductId + 1) : 1;
+
         $this->nextVariantId = $this->nextIdFor('product_variants');
         $this->nextProductImageId = $this->nextIdFor('product_images');
         $this->nextVariantImageId = $this->nextIdFor('variant_images');
         $this->nextAssignmentId = $this->nextIdFor('product_variant_option_assignments');
         $this->nextTypeSelectionId = $this->nextIdFor('product_variant_type_selections');
+
+        $this->writeOutput('  Starting Sequence IDs:');
+        $this->writeOutput('    • Products:             ' . str_pad(number_format($this->nextProductId), 12, ' ', STR_PAD_LEFT));
+        $this->writeOutput('    • Variants:             ' . str_pad(number_format($this->nextVariantId), 12, ' ', STR_PAD_LEFT));
+        $this->writeOutput('    • Product Images:       ' . str_pad(number_format($this->nextProductImageId), 12, ' ', STR_PAD_LEFT));
+        $this->writeOutput('    • Variant Images:       ' . str_pad(number_format($this->nextVariantImageId), 12, ' ', STR_PAD_LEFT));
+        $this->writeOutput('    • Variant Assignments:  ' . str_pad(number_format($this->nextAssignmentId), 12, ' ', STR_PAD_LEFT));
+        $this->writeOutput('    • Type Selections:      ' . str_pad(number_format($this->nextTypeSelectionId), 12, ' ', STR_PAD_LEFT));
+        $this->writeOutput('═══════════════════════════════════════════════════════════════════════');
+        $this->writeOutput('');
     }
 
     protected function nextIdFor(string $table): int
@@ -388,6 +614,7 @@ class PostgresMassiveProductSeeder extends Seeder
             $currentBatchSize = (int) min($this->batchSize, $remaining);
             $timestamp = Carbon::now()->toDateTimeString();
 
+            // Working buffers (will be flushed early if streaming is enabled)
             $productRows = [];
             $productImageRows = [];
             $variantRows = [];
@@ -438,13 +665,16 @@ class PostgresMassiveProductSeeder extends Seeder
                 ];
 
                 $this->productsSeeded++;
+                if ($this->shouldTrackInsertedIds()) {
+                    $this->insertedProductIds[] = $productId;
+                }
 
                 foreach ($this->buildProductImages($productId, $timestamp) as $imageRow) {
                     $productImageRows[] = $imageRow;
                 }
 
                 if ($isVariantProduct) {
-                    $variantPayload = $this->buildVariantsForProduct($productId, $timestamp);
+                    $variantPayload = $this->buildVariantsForProduct($productId, $timestamp, $categorySlug);
 
                     foreach ($variantPayload['variants'] as $row) {
                         $variantRows[] = $row;
@@ -459,9 +689,25 @@ class PostgresMassiveProductSeeder extends Seeder
                         $typeSelectionRows[] = $row;
                     }
                 }
-            }
 
-            $this->persistBatch($productRows, $productImageRows, $variantRows, $variantImageRows, $assignmentRows, $typeSelectionRows);
+                // Stream flush if enabled and interval reached
+                if ($this->streamInserts && ($this->productsSeeded % $this->streamFlushInterval === 0)) {
+                    $this->persistBatch($productRows, $productImageRows, $variantRows, $variantImageRows, $assignmentRows, $typeSelectionRows);
+                    // Reset buffers to free memory
+                    $productRows = [];
+                    $productImageRows = [];
+                    $variantRows = [];
+                    $variantImageRows = [];
+                    $assignmentRows = [];
+                    $typeSelectionRows = [];
+                    // Opportunistic GC
+                    gc_collect_cycles();
+                }
+            }
+            // Final flush for this outer batch if any rows remain
+            if (!empty($productRows) || !empty($productImageRows) || !empty($variantRows) || !empty($variantImageRows) || !empty($assignmentRows) || !empty($typeSelectionRows)) {
+                $this->persistBatch($productRows, $productImageRows, $variantRows, $variantImageRows, $assignmentRows, $typeSelectionRows);
+            }
 
             $remaining -= $currentBatchSize;
             $batchIndex++;
@@ -474,13 +720,49 @@ class PostgresMassiveProductSeeder extends Seeder
             gc_collect_cycles();
         }
 
+        $totalElapsed = microtime(true) - $startTime;
+
         if ($this->emitLaravelLog) {
             Log::info('PostgresMassiveProductSeeder completed', [
                 'products_seeded' => $this->productsSeeded,
                 'variant_products_seeded' => $this->variantProductsSeeded,
                 'non_variant_products_seeded' => $this->nonVariantProductsSeeded,
+                'elapsed_time' => round($totalElapsed, 2),
             ]);
         }
+
+        // Log inserted product IDs only if tracking enabled
+        $this->writeOutput('');
+        $this->writeOutput('╔════════════════════════════════════════════════════════════════════╗');
+        $this->writeOutput('║                     SEEDING SUMMARY                                ║');
+        $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
+        $this->writeOutput('  Total Products:        ' . str_pad(number_format($this->productsSeeded), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('  → Variant Products:    ' . str_pad(number_format($this->variantProductsSeeded), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('  → Non-Variant:         ' . str_pad(number_format($this->nonVariantProductsSeeded), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('');
+        $this->writeOutput('  Images per Product:    ' . str_pad(number_format($this->productImagesPerProduct), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('  Images per Variant:    ' . str_pad(number_format($this->variantImagesPerVariant), 15, ' ', STR_PAD_LEFT));
+
+        if ($this->shouldTrackInsertedIds() && !empty($this->insertedProductIds)) {
+            $this->writeOutput('');
+            $this->writeOutput('  Product ID Range:      ' . min($this->insertedProductIds) . ' → ' . max($this->insertedProductIds));
+            $this->writeOutput('');
+            $this->writeOutput('  First 10 IDs: ' . implode(', ', array_slice($this->insertedProductIds, 0, 10)));
+            if (count($this->insertedProductIds) > 10) {
+                $this->writeOutput('  Last 10 IDs:  ' . implode(', ', array_slice($this->insertedProductIds, -10)));
+            }
+        } else {
+            $this->writeOutput('');
+            $this->writeOutput('  ℹ ID tracking disabled (threshold: ' . number_format($this->maxTrackInsertedIds) . ')');
+        }
+
+        $this->writeOutput('');
+        $this->writeOutput('  ⏱ Total Time: ' . $this->formatInterval($totalElapsed));
+        $this->writeOutput('  ⚡ Average Rate: ' . number_format($totalElapsed > 0 ? $this->productsSeeded / $totalElapsed : 0, 0) . ' products/second');
+        $this->writeOutput('═══════════════════════════════════════════════════════════════════════');
+        $this->writeOutput('');
+        $this->writeOutput('✅ Seeding completed successfully!');
+        $this->writeOutput('');
     }
 
     protected function resolveCategory(): array
@@ -532,7 +814,7 @@ class PostgresMassiveProductSeeder extends Seeder
 
     protected function determineStatus(int $productId): string
     {
-        return ($productId % 75 === 0) ? 'inactive' : 'active';
+        return 'active';
     }
 
     protected function generateBasePrice(): string
@@ -564,13 +846,21 @@ class PostgresMassiveProductSeeder extends Seeder
         $rows = [];
         $randomImages = $this->getRandomImages($this->productImagePool, $this->productImagesPerProduct);
 
-        foreach ($randomImages as $i => $imageName) {
-            $defaultImage = 'products/placeholders/default.webp';
-            $path = $this->normalizeImagePath($imageName, 'products', $defaultImage);
+        // Ensure we always have at least the requested number of images
+        // If pool is small, repeat images to reach the target count
+        if (count($randomImages) < $this->productImagesPerProduct && !empty($this->productImagePool)) {
+            while (count($randomImages) < $this->productImagesPerProduct) {
+                $randomImages[] = $this->productImagePool[array_rand($this->productImagePool)];
+            }
+        }
+
+        foreach ($randomImages as $i => $filename) {
+            // Store only filename (not path) - 50% storage reduction
+            // Path handling done in application layer via config/helper
             $rows[] = [
                 'id' => $this->nextProductImageId++,
                 'product_id' => $productId,
-                'image_path' => $path,
+                'image_path' => $filename, // Filename only!
                 'thumbnail_path' => null,
                 'is_primary' => $i === 0,
                 'sort_order' => $i + 1,
@@ -581,10 +871,10 @@ class PostgresMassiveProductSeeder extends Seeder
         return $rows;
     }
 
-    protected function buildVariantsForProduct(int $productId, string $timestamp): array
+    protected function buildVariantsForProduct(int $productId, string $timestamp, string $categorySlug = ''): array
     {
         $variantCount = $this->determineVariantCount();
-        $selectedTypeIds = $this->selectVariantTypes($productId);
+        $selectedTypeIds = $this->selectVariantTypes($productId, $categorySlug);
 
         $optionSets = [];
         foreach ($selectedTypeIds as $typeId) {
@@ -631,7 +921,7 @@ class PostgresMassiveProductSeeder extends Seeder
             $variants[] = [
                 'id' => $variantId,
                 'product_id' => $productId,
-                'sku' => $this->buildSku($productId, $combo, $index),
+                'sku' => $this->buildSku($productId, $combo, $index, $categorySlug),
                 'price' => $this->generateVariantPrice(),
                 'discount' => $this->generateVariantDiscount(),
                 'stock' => $this->generateVariantStock(),
@@ -674,8 +964,46 @@ class PostgresMassiveProductSeeder extends Seeder
         return random_int($this->minVariantsPerProduct, $this->maxVariantsPerProduct);
     }
 
-    protected function selectVariantTypes(int $seed): array
+    protected function selectVariantTypes(int $seed, string $categorySlug = ''): array
     {
+        // Check if category has specific variant type mapping (exact or partial match)
+        if (!empty($categorySlug)) {
+            $allowedTypeNames = null;
+
+            // First try exact match
+            if (isset($this->categoryVariantMapping[$categorySlug])) {
+                $allowedTypeNames = $this->categoryVariantMapping[$categorySlug];
+            } else {
+                // Try partial match (contains)
+                foreach ($this->categoryVariantMapping as $pattern => $types) {
+                    if (stripos($categorySlug, $pattern) !== false) {
+                        $allowedTypeNames = $types;
+                        break;
+                    }
+                }
+            }
+
+            // If we found a mapping, use it
+            if ($allowedTypeNames !== null) {
+                $selected = [];
+
+                foreach ($allowedTypeNames as $typeName) {
+                    foreach ($this->variantTypes as $typeId => $typeData) {
+                        if ($typeData['name'] === $typeName) {
+                            $selected[] = $typeId;
+                            break;
+                        }
+                    }
+                }
+
+                if (!empty($selected)) {
+                    usort($selected, fn ($a, $b) => $this->variantTypes[$a]['sort_order'] <=> $this->variantTypes[$b]['sort_order']);
+                    return $selected;
+                }
+            }
+        }
+
+        // Fallback to original logic
         $availableTypeIds = array_keys($this->variantTypes);
         $count = count($availableTypeIds);
         if ($count === 0) {
@@ -762,19 +1090,51 @@ class PostgresMassiveProductSeeder extends Seeder
         return implode(' / ', $parts);
     }
 
-    protected function buildSku(int $productId, array $combo, int $index): string
+    protected function buildSku(int $productId, array $combo, int $index, string $categorySlug = ''): string
     {
-        $parts = ['P' . str_pad((string) $productId, 8, '0', STR_PAD_LEFT)];
-        $typeIds = array_keys($combo);
-        usort($typeIds, fn ($a, $b) => $this->variantTypes[$a]['sort_order'] <=> $this->variantTypes[$b]['sort_order']);
-
-        foreach ($typeIds as $typeId) {
-            $optionId = $combo[$typeId];
-            $option = $this->optionLookup[$optionId] ?? null;
-            $parts[] = $option['sku_fragment'] ?? ('OPT' . $optionId);
+        // Initialize sequence counter for this category
+        if (!isset($this->skuSequenceCounters[$categorySlug])) {
+            $this->skuSequenceCounters[$categorySlug] = 1;
         }
 
-        $parts[] = str_pad((string) $index, 2, '0', STR_PAD_LEFT);
+        $sequenceNumber = $this->skuSequenceCounters[$categorySlug]++;
+        // Use microseconds to avoid collisions across categories within same second
+        $timestamp = (int) floor(microtime(true) * 1000000);
+
+        // Extract variant option values in order: color, storage, ram, size
+        $color = '';
+        $storage = '';
+        $ram = '';
+        $size = '';
+
+        foreach ($combo as $typeId => $optionId) {
+            $option = $this->optionLookup[$optionId] ?? null;
+            if (!$option) continue;
+
+            $typeName = $this->variantTypes[$typeId]['name'] ?? '';
+            $value = $option['sku_fragment'] ?? '';
+
+            if ($typeName === 'color') {
+                $color = $value;
+            } elseif ($typeName === 'storage') {
+                $storage = $value;
+            } elseif ($typeName === 'ram') {
+                $ram = $value;
+            } elseif ($typeName === 'size') {
+                $size = $value;
+            }
+        }
+
+        // Format: {color}-{storage}-{ram}-{size}-{timestamp}-{sequenceNumber}
+        // Build parts based on what's available for this product category
+        $parts = [];
+        if ($color) $parts[] = $color;
+        if ($storage) $parts[] = $storage;
+        if ($ram) $parts[] = $ram;
+        if ($size) $parts[] = $size;
+        $parts[] = $timestamp;
+        $parts[] = $sequenceNumber;
+
         return implode('-', $parts);
     }
 
@@ -783,13 +1143,21 @@ class PostgresMassiveProductSeeder extends Seeder
         $rows = [];
         $randomImages = $this->getRandomImages($this->variantImagePool, $this->variantImagesPerVariant);
 
-        foreach ($randomImages as $i => $imageName) {
-            $defaultImage = 'products/variants/placeholders/default.webp';
-            $path = $this->normalizeImagePath($imageName, 'products/variants', $defaultImage);
+        // Ensure we always have at least the requested number of images
+        // If pool is small, repeat images to reach the target count
+        if (count($randomImages) < $this->variantImagesPerVariant && !empty($this->variantImagePool)) {
+            while (count($randomImages) < $this->variantImagesPerVariant) {
+                $randomImages[] = $this->variantImagePool[array_rand($this->variantImagePool)];
+            }
+        }
+
+        foreach ($randomImages as $i => $filename) {
+            // Store only filename (not path) - 50% storage reduction
+            // Path handling done in application layer via config/helper
             $rows[] = [
                 'id' => $this->nextVariantImageId++,
                 'product_variant_id' => $variantId,
-                'image_path' => $path,
+                'image_path' => $filename, // Filename only!
                 'thumbnail_path' => null,
                 'is_primary' => $i === 0,
                 'sort_order' => $i + 1,
@@ -800,25 +1168,86 @@ class PostgresMassiveProductSeeder extends Seeder
         return $rows;
     }
 
-    protected function normalizeImagePath(string $path, string $directory, string $default): string
+    /**
+     * Read image list from a generated PHP file returning an array.
+     */
+    protected function loadImageListFromPhpFile(string $file): array
     {
-        $normalized = str_replace('\\', '/', trim($path));
-
-        if ($normalized === '') {
-            return $default;
+        if (is_file($file)) {
+            try {
+                $data = include $file;
+                if (is_array($data)) {
+                    return array_values(array_filter(array_map('strval', $data)));
+                }
+            } catch (\Throwable $e) {
+                // ignore and treat as empty
+            }
         }
+        return [];
+    }
 
-        if (strpos($normalized, 'storage/') === 0) {
-            $normalized = substr($normalized, 8);
+    /**
+     * Persist a PHP file that returns the provided array.
+     */
+    protected function writeImageListPhpFile(string $file, array $relativePaths): void
+    {
+        $dir = dirname($file);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0777, true);
         }
+        $export = var_export(array_values($relativePaths), true);
+        $content = "<?php\nreturn " . $export . ";\n";
+        @file_put_contents($file, $content);
+    }
 
-        $normalized = ltrim($normalized, '/');
-
-        if (strpos($normalized, '/') === false) {
-            $normalized = trim($directory, '/') . '/' . $normalized;
+    /**
+     * Persist a text file with one image path per line.
+     */
+    protected function writeImageListTextFile(string $file, array $relativePaths): void
+    {
+        $dir = dirname($file);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0777, true);
         }
+        $content = implode(PHP_EOL, array_values($relativePaths));
+        @file_put_contents($file, $content);
+    }
 
-        return $normalized;
+    /**
+     * Scan only the top-level of a directory for image files and return file names.
+     * Ignores subdirectories completely.
+     */
+    protected function scanTopLevelImages(string $dir): array
+    {
+        if (!is_dir($dir)) {
+            return [];
+        }
+        $allowed = ['webp', 'jpg', 'jpeg', 'png'];
+        $result = [];
+        $dh = @opendir($dir);
+        if ($dh === false) {
+            return [];
+        }
+        while (($entry = readdir($dh)) !== false) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            // Skip placeholder files
+            if (strtolower($entry) === 'placeholder.webp') {
+                continue;
+            }
+            $full = $dir . DIRECTORY_SEPARATOR . $entry;
+            if (is_file($full)) {
+                $ext = strtolower(pathinfo($entry, PATHINFO_EXTENSION));
+                if (in_array($ext, $allowed, true)) {
+                    // Store only filename (not full path) - 50% storage reduction
+                    $result[] = $entry;
+                }
+            }
+        }
+        closedir($dh);
+        sort($result, SORT_NATURAL | SORT_FLAG_CASE);
+        return $result;
     }
 
     /**
@@ -929,19 +1358,24 @@ class PostgresMassiveProductSeeder extends Seeder
         $elapsed = microtime(true) - $startTime;
         $rate = $elapsed > 0 ? $this->productsSeeded / $elapsed : 0;
         $eta = ($rate > 0 && $remaining > 0) ? $remaining / $rate : 0;
+        $percentComplete = $this->totalProducts > 0 ? ($this->productsSeeded / $this->totalProducts) * 100 : 0;
 
         $message = sprintf(
-            '[Batch %d] Seeded: %s (variant %s / non-variant %s) Remaining: %s Rate: %.0f rows/s ETA: %s',
+            '⚡ Batch #%-4d │ Progress: %6.2f%% │ Seeded: %s │ Remaining: %s │ Rate: %s/s │ ETA: %s',
             $batchIndex,
-            number_format($this->productsSeeded),
-            number_format($this->variantProductsSeeded),
-            number_format($this->nonVariantProductsSeeded),
-            number_format($remaining),
-            $rate,
+            $percentComplete,
+            str_pad(number_format($this->productsSeeded), 10, ' ', STR_PAD_LEFT),
+            str_pad(number_format($remaining), 10, ' ', STR_PAD_LEFT),
+            str_pad(number_format($rate, 0), 6, ' ', STR_PAD_LEFT),
             $this->formatInterval($eta)
         );
 
         $this->writeOutput($message);
+
+        // Show detailed breakdown every 10 batches
+        if ($batchIndex % 10 === 0) {
+            $this->writeOutput('   └─ Variant: ' . number_format($this->variantProductsSeeded) . ' │ Non-Variant: ' . number_format($this->nonVariantProductsSeeded));
+        }
     }
 
     protected function formatInterval(float $seconds): string
@@ -965,11 +1399,6 @@ class PostgresMassiveProductSeeder extends Seeder
         } else {
             echo $message . PHP_EOL;
         }
-    }
-
-    protected function getEnv(string $key, $default = null)
-    {
-        return $_ENV[$key] ?? $_SERVER[$key] ?? $default;
     }
 
     protected function syncSequences(): void

@@ -46,6 +46,11 @@ class ProductController extends Controller
             'variants'
         ]));
 
+        // Normalize any absolute storage URLs to public-relative paths for images (variants and new_variants)
+        // This mirrors update() behavior and prevents file_exists failures on Windows paths
+        $normalized = $this->normalizeImageUrls($request->all());
+        $request->merge($normalized);
+
         $rules = [
             'title' => 'required|string|max:255',
             'slug' => 'required|string|max:255|unique:products,slug',
@@ -68,6 +73,8 @@ class ProductController extends Controller
             $rules['variants.*.price'] = 'required|numeric|min:0';
             $rules['variants.*.discount'] = 'nullable|numeric|min:0|max:100';
             $rules['variants.*.stock'] = 'required|integer|min:0';
+            // Preserve existing variant images during validation
+            $rules['variants.*.images'] = 'nullable|string';
             // $rules['variants.*.images'] = 'required|string'; // TEMPORARILY DISABLED FOR TESTING
             $rules['variant_options'] = 'required|array|min:1';
             $rules['variant_options.*'] = 'required|array|min:1';
@@ -76,7 +83,17 @@ class ProductController extends Controller
             $rules['base_discount'] = 'nullable|numeric|min:0|max:100';
             $rules['base_stock'] = 'required|integer|min:0';
             $rules['base_sku'] = 'required|string|max:255|unique:products,base_sku';
-            $rules['photo'] = 'required|string';
+            // Exactly 1 images required for a normal (non-variant) product
+            $rules['photo'] = [
+                'required',
+                'string',
+                function ($attribute, $value, $fail) {
+                    $paths = array_filter(array_map('trim', explode(',', (string) $value)));
+                    if (count($paths) !== 3) {
+                        $fail('Exactly 1 product images are required.');
+                    }
+                }
+            ];
             $rules['alt_text'] = 'nullable|array';
             $rules['alt_text.*'] = 'nullable|string|max:125';
         }
@@ -96,7 +113,7 @@ class ProductController extends Controller
             'base_stock.min' => 'Stock cannot be negative.',
             'base_sku.required' => 'SKU is required.',
             'base_sku.unique' => 'This SKU is already in use.',
-            'photo.required' => 'At least one product image is required.',
+            'photo.required' => 'Exactly 3 product images are required.',
             'base_discount.min' => 'Discount cannot be negative.',
             'base_discount.max' => 'Discount cannot exceed 100%.',
             'variants.required' => 'Please generate variants before submitting.',
@@ -127,7 +144,7 @@ class ProductController extends Controller
         ));
 
         $webpPaths = [];
-        if (!$request->boolean('has_variants') && !empty($validatedData['photo'])) {
+            if (!$request->boolean('has_variants') && !empty($validatedData['photo'])) {
             $rawPaths = array_filter(array_map('trim', explode(',', $validatedData['photo'])));
 
             foreach ($rawPaths as $index => $url) {
@@ -141,11 +158,11 @@ class ProductController extends Controller
                         $webpFilename = 'product_' . uniqid() . "_{$index}.webp";
                         $webpPath = "public/products/{$webpFilename}";
                         Storage::put($webpPath, (string) $image);
-                        $webpPaths[] = "products/{$webpFilename}";
+                        $webpPaths[] = $webpFilename; // Store only filename, not full path
                         Log::info('Product store - converted image to webp', [
                             'original' => $fullPath,
                             'webp_path' => $webpPath,
-                            'public_path' => end($webpPaths)
+                            'filename_only' => end($webpPaths)
                         ]);
                     } else {
                         Log::warning("Product store - source image not found", ['path' => $fullPath, 'url' => $url]);
@@ -224,6 +241,34 @@ class ProductController extends Controller
             }
 
             if ($request->boolean('has_variants')) {
+                // Quick visibility into incoming variant images before processing
+                $v = $request->input('variants', []);
+                if (!empty($v)) {
+                    $sampleImages = [];
+                    foreach ($v as $i => $vd) {
+                        if (isset($vd['images'])) {
+                            $imageUrls = array_filter(array_map('trim', explode(',', (string)$vd['images'])));
+                            $sampleImages[] = [
+                                'index' => $i,
+                                'images' => $vd['images'],
+                                'count' => count($imageUrls),
+                                'first_url' => $imageUrls[0] ?? null
+                            ];
+                        } else {
+                            $sampleImages[] = [
+                                'index' => $i,
+                                'images' => null,
+                                'count' => 0,
+                                'warning' => 'No images field present'
+                            ];
+                        }
+                        if (count($sampleImages) >= 3) break;
+                    }
+                    Log::debug('Product store - variant images after normalization', [
+                        'samples' => $sampleImages,
+                        'total_variants' => count($v)
+                    ]);
+                }
                 if ($driver === 'pgsql') {
                     $seqRow = DB::selectOne("SELECT pg_get_serial_sequence('product_variants', 'id') as seq");
                     if ($seqRow && isset($seqRow->seq)) {
@@ -316,7 +361,7 @@ class ProductController extends Controller
                         $webpFilename = 'variant_' . uniqid() . "_{$imgIndex}.webp";
                         $webpPath = "public/products/variants/{$webpFilename}";
                         Storage::put($webpPath, (string) $image);
-                        $webpPaths[] = "products/variants/{$webpFilename}";
+                        $webpPaths[] = $webpFilename; // Store only filename (Ultra High-Volume Optimization)
                     } else {
                         Log::warning("Variant image not found: {$fullPath}");
                     }
@@ -336,7 +381,7 @@ class ProductController extends Controller
             // PRIORITY 1: Use explicit option_ids from frontend if provided (from preview)
             if (!empty($variantData['option_ids']) && is_array($variantData['option_ids'])) {
                 $optionIdsForAssignment = $variantData['option_ids'];
-                
+
                 // Build variant_values map (typeId => optionId) from these option IDs
                 foreach ($optionIdsForAssignment as $optionId) {
                     $option = ProductVariantOption::with('variantType')->find($optionId);
@@ -344,7 +389,7 @@ class ProductController extends Controller
                         $variantValues[$option->variantType->id] = $optionId;
                     }
                 }
-                
+
                 Log::debug('Using explicit option_ids from frontend', [
                     'index' => $index,
                     'option_ids' => $optionIdsForAssignment,
@@ -363,7 +408,7 @@ class ProductController extends Controller
                         }
                     }
                 }
-                
+
                 Log::debug('Using SKU matching fallback', [
                     'index' => $index,
                     'sku' => $variantData['sku'],
@@ -493,12 +538,12 @@ class ProductController extends Controller
         // This fixes any variants that were saved with old display name formats
         foreach ($product->variants as $variant) {
             $assignedOptionIds = $variant->optionAssignments()->pluck('product_variant_option_id')->toArray();
-            
+
             // If no option assignments, try to derive from variant_values
             if (empty($assignedOptionIds) && is_array($variant->variant_values)) {
                 $assignedOptionIds = array_values(array_filter($variant->variant_values, fn($v) => is_numeric($v)));
             }
-            
+
             // Regenerate display name if we have option IDs
             if (!empty($assignedOptionIds)) {
                 $newDisplayName = $this->buildVariantDisplayName($assignedOptionIds);
@@ -565,14 +610,27 @@ class ProductController extends Controller
             $rules['base_discount'] = 'nullable|numeric|min:0|max:100';
             $rules['base_stock'] = 'required|integer|min:0';
             $rules['base_sku'] = 'required|string|max:255|unique:products,base_sku,' . $id;
-            $rules['photo'] = $product->images->isEmpty() ? 'required|string' : 'nullable|string';
+            // Edit page: only require at least 1 image if none currently exist
+            $rules['photo'] = [
+                $product->images->isEmpty() ? 'required' : 'nullable',
+                'string',
+            ];
         } else {
-            $rules['variants'] = 'required|array|min:1';
+            // Allow creating a product with only NEW variants (no existing ones yet)
+            $existingVariantsIncoming = $request->input('variants', []);
+            $newVariantsIncoming = $request->input('new_variants', []);
+            if (empty($existingVariantsIncoming) && !empty($newVariantsIncoming)) {
+                $rules['variants'] = 'nullable|array';
+            } else {
+                $rules['variants'] = 'required|array|min:1';
+            }
             $rules['variants.*.id'] = 'nullable|integer|exists:product_variants,id';
             $rules['variants.*.sku'] = 'required|string|max:255';
             $rules['variants.*.price'] = 'required|numeric|min:0';
             $rules['variants.*.discount'] = 'nullable|numeric|min:0|max:100';
             $rules['variants.*.stock'] = 'required|integer|min:0';
+            // Allow images through validation (normalized earlier)
+            $rules['variants.*.images'] = 'nullable|string';
             // TEMPORARILY DISABLED FOR TESTING - Variant image validation
             // $rules['variants.*.images'] = ['required', 'string', function ($attribute, $value, $fail) {
             //     $urls = array_filter(array_map('trim', explode(',', $value)));
@@ -589,9 +647,12 @@ class ProductController extends Controller
             // }];
             $rules['new_variants'] = 'nullable|array';
             $rules['new_variants.*.sku'] = 'nullable|string|max:255|unique:product_variants,sku';
+            // New variants should provide at least a price; enforce required when SKU present
             $rules['new_variants.*.price'] = 'nullable|numeric|min:0';
             $rules['new_variants.*.discount'] = 'nullable|numeric|min:0|max:100';
             $rules['new_variants.*.stock'] = 'nullable|integer|min:0';
+            // Allow new variant images through validation (we further normalize below)
+            $rules['new_variants.*.images'] = 'nullable|string';
             // TEMPORARILY DISABLED FOR TESTING - New variant image validation
             // $rules['new_variants.*.images'] = ['nullable', 'string', function ($attribute, $value, $fail) {
             //     if ($value) {
@@ -678,6 +739,11 @@ class ProductController extends Controller
                     ProductImage::where('product_id', $product->id)->delete();
                 }
 
+                Log::debug('Invoking updateVariants()', [
+                    'product_id' => $product->id,
+                    'incoming_existing_variants_count' => count($request->input('variants', [])),
+                    'incoming_new_variants_count' => count($request->input('new_variants', []))
+                ]);
                 $this->updateVariants($request, $product, $validatedData);
 
                 // Sync variant type selections (track which types are active for this product)
@@ -814,7 +880,27 @@ class ProductController extends Controller
         $newVariantsData = $request->input('new_variants', []);
         $variantOptions = $validatedData['variant_options'] ?? [];
 
+        // Fallback: ensure images are available from raw request if validation dropped them
+        $rawVariants = $request->input('variants', []);
+        foreach ($existingVariantsData as $index => $variantData) {
+            if (empty($variantData['images']) && !empty($rawVariants[$index]['images'])) {
+                $existingVariantsData[$index]['images'] = $rawVariants[$index]['images'];
+                Log::debug('Restored images from raw request for existing variant', [
+                    'index' => $index,
+                    'images' => $rawVariants[$index]['images']
+                ]);
+            }
+        }
+
         Log::debug('Handling variants', ['product_id' => $product->id, 'existing_count' => count($existingVariantsData), 'new_count' => count($newVariantsData)]);
+
+        // Quick check: log first variant's images to confirm they're present
+        if (!empty($existingVariantsData[0]['images'])) {
+            Log::debug('First variant has images', [
+                'images' => $existingVariantsData[0]['images'],
+                'length' => strlen($existingVariantsData[0]['images'])
+            ]);
+        }
 
     foreach ($existingVariantsData as $index => $variantData) {
             if (empty($variantData['id'])) {
@@ -1140,10 +1226,9 @@ class ProductController extends Controller
             try {
                 $image = Image::make($fullPath)->encode('webp', 75);
                 $webpFilename = 'variant_' . uniqid() . '_' . $index . '.webp';
-                $webpPath = "products/variants/{$webpFilename}";
-                Storage::put("public/{$webpPath}", (string) $image);
-                $processedImages[] = ['path' => $webpPath, 'is_primary' => ($sortOrder === 1), 'sort_order' => $sortOrder];
-                Log::info('VARIANT IMAGE CONVERTED', ['variant_id' => $variant->id, 'original_path' => $publicPath, 'webp_path' => $webpPath, 'sort_order' => $sortOrder, 'is_primary' => ($sortOrder === 1)]);
+                Storage::put("public/products/variants/{$webpFilename}", (string) $image);
+                $processedImages[] = ['path' => $webpFilename, 'is_primary' => ($sortOrder === 1), 'sort_order' => $sortOrder]; // Store only filename
+                Log::info('VARIANT IMAGE CONVERTED', ['variant_id' => $variant->id, 'original_path' => $publicPath, 'filename' => $webpFilename, 'sort_order' => $sortOrder, 'is_primary' => ($sortOrder === 1)]);
                 $sortOrder++;
             } catch (\Exception $e) {
                 Log::error('VARIANT IMAGE CONVERSION FAILED', ['variant_id' => $variant->id, 'public_path' => $publicPath, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
@@ -1207,8 +1292,8 @@ class ProductController extends Controller
                     $webpFilename = 'variant_' . uniqid() . "_{$imgIndex}.webp";
                     $webpPath = "public/products/variants/{$webpFilename}";
                     Storage::put($webpPath, (string) $image);
-                    $webpPaths[] = ['path' => "products/variants/{$webpFilename}", 'is_primary' => $imgIndex === 0];
-                    Log::info('NEW VARIANT IMAGE CONVERTED', ['variant_id' => $variant->id, 'original_path' => $publicPath, 'webp_path' => $webpPath, 'is_primary' => $imgIndex === 0]);
+                    $webpPaths[] = ['path' => $webpFilename, 'is_primary' => $imgIndex === 0]; // Store only filename
+                    Log::info('NEW VARIANT IMAGE CONVERTED', ['variant_id' => $variant->id, 'original_path' => $publicPath, 'filename' => $webpFilename, 'is_primary' => $imgIndex === 0]);
                 } else {
                     Log::warning('NEW VARIANT IMAGE FILE NOT FOUND', ['variant_id' => $variant->id, 'public_path' => $publicPath, 'full_path' => $fullPath]);
                 }

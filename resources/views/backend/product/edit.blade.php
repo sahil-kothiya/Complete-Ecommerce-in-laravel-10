@@ -150,7 +150,7 @@
                             <div class="form-group">
                                 <label for="base_price">Price (NRS) <span class="text-danger">*</span></label>
                                 <input type="number" id="base_price" name="base_price" step="0.01" min="0"
-                                    value="{{ old('base_price', $product->price) }}" class="form-control"
+                                    value="{{ old('base_price', $product->base_price) }}" class="form-control"
                                     placeholder="Enter price" tabindex="9">
                                 @error('base_price')
                                     <span class="invalid-feedback d-block">{{ $message }}</span>
@@ -161,7 +161,7 @@
                             <div class="form-group">
                                 <label for="base_discount">Discount (%)</label>
                                 <input type="number" id="base_discount" name="base_discount" min="0"
-                                    max="100" value="{{ old('base_discount', $product->discount) }}"
+                                    max="100" value="{{ old('base_discount', $product->base_discount) }}"
                                     class="form-control" placeholder="Enter discount" tabindex="10">
                                 @error('base_discount')
                                     <span class="invalid-feedback d-block">{{ $message }}</span>
@@ -172,7 +172,7 @@
                             <div class="form-group">
                                 <label for="base_stock">Stock <span class="text-danger">*</span></label>
                                 <input type="number" id="base_stock" name="base_stock" min="0"
-                                    value="{{ old('base_stock', $product->stock) }}" class="form-control"
+                                    value="{{ old('base_stock', $product->base_stock) }}" class="form-control"
                                     placeholder="Enter stock" tabindex="11">
                                 @error('base_stock')
                                     <span class="invalid-feedback d-block">{{ $message }}</span>
@@ -183,7 +183,7 @@
                             <div class="form-group">
                                 <label for="base_sku">SKU <span class="text-danger">*</span></label>
                                 <input type="text" id="base_sku" name="base_sku"
-                                    value="{{ old('base_sku', $product->sku) }}" class="form-control"
+                                    value="{{ old('base_sku', $product->base_sku) }}" class="form-control"
                                     placeholder="Enter unique SKU" tabindex="12">
                                 @error('base_sku')
                                     <span class="invalid-feedback d-block">{{ $message }}</span>
@@ -212,11 +212,33 @@
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label for="size">Sizes</label>
+                                @php
+                                    $rawSize = $product->size;
+                                    $decodedSizes = [];
+                                    if (is_array($rawSize)) {
+                                        $decodedSizes = $rawSize;
+                                    } elseif (is_string($rawSize) && trim($rawSize) !== '') {
+                                        $trimmed = trim($rawSize);
+                                        $jsonCandidate = null;
+                                        if (preg_match('/^\[/', $trimmed)) {
+                                            $jsonCandidate = json_decode($trimmed, true);
+                                        }
+                                        if (is_array($jsonCandidate)) {
+                                            $decodedSizes = $jsonCandidate;
+                                        } else {
+                                            $decodedSizes = array_filter(array_map('trim', explode(',', $rawSize)));
+                                        }
+                                    }
+                                    $selectedSizes = old('size', $decodedSizes);
+                                    if (!is_array($selectedSizes)) {
+                                        $selectedSizes = [];
+                                    }
+                                @endphp
                                 <select name="size[]" id="size" class="form-control selectpicker" multiple
                                     data-live-search="true" tabindex="14">
                                     @foreach (['S' => 'Small', 'M' => 'Medium', 'L' => 'Large', 'XL' => 'Extra Large'] as $key => $label)
                                         <option value="{{ $key }}"
-                                            {{ in_array($key, old('size', $product->size ? json_decode($product->size, true) : [])) ? 'selected' : '' }}>
+                                            {{ in_array($key, $selectedSizes, true) ? 'selected' : '' }}>
                                             {{ $label }}</option>
                                     @endforeach
                                 </select>
@@ -241,11 +263,17 @@
                     style="{{ $product->has_variants ? 'display: none;' : 'display: block;' }}">
                     <h6 class="mb-3 text-uppercase font-weight-bold">Product Images</h6>
                     <div class="form-group">
-                        <label for="photo">Photos <span class="text-danger">*</span> <small class="text-muted">(Select
-                                at least one image)</small></label>
+                        <label for="photo">Photos <span class="text-danger">*</span> <small class="text-muted">(At
+                                least 1 image required; creation needs exactly 3)</small></label>
                         <div class="input-group">
+                            @php
+                                $existingPhotoValue =
+                                    !$product->has_variants && $product->images->count()
+                                        ? $product->images->map(fn($img) => $img->url)->implode(',')
+                                        : '';
+                            @endphp
                             <input type="text" id="photo" name="photo" class="form-control"
-                                value="{{ old('photo', $product->photo) }}" placeholder="Comma-separated image URLs"
+                                value="{{ old('photo', $existingPhotoValue) }}" placeholder="Comma-separated image URLs"
                                 readonly tabindex="17">
                             <div class="input-group-append">
                                 <a id="lfm" data-input="photo" data-preview="holder" class="btn btn-primary"><i
@@ -257,8 +285,9 @@
                         @enderror
                         <div id="image-preview-area" class="mt-3">
                             <div id="holder" class="d-flex flex-wrap gap-3">
-                                @if ($product->photo && !$product->has_variants)
-                                    @foreach (explode(',', $product->photo) as $index => $imageUrl)
+                                @if ($product->images->count() && !$product->has_variants)
+                                    @foreach ($product->images as $index => $image)
+                                        @php $imageUrl = $image->url; @endphp
                                         <div class="image-container"
                                             data-image-id="{{ $product->images[$index]->id ?? '' }}">
                                             @if ($index === 0)
@@ -283,7 +312,7 @@
                         </div>
                     </div>
                     <div class="form-group form-check" id="alt-text-toggle"
-                        style="{{ $product->photo && !$product->has_variants ? 'display: block;' : 'display: none;' }}">
+                        style="{{ $product->images->count() && !$product->has_variants ? 'display: block;' : 'display: none;' }}">
                         <input type="checkbox" name="enable_alt_text" id="enable_alt_text" value="1"
                             class="form-check-input" tabindex="18">
                         <label for="enable_alt_text" class="form-check-label">Enable Alt Text for Images <small
@@ -294,8 +323,7 @@
                             @foreach ($product->images as $index => $image)
                                 <div class="col-md-6 alt-text-item" data-existing-id="{{ $index }}">
                                     <div class="d-flex align-items-start">
-                                        <img src="{{ Storage::url($image->image_path) }}" class="alt-text-preview mr-3"
-                                            alt="Preview">
+                                        <img src="{{ $image->url }}" class="alt-text-preview mr-3" alt="Preview">
                                         <div class="flex-fill">
                                             <label class="font-weight-bold">Alt Text for Image {{ $index + 1 }}
                                                 @if ($image->is_primary)
@@ -1018,7 +1046,7 @@
                 if (error) {
                     $container.addClass('is-invalid custom-is-invalid');
                     $container.after(
-                    `<div class="invalid-feedback custom-invalid-feedback d-block">${error}</div>`);
+                        `<div class="invalid-feedback custom-invalid-feedback d-block">${error}</div>`);
                     return false;
                 }
 
@@ -1148,7 +1176,7 @@
                 } else {
                     $(this).removeClass('is-invalid custom-is-invalid is-valid');
                     $(this).siblings('.invalid-feedback, .custom-invalid-feedback, .valid-feedback')
-                    .remove();
+                        .remove();
                 }
             });
 
@@ -1291,7 +1319,7 @@
                     valid = false;
                     errors.push(
                         'Slug contains invalid characters (use only lowercase letters, numbers, and hyphens)'
-                        );
+                    );
                     showFieldError('#slug',
                         'Slug can only contain lowercase letters, numbers, and hyphens.');
                 }
@@ -1430,21 +1458,22 @@
                         valid = false;
                         errors.push(
                             'SKU contains invalid characters (use only letters, numbers, hyphens, and underscores)'
-                            );
+                        );
                         showFieldError('#base_sku',
                             'SKU can only contain letters, numbers, hyphens, and underscores.');
                     }
 
-                    if (!photo) {
+                    const existingImageCount = {{ $product->images->count() }};
+                    if (!photo && existingImageCount === 0) {
                         valid = false;
-                        errors.push('Product images are required for non-variant products');
-                        showFieldError('#photo', 'At least one image is required.');
-                    } else {
+                        errors.push('At least 1 product image is required');
+                        showFieldError('#photo', 'At least 1 product image is required.');
+                    } else if (photo) {
                         const urls = photo.split(',').filter(url => url.trim());
-                        if (urls.length === 0) {
+                        if (existingImageCount === 0 && urls.length < 1) {
                             valid = false;
-                            errors.push('Product images are required');
-                            showFieldError('#photo', 'At least one valid image URL is required.');
+                            errors.push('Select at least 1 product image.');
+                            showFieldError('#photo', 'Select at least 1 image.');
                         }
                     }
 
@@ -1480,13 +1509,13 @@
                                     $textarea.addClass('custom-is-invalid');
                                     $textarea.after(
                                         '<span class="custom-invalid-feedback text-danger d-block">Alt text is required.</span>'
-                                        );
+                                    );
                                 } else if (val.length > 125) {
                                     altTextValid = false;
                                     $textarea.addClass('custom-is-invalid');
                                     $textarea.after(
                                         '<span class="custom-invalid-feedback text-danger d-block">Alt text must not exceed 125 characters.</span>'
-                                        );
+                                    );
                                 } else {
                                     $textarea.addClass('is-valid');
                                 }
@@ -1495,7 +1524,7 @@
                             valid = false;
                             errors.push(
                                 'Alt text is required for all images (max 125 characters) when Alt Text is enabled'
-                                );
+                            );
                         }
                     }
                 }
@@ -1524,7 +1553,7 @@
                     }, 600, 'swing', function() {
                         setTimeout(function() {
                             const $firstError = $('.is-invalid, .custom-is-invalid')
-                        .first();
+                                .first();
                             if ($firstError.length) {
                                 $('html, body').animate({
                                     scrollTop: $firstError.offset().top - 100
@@ -1962,7 +1991,7 @@
 
                             var rowHtml = '';
                             rowHtml += '<tr data-new-variant="' + escapeHtml(displayName) +
-                            '">';
+                                '">';
                             rowHtml +=
                                 '    <td style="max-width: 200px; word-wrap: break-word; white-space: normal;" title="' +
                                 escapeHtml(displayName) + '">';
@@ -2079,7 +2108,7 @@
 
             console.log(
                 '✅ FIXED: Fully dynamic variant generation loaded - generates ALL possible combinations correctly'
-                );
+            );
 
             // Remove new variant
             /* --------------------------------------------------------------
@@ -2242,10 +2271,32 @@
                             success: function(response) {
                                 $('#genericConfirmModal').modal('hide');
                                 if (response.success) {
+                                    // Capture the image URL before removal so we can update hidden input
+                                    const deletedUrl = $container.find('img.image-preview')
+                                        .attr('src');
                                     $container.fadeOut(300, function() {
                                         $(this).remove();
+                                        // Update the hidden photo input to remove the deleted image URL
+                                        const currentVal = $('#photo').val().trim();
+                                        if (currentVal) {
+                                            const updatedList = currentVal.split(
+                                                    ',')
+                                                .map(s => s.trim())
+                                                .filter(s => s && s !== deletedUrl);
+                                            $('#photo').val(updatedList.join(','));
+                                        }
+                                        // Remove matching alt-text block if alt text enabled
+                                        $('#current-alt-section img.alt-text-preview')
+                                            .each(function() {
+                                                if ($(this).attr('src') ===
+                                                    deletedUrl) {
+                                                    $(this).closest(
+                                                            '.alt-text-item')
+                                                        .remove();
+                                                }
+                                            });
                                     });
-                                    updateImagePreview();
+                                    // Avoid calling updateImagePreview here to prevent duplicate rendering
                                     showNotification('Image deleted successfully!',
                                         'success');
                                 } else {
@@ -2269,8 +2320,9 @@
                 const $holder = $('#image-preview-area');
                 const $altToggle = $('#alt-text-toggle');
                 const $altSection = $('#alt-text-section');
-                const $altContainer = $('#alt-text-container');
+                const $altContainer = $('#alt-text-section'); // correct container id
 
+                // Clear previously generated dynamic images & alt text (leave existing ones intact)
                 $holder.find('#new-images').empty();
                 $altContainer.empty();
 
@@ -2281,12 +2333,18 @@
                     return;
                 }
 
-                const images = imageInput.split(',').map(url => url.trim()).filter(url => url);
+                const allUrls = imageInput.split(',').map(u => u.trim()).filter(u => u);
+                // Collect URLs already rendered (existing DB images) to avoid duplication
+                const existingUrls = $('#holder img.image-preview').map(function() {
+                    return $(this).attr('src');
+                }).get();
+                const newUrls = allUrls.filter(u => existingUrls.indexOf(u) === -1);
+
                 $holder.find('#new-images').show();
                 $altToggle.show();
 
-                images.forEach((url, index) => {
-                    const container = $('<div class="image-container"></div>');
+                newUrls.forEach((url, index) => {
+                    const container = $('<div class="image-container" data-dynamic="true"></div>');
                     const img = $('<img />', {
                         src: url,
                         class: 'image-preview',
@@ -2296,31 +2354,39 @@
                         'data-fallback-text': `Product Image ${index + 1}`
                     });
 
-                    if (index === 0) {
+                    if (index === 0 && existingUrls.length === 0) {
+                        // Only show a Primary badge if no existing images already mark one
                         container.append(
                             '<div class="primary-badge"><span class="badge badge-success">Primary</span></div>'
-                            );
+                        );
                     }
 
                     img.on('error', function() {
                         const fallback = $(
                             '<div class="image-not-found"><i class="fa fa-image"></i><span>Image not available</span></div>'
-                            );
+                        );
                         container.append(fallback);
                         $(this).remove();
                     });
 
                     container.append(img);
-                    $holder.find('#holder').append(container);
+                    $holder.find('#new-images').append(container);
 
                     if ($('#enable_alt_text').is(':checked')) {
                         createAltTextInput(url, index, $altContainer);
                     }
                 });
 
+                // Show/hide alt text sections appropriately
                 if ($('#enable_alt_text').is(':checked')) {
-                    $altSection.show();
+                    if ($altContainer.children().length) {
+                        $altSection.show();
+                    } else {
+                        $altSection.hide();
+                    }
                     $('#current-alt-section').show();
+                } else {
+                    $altSection.hide();
                 }
             }
 
@@ -2418,7 +2484,7 @@
                 $('#child_cat_id').html('<option value="">Select Sub Category</option>');
                 if (catId) {
                     $.get('{{ route('category.child', ':id') }}'.replace(':id', catId), function(
-                    response) {
+                        response) {
                         if (response.status && response.data.length) {
                             let options = '<option value="">Select Sub Category</option>';
                             response.data.forEach(child => {
@@ -2455,7 +2521,7 @@
                     if (res.status === 'success') {
                         $('#brand_id').append(
                             `<option value="${res.data.id}" selected>${res.data.title}</option>`
-                            );
+                        );
                         $('#brand_id').selectpicker('refresh'); // Refresh Bootstrap Select
                         $('#addBrandModal').modal('hide'); // Close the modal
                         showNotification('Brand added successfully!', 'success');
