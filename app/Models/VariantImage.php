@@ -40,6 +40,9 @@ class VariantImage extends Model
      */
     public function getUrlAttribute()
     {
+        if (empty($this->image_path)) {
+            return ImageHelper::defaultVariantImage();
+        }
         return ImageHelper::variantImageUrl($this->image_path);
     }
 
@@ -48,7 +51,10 @@ class VariantImage extends Model
      */
     public function getThumbnailUrlAttribute()
     {
-        return $this->thumbnail_path ? ImageHelper::variantImageUrl($this->thumbnail_path, true) : null;
+        if (empty($this->thumbnail_path)) {
+            return null;
+        }
+        return ImageHelper::variantImageUrl($this->thumbnail_path, true);
     }
 
     /**

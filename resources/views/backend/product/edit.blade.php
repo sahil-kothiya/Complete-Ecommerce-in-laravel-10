@@ -456,11 +456,11 @@
                                                             @foreach ($variant->images as $imgIndex => $image)
                                                                 <div class="image-container"
                                                                     data-image-id="{{ $image->id }}">
-                                                                    <img src="{{ Storage::url($image->image_path) }}"
-                                                                        class="image-preview"
-                                                                        alt="{{ $image->alt_text ?? 'Variant Image' }}"
+                                                                    <img src="{{ $image->url }}" class="image-preview"
+                                                                        alt="{{ $image->alt_text ?? $variant->display_name . ' - Variant Image' }}"
                                                                         data-is-primary="{{ $image->is_primary ? 'true' : 'false' }}"
-                                                                        data-fallback-text="{{ $image->alt_text ?? $variant->display_name . ' - Variant Image' }}">
+                                                                        data-fallback-text="{{ $image->alt_text ?? $variant->display_name . ' - Variant Image' }}"
+                                                                        onerror="this.src='{{ asset('backend/img/avatar.webp') }}'; this.alt='Image Not Found';">
                                                                     <button type="button"
                                                                         class="btn btn-danger btn-sm delete-variant-image-btn"
                                                                         data-image-id="{{ $image->id }}"

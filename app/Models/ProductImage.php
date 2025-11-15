@@ -36,6 +36,9 @@ class ProductImage extends Model
      */
     public function getUrlAttribute()
     {
+        if (empty($this->image_path)) {
+            return ImageHelper::defaultProductImage();
+        }
         return ImageHelper::productImageUrl($this->image_path);
     }
 
@@ -44,6 +47,9 @@ class ProductImage extends Model
      */
     public function getThumbnailUrlAttribute()
     {
-        return $this->thumbnail_path ? ImageHelper::productImageUrl($this->thumbnail_path, true) : null;
+        if (empty($this->thumbnail_path)) {
+            return null;
+        }
+        return ImageHelper::productImageUrl($this->thumbnail_path, true);
     }
 }

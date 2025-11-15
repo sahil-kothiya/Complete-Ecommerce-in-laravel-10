@@ -2,164 +2,141 @@
 
 @section('main-content')
 
-@if($banners?->count())
-    @php
-        $firstBanner = $banners->first();
-        $firstPhoto = ltrim($firstBanner->photo ?? 'images/placeholder-banner.jpg', '/');
-        $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
-        $tabindex = 13;
-    @endphp
+    @if ($banners?->count())
+        @php
+            $firstBanner = $banners->first();
+            $firstPhoto = $firstBanner->photo ?? 'images/placeholder-banner.jpg';
+            $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
+            $tabindex = 13;
+        @endphp
 
-    <link rel="preload" as="image" href="{{ asset($firstWebp) }}" fetchpriority="high" type="image/webp">
-    <link rel="preload" as="image" href="{{ asset($firstPhoto) }}" fetchpriority="high" type="image/{{ pathinfo($firstPhoto, PATHINFO_EXTENSION) }}">
+        <link rel="preload" as="image" href="{{ $firstWebp }}" fetchpriority="high" type="image/webp">
+        <link rel="preload" as="image" href="{{ $firstPhoto }}" fetchpriority="high"
+            type="image/{{ pathinfo($firstPhoto, PATHINFO_EXTENSION) }}">
 
-    <section id="gslider" class="carousel slide" data-ride="carousel" data-interval="3000">
-        <ol class="carousel-indicators">
-            @foreach($banners as $key => $banner)
-                <li data-target="#gslider" data-slide-to="{{ $key }}" class="{{ $key === 0 ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}" tabindex="{{ $tabindex++ }}"></li>
-            @endforeach
-        </ol>
+        <section id="gslider" class="carousel slide" data-ride="carousel" data-interval="3000">
+            <ol class="carousel-indicators">
+                @foreach ($banners as $key => $banner)
+                    <li data-target="#gslider" data-slide-to="{{ $key }}" class="{{ $key === 0 ? 'active' : '' }}"
+                        aria-label="Slide {{ $key + 1 }}" tabindex="{{ $tabindex++ }}"></li>
+                @endforeach
+            </ol>
 
-        <div class="carousel-inner">
-            @foreach($banners as $key => $banner)
-                @php
-                    $photo = ltrim($banner->photo ?? 'images/placeholder-banner.jpg', '/');
-                    $webp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $photo);
-                    $isFirst = $key === 0;
-                    $discount = $banner->discounts->first();
+            <div class="carousel-inner">
+                @foreach ($banners as $key => $banner)
+                    @php
+                        $photo = $banner->photo ?? 'images/placeholder-banner.jpg';
+                        $webp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $photo);
+                        $isFirst = $key === 0;
+                        $discount = $banner->discounts->first();
 
-                    $ctaUrl = '#';
-                    $ctaText = 'Shop Now';
-                    switch ($banner->link_type) {
-                        case 'product':
-                            if ($banner->link) {
-                                $product = \App\Models\Product::where('sku', $banner->link)
-                                    ->orWhere('slug', $banner->link)
-                                    ->first();
-                                if ($product) {
-                                    $ctaUrl = route('product-detail', $product->slug);
-                                    $ctaText = 'View Product';
+                        $ctaUrl = '#';
+                        $ctaText = 'Shop Now';
+                        switch ($banner->link_type) {
+                            case 'product':
+                                if ($banner->link) {
+                                    $product = \App\Models\Product::where('sku', $banner->link)
+                                        ->orWhere('slug', $banner->link)
+                                        ->first();
+                                    if ($product) {
+                                        $ctaUrl = route('product-detail', $product->slug);
+                                        $ctaText = 'View Product';
+                                    }
                                 }
-                            }
-                            break;
-                        case 'category':
-                            if ($banner->link) {
-                                $category = \App\Models\Category::where('slug', $banner->link)->first();
-                                if ($category) {
-                                    $ctaUrl = route('product-cat', $category->slug);
-                                    $ctaText = 'Browse Category';
+                                break;
+                            case 'category':
+                                if ($banner->link) {
+                                    $category = \App\Models\Category::where('slug', $banner->link)->first();
+                                    if ($category) {
+                                        $ctaUrl = route('product-cat', $category->slug);
+                                        $ctaText = 'Browse Category';
+                                    }
                                 }
-                            }
-                            break;
-                        case 'url':
-                            if ($banner->link) {
-                                $ctaUrl = $banner->link;
-                                $ctaText = 'Learn More';
-                            }
-                            break;
-                        default:
-                            $category = $discount?->categories?->first();
-                            $ctaUrl = $category ? route('product-cat', $category->slug) : route('product-grids');
-                            break;
-                    }
-                @endphp
+                                break;
+                            case 'url':
+                                if ($banner->link) {
+                                    $ctaUrl = $banner->link;
+                                    $ctaText = 'Learn More';
+                                }
+                                break;
+                            default:
+                                $category = $discount?->categories?->first();
+                                $ctaUrl = $category ? route('product-cat', $category->slug) : route('product-grids');
+                                break;
+                        }
+                    @endphp
 
-                <div class="carousel-item {{ $isFirst ? 'active' : '' }}">
-                    <picture>
-                        <source srcset="{{ asset($webp) }}" type="image/webp">
-                        <img src="{{ asset($photo) }}"
-                             class="d-block w-100"
-                             alt="{{ $banner->title ?? 'Promotional banner' }}"
-                             width="1200" height="550"
-                             loading="{{ $isFirst ? 'eager' : 'lazy' }}"
-                             fetchpriority="{{ $isFirst ? 'high' : 'auto' }}"
-                             decoding="{{ $isFirst ? 'sync' : 'async' }}"
-                             tabindex="-1"
-                             onerror="this.onerror=null; this.src='{{ asset('images/placeholder-banner.jpg') }}';">
-                    </picture>
+                    <div class="carousel-item {{ $isFirst ? 'active' : '' }}">
+                        <picture>
+                            <source srcset="{{ $webp }}" type="image/webp">
+                            <img src="{{ $photo }}" class="d-block w-100"
+                                alt="{{ $banner->title ?? 'Promotional banner' }}" width="1200" height="550"
+                                loading="{{ $isFirst ? 'eager' : 'lazy' }}"
+                                fetchpriority="{{ $isFirst ? 'high' : 'auto' }}"
+                                decoding="{{ $isFirst ? 'sync' : 'async' }}" tabindex="-1"
+                                onerror="this.onerror=null; this.src='/images/placeholder-banner.jpg';">
+                        </picture>
 
-                    <div class="carousel-caption d-none d-md-block text-left">
-                        <h1>{{ $banner->title }}</h1> <!-- Removed tabindex -->
-                        <p>{!! $banner->description !!}</p> <!-- Removed tabindex -->
-                        @if($discount)
-                            <p class="text-warning h5">
-                                {{ $discount->title }} -
-                                {{ $discount->type === 'percentage' ? $discount->value . '%' : '₹' . number_format($discount->value, 2) }} OFF
-                            </p> <!-- Removed tabindex -->
-                        @endif
-                        @if($ctaUrl !== '#')
-                            <a class="btn btn-lg btn-primary"
-                               href="{{ $ctaUrl }}"
-                               tabindex="{{ $tabindex++ }}"
-                               @if($banner->link_type === 'url' && !str_starts_with($banner->link, url('/')))
-                               target="_blank" rel="noopener"
-                               @endif>
-                                {{ $ctaText }} <i class="fa fa-arrow-right" aria-hidden="true"></i>
-                            </a>
-                        @endif
-                    </div>
-                </div>
-            @endforeach
-        </div>
-
-        <a class="carousel-control-prev" href="#gslider" role="button" data-slide="prev" aria-label="Previous slide" tabindex="{{ $tabindex++ }}">
-            <span class="carousel-control-prev-icon" aria-hidden="true"></span>
-        </a>
-        <a class="carousel-control-next" href="#gslider" role="button" data-slide="next" aria-label="Next slide" tabindex="{{ $tabindex++ }}">
-            <span class="carousel-control-next-icon" aria-hidden="true"></span>
-        </a>
-    </section>
-@endif
-
-@php
-    $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDiscounts();
-@endphp
-@if (!empty($activeDiscounts))
-    @foreach ($activeDiscounts as $discount)
-        <a href="{{ route('product-cat', $discount['category_slug']) }}" style="text-decoration: none;" tabindex="{{ $tabindex++ }}">
-            <section class="discount-highlight"
-                     style="width: 100%; background: linear-gradient(135deg, #F7941D 0%, #e67e22 100%); color: white; padding: 16px;">
-            </section>
-        </a>
-    @endforeach
-@endif
-
-@if($product_lists?->count())
-    <section class="product-area section" id="all-products">
-        <div class="container">
-            <div class="section-title text-center">
-                <h2>All Products</h2>
-            </div>
-            <div class="row">
-                <div class="col-12">
-                    <div class="d-flex flex-wrap justify-content-center gap-4" id="allProductsGrid" role="tabpanel" aria-labelledby="tab-all">
-                        <div class="product-listing-wrapper">
-                            @foreach($product_lists as $product)
-                                <div class="product-card-container" tabindex="{{ $tabindex++ }}">
-                                    @include('frontend.partials.product-card', ['product' => $product])
-                                </div>
-                            @endforeach
+                        <div class="carousel-caption d-none d-md-block text-left">
+                            <h1>{{ $banner->title }}</h1> <!-- Removed tabindex -->
+                            <p>{!! $banner->description !!}</p> <!-- Removed tabindex -->
+                            @if ($discount)
+                                <p class="text-warning h5">
+                                    {{ $discount->title }} -
+                                    {{ $discount->type === 'percentage' ? $discount->value . '%' : '₹' . number_format($discount->value, 2) }}
+                                    OFF
+                                </p> <!-- Removed tabindex -->
+                            @endif
+                            @if ($ctaUrl !== '#')
+                                <a class="btn btn-lg btn-primary" href="{{ $ctaUrl }}"
+                                    tabindex="{{ $tabindex++ }}"
+                                    @if ($banner->link_type === 'url' && !str_starts_with($banner->link, url('/'))) target="_blank" rel="noopener" @endif>
+                                    {{ $ctaText }} <i class="fa fa-arrow-right" aria-hidden="true"></i>
+                                </a>
+                            @endif
                         </div>
                     </div>
-                </div>
+                @endforeach
             </div>
-        </div>
-    </section>
-@endif
 
-@foreach($dynamicCategoryProducts as $slug => $categoryData)
-    @if($categoryData['products']?->count())
-        <section class="product-area section" id="{{ $slug }}-products">
+            <a class="carousel-control-prev" href="#gslider" role="button" data-slide="prev" aria-label="Previous slide"
+                tabindex="{{ $tabindex++ }}">
+                <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+            </a>
+            <a class="carousel-control-next" href="#gslider" role="button" data-slide="next" aria-label="Next slide"
+                tabindex="{{ $tabindex++ }}">
+                <span class="carousel-control-next-icon" aria-hidden="true"></span>
+            </a>
+        </section>
+    @endif
+
+    @php
+        $activeDiscounts = app('App\Services\DiscountService')->getAllActiveCategoryDiscounts();
+    @endphp
+    @if (!empty($activeDiscounts))
+        @foreach ($activeDiscounts as $discount)
+            <a href="{{ route('product-cat', $discount['category_slug']) }}" style="text-decoration: none;"
+                tabindex="{{ $tabindex++ }}">
+                <section class="discount-highlight"
+                    style="width: 100%; background: linear-gradient(135deg, #F7941D 0%, #e67e22 100%); color: white; padding: 16px;">
+                </section>
+            </a>
+        @endforeach
+    @endif
+
+    @if ($product_lists?->count())
+        <section class="product-area section" id="all-products">
             <div class="container">
                 <div class="section-title text-center">
-                    <h2>{{ $categoryData['title'] }}</h2> <!-- Removed tabindex -->
+                    <h2>All Products</h2>
                 </div>
                 <div class="row">
                     <div class="col-12">
-                        <div class="d-flex flex-wrap justify-content-center gap-4" id="{{ $slug }}ProductsGrid" role="tabpanel" aria-labelledby="tab-{{ $slug }}">
+                        <div class="d-flex flex-wrap justify-content-center gap-4" id="allProductsGrid" role="tabpanel"
+                            aria-labelledby="tab-all">
                             <div class="product-listing-wrapper">
-                                @foreach($categoryData['products'] as $product)
-                                    <div class="product-card-container category-{{ $slug }}" tabindex="{{ $tabindex++ }}">
+                                @foreach ($product_lists as $product)
+                                    <div class="product-card-container" tabindex="{{ $tabindex++ }}">
                                         @include('frontend.partials.product-card', ['product' => $product])
                                     </div>
                                 @endforeach
@@ -170,48 +147,76 @@
             </div>
         </section>
     @endif
-@endforeach
 
-<section class="shop-services section">
-    <div class="container">
-        <div class="row">
-            <div class="col-lg-3 col-md-6 col-12">
-                <div class="single-service" tabindex="{{ $tabindex++ }}">
-                    <i class="ti-rocket" aria-hidden="true"></i>
-                    <h4>Free Shipping</h4>
-                    <p>Orders over $100</p>
+    @foreach ($dynamicCategoryProducts as $slug => $categoryData)
+        @if ($categoryData['products']?->count())
+            <section class="product-area section" id="{{ $slug }}-products">
+                <div class="container">
+                    <div class="section-title text-center">
+                        <h2>{{ $categoryData['title'] }}</h2> <!-- Removed tabindex -->
+                    </div>
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="d-flex flex-wrap justify-content-center gap-4" id="{{ $slug }}ProductsGrid"
+                                role="tabpanel" aria-labelledby="tab-{{ $slug }}">
+                                <div class="product-listing-wrapper">
+                                    @foreach ($categoryData['products'] as $product)
+                                        <div class="product-card-container category-{{ $slug }}"
+                                            tabindex="{{ $tabindex++ }}">
+                                            @include('frontend.partials.product-card', [
+                                                'product' => $product,
+                                            ])
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="col-lg-3 col-md-6 col-12">
-                <div class="single-service" tabindex="{{ $tabindex++ }}">
-                    <i class="ti-reload" aria-hidden="true"></i>
-                    <h4>Free Return</h4>
-                    <p>Within 30 days</p>
+            </section>
+        @endif
+    @endforeach
+
+    <section class="shop-services section">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-3 col-md-6 col-12">
+                    <div class="single-service" tabindex="{{ $tabindex++ }}">
+                        <i class="ti-rocket" aria-hidden="true"></i>
+                        <h4>Free Shipping</h4>
+                        <p>Orders over $100</p>
+                    </div>
                 </div>
-            </div>
-            <div class="col-lg-3 col-md-6 col-12">
-                <div class="single-service" tabindex="{{ $tabindex++ }}">
-                    <i class="ti-lock" aria-hidden="true"></i>
-                    <h4>Secure Payment</h4>
-                    <p>100% secure</p>
+                <div class="col-lg-3 col-md-6 col-12">
+                    <div class="single-service" tabindex="{{ $tabindex++ }}">
+                        <i class="ti-reload" aria-hidden="true"></i>
+                        <h4>Free Return</h4>
+                        <p>Within 30 days</p>
+                    </div>
                 </div>
-            </div>
-            <div class="col-lg-3 col-md-6 col-12">
-                <div class="single-service" tabindex="{{ $tabindex++ }}">
-                    <i class="ti-tag" aria-hidden="true"></i>
-                    <h4>Best Price</h4>
-                    <p>Guaranteed</p>
+                <div class="col-lg-3 col-md-6 col-12">
+                    <div class="single-service" tabindex="{{ $tabindex++ }}">
+                        <i class="ti-lock" aria-hidden="true"></i>
+                        <h4>Secure Payment</h4>
+                        <p>100% secure</p>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 col-12">
+                    <div class="single-service" tabindex="{{ $tabindex++ }}">
+                        <i class="ti-tag" aria-hidden="true"></i>
+                        <h4>Best Price</h4>
+                        <p>Guaranteed</p>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-</section>
+    </section>
 
-@if($product_lists?->count())
-    @foreach($product_lists->take(5) as $product)
-        @include('frontend.partials.product-modal', ['product' => $product])
-    @endforeach
-@endif
+    @if ($product_lists?->count())
+        @foreach ($product_lists->take(5) as $product)
+            @include('frontend.partials.product-modal', ['product' => $product])
+        @endforeach
+    @endif
 
 @endsection
 

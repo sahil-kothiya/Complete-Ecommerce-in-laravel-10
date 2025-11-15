@@ -20,9 +20,12 @@ class ImageHelper
      */
     public static function productImageUrl(?string $filename, bool $thumbnail = false): string
     {
-        if (empty($filename)) {
+        if (empty($filename) || !is_string($filename)) {
             return self::defaultProductImage();
         }
+
+        // Strip any leading path separators that might have been stored
+        $filename = ltrim($filename, '/\\');
 
         $basePath = config('app.product_image_path', 'storage/products/');
         $cdnUrl = config('app.cdn_url');
@@ -45,9 +48,12 @@ class ImageHelper
      */
     public static function variantImageUrl(?string $filename, bool $thumbnail = false): string
     {
-        if (empty($filename)) {
+        if (empty($filename) || !is_string($filename)) {
             return self::defaultVariantImage();
         }
+
+        // Strip any leading path separators that might have been stored
+        $filename = ltrim($filename, '/\\');
 
         $basePath = config('app.variant_image_path', 'storage/products/variants/');
         $cdnUrl = config('app.cdn_url');
@@ -88,7 +94,8 @@ class ImageHelper
      */
     public static function defaultProductImage(): string
     {
-        return asset('storage/products/default-product.webp');
+        // Fallback to existing backend image if default product image doesn't exist
+        return asset('backend/img/avatar.webp');
     }
 
     /**
@@ -96,7 +103,8 @@ class ImageHelper
      */
     public static function defaultVariantImage(): string
     {
-        return asset('storage/products/variants/default-variant.webp');
+        // Fallback to existing backend image if default variant image doesn't exist
+        return asset('backend/img/avatar.webp');
     }
 
     /**

@@ -17,8 +17,8 @@ class PostgresMassiveProductSeeder extends Seeder
      */
 
     // Product generation settings
-    protected int $totalProducts = 10;                    // Total number of products to generate
-    protected ?int $variantProductTarget = 9;            // Target number of products with variants (null = use ratio)
+    protected int $totalProducts = 20;                    // Total number of products to generate
+    protected ?int $variantProductTarget = 15;            // Target number of products with variants (null = use ratio)
     protected float $variantProductRatio = 0.95;             // Ratio of variant products if target not set (0.95 = 95%)
 
     // Variant configuration per product
