@@ -17,38 +17,44 @@ class PostgresMassiveProductSeeder extends Seeder
      */
 
     // Product generation settings
-    protected int $totalProducts = 20;                    // Total number of products to generate
-    protected ?int $variantProductTarget = 15;            // Target number of products with variants (null = use ratio)
+    protected int $totalProducts = 10_000_000;                    // Total number of products to generate
+    protected ?int $variantProductTarget = 9_500_000;            // Target number of products with variants (null = use ratio)
     protected float $variantProductRatio = 0.95;             // Ratio of variant products if target not set (0.95 = 95%)
 
     // Variant configuration per product
     protected int $minVariantsPerProduct = 3;                // Minimum variants per product
-    protected int $maxVariantsPerProduct = 5;                // Maximum variants per product
+    protected int $maxVariantsPerProduct = 4;                // Maximum variants per product (reduced for speed)
     protected int $minVariantTypesPerProduct = 2;            // Minimum variant types (e.g., color + size)
-    protected int $maxVariantTypesPerProduct = 3;            // Maximum variant types
+    protected int $maxVariantTypesPerProduct = 2;            // Maximum variant types (reduced for speed)
 
     // Image configuration
-    protected int $productImagesPerProduct = 3;              // Images per product
-    protected int $variantImagesPerVariant = 3;              // Images per variant
+    protected int $productImagesPerProduct = 2;              // Images per product (reduced for speed)
+    protected int $variantImagesPerVariant = 2;              // Images per variant (reduced for speed)
     protected bool $forceRefreshImageLists = false;          // Force rescan storage folders (true = rescan, false = use cache)
 
-    // Performance settings
-    protected int $batchSize = 5;                         // Number of products per batch insert
+    // Performance settings (optimized for 10M+ records)
+    // Note: Batch size limited by PostgreSQL's 65,535 parameter limit
+    // Each product with variants generates ~50-100 parameters (product + images + variants + assignments)
+    protected int $batchSize = 2000;                         // Increased batch size for speed
     protected bool $streamInserts = true;                    // Flush partial batches during processing
-    protected int $streamFlushInterval = 500;                // Flush after this many products within batch
-    protected int $maxTrackInsertedIds = 100000;             // Don't track IDs beyond this threshold (saves memory)
+    protected int $streamFlushInterval = 1000;               // Larger interval for fewer flushes
+    protected int $maxTrackInsertedIds = 0;                  // Don't track IDs beyond this threshold (saves memory)
 
     // Database operations
     protected bool $truncateBeforeSeeding = false;           // Truncate tables before seeding
     protected bool $truncateProductTables = false;           // If truncating, include products table
     protected bool $truncateRelatedTables = false;           // If truncating, include related tables
     protected bool $syncSequencesAfterSeeding = true;        // Sync PostgreSQL sequences after seeding
-    protected bool $useTransactions = true;                  // Use database transactions for inserts
+    protected bool $useTransactions = false;                 // Disable transactions for max speed on large inserts
+    protected bool $disableIndexesDuringInsert = true;       // Drop/recreate indexes for massive inserts (FASTER!)
+    protected bool $useUnloggedTables = true;                // Use UNLOGGED tables (MUCH FASTER but no crash recovery)
+    protected bool $dropForeignKeysDuringInsert = true;      // Drop/recreate FKs to allow UNLOGGED (MAX SPEED!)
+    protected bool $usePostgresOptimizations = true;         // Apply PostgreSQL-specific optimizations
 
     // Logging settings
-    protected int $progressLogFrequency = 1;                 // Log progress every N batches
+    protected int $progressLogFrequency = 50;                // Log progress every N batches (less frequent for performance)
     protected bool $emitConsoleProgress = true;              // Show progress in console
-    protected bool $emitLaravelLog = true;                   // Write to Laravel log
+    protected bool $emitLaravelLog = false;                  // Disable Laravel log for performance
 
     /**
      * ══════════════════════════════════════════════════════════════════════════
@@ -74,12 +80,15 @@ class PostgresMassiveProductSeeder extends Seeder
     // protected int $batchSize = 10_000;
     // protected int $streamFlushInterval = 1000;
 
-    // ULTRA MASSIVE (10,000,000 products)
+    // ULTRA MASSIVE (10,000,000 products) - RECOMMENDED FOR 10M
     // protected int $totalProducts = 10_000_000;
     // protected ?int $variantProductTarget = 9_500_000;
-    // protected int $batchSize = 20_000;
-    // protected int $streamFlushInterval = 2000;
+    // protected int $batchSize = 1000; // Limited by PostgreSQL 65k parameter limit
+    // protected int $streamFlushInterval = 500;
     // protected int $maxTrackInsertedIds = 0; // Disable ID tracking
+    // protected bool $useTransactions = false;
+    // protected bool $usePostgresOptimizations = true;
+    // protected int $progressLogFrequency = 20;
 
     /**
      * ══════════════════════════════════════════════════════════════════════════
@@ -205,10 +214,32 @@ class PostgresMassiveProductSeeder extends Seeder
     {
         $this->ensurePostgres();
         $this->initialize();
-        $this->seedProducts();
 
-        if ($this->syncSequencesAfterSeeding) {
-            $this->syncSequences();
+        try {
+            $this->seedProducts();
+        } finally {
+            // Always restore settings even if seeding fails
+            if ($this->useUnloggedTables) {
+                $this->restoreLoggedTables();
+            }
+
+            if ($this->usePostgresOptimizations) {
+                $this->restorePostgresSettings();
+            }
+
+            // Recreate indexes after seeding
+            if ($this->disableIndexesDuringInsert) {
+                $this->recreateIndexes();
+            }
+
+            // Recreate foreign keys after restoring LOGGED mode
+            if ($this->dropForeignKeysDuringInsert) {
+                $this->recreateForeignKeys();
+            }
+
+            if ($this->syncSequencesAfterSeeding) {
+                $this->syncSequences();
+            }
         }
     }
 
@@ -223,21 +254,24 @@ class PostgresMassiveProductSeeder extends Seeder
     {
         $this->writeOutput('');
         $this->writeOutput('╔════════════════════════════════════════════════════════════════════╗');
-        $this->writeOutput('║          POSTGRESQL MASSIVE PRODUCT SEEDER v2.0                    ║');
+        $this->writeOutput('║          POSTGRESQL MASSIVE PRODUCT SEEDER v2.1                    ║');
+        $this->writeOutput('║              OPTIMIZED FOR 10M+ RECORDS                            ║');
         $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
 
         $dbName = DB::connection()->getDatabaseName();
         $this->writeOutput('  Database: ' . $dbName);
 
-        // Increase memory limit for large scale seeding if possible (safe fallback)
+        // Increase memory limit for large scale seeding
         $currentLimit = ini_get('memory_limit');
+        $targetMemory = $this->totalProducts >= 1_000_000 ? '2G' : '1G';
         if ($currentLimit !== '-1') {
-            @ini_set('memory_limit', '512M');
-            $this->writeOutput('  Memory Limit: ' . $currentLimit . ' → 512M');
+            @ini_set('memory_limit', $targetMemory);
+            $this->writeOutput('  Memory Limit: ' . $currentLimit . ' → ' . $targetMemory);
         } else {
             $this->writeOutput('  Memory Limit: Unlimited');
         }
 
+        // Disable query log for max performance
         DB::disableQueryLog();
         $this->writeOutput('  Query Logging: Disabled (performance optimization)');
 
@@ -248,11 +282,31 @@ class PostgresMassiveProductSeeder extends Seeder
         $this->writeOutput('    • Batch Size:        ' . number_format($this->batchSize));
         $this->writeOutput('    • Stream Inserts:    ' . ($this->streamInserts ? 'Enabled' : 'Disabled'));
         $this->writeOutput('    • Use Transactions:  ' . ($this->useTransactions ? 'Enabled' : 'Disabled'));
+        $this->writeOutput('    • PG Optimizations:  ' . ($this->usePostgresOptimizations ? 'Enabled' : 'Disabled'));
         $this->writeOutput('    • Refresh Images:    ' . ($this->forceRefreshImageLists ? 'Yes (rescan)' : 'No (use cache)'));
         $this->writeOutput('═══════════════════════════════════════════════════════════════════════');
 
         if ($this->truncateBeforeSeeding) {
             $this->truncateTables();
+        }
+
+        // Apply PostgreSQL optimizations for bulk insert
+        if ($this->usePostgresOptimizations) {
+            $this->applyPostgresOptimizations();
+        }
+
+        // Drop foreign keys BEFORE setting UNLOGGED (allows more tables to be UNLOGGED)
+        if ($this->dropForeignKeysDuringInsert) {
+            $this->dropForeignKeys();
+        }
+
+        if ($this->useUnloggedTables) {
+            $this->setUnloggedTables();
+        }
+
+        // Drop indexes before bulk insert for maximum speed
+        if ($this->disableIndexesDuringInsert) {
+            $this->dropNonPrimaryIndexes();
         }
 
         $this->loadImagePools();
@@ -567,7 +621,15 @@ class PostgresMassiveProductSeeder extends Seeder
         $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
 
         $lastProductId = DB::table('products')->max('id');
-        $this->nextProductId = $lastProductId ? ((int) $lastProductId + 1) : 1;
+        // $this->nextProductId = $lastProductId ? ((int) $lastProductId + 1) : 1;
+        $startProductId = $lastProductId ? ((int) $lastProductId + 1) : 8602000;
+
+        // Cap at 10 million
+        if ($startProductId > 10_000_000) {
+            throw new RuntimeException('Product ID would exceed 10 million limit. Current max ID: ' . $lastProductId);
+        }
+
+        $this->nextProductId = $startProductId;
 
         $this->nextVariantId = $this->nextIdFor('product_variants');
         $this->nextProductImageId = $this->nextIdFor('product_images');
@@ -609,8 +671,10 @@ class PostgresMassiveProductSeeder extends Seeder
         $startTime = microtime(true);
         $remaining = $this->totalProducts;
         $batchIndex = 0;
+        $lastBatchTime = $startTime;
 
         while ($remaining > 0) {
+            $batchStartTime = microtime(true);
             $currentBatchSize = (int) min($this->batchSize, $remaining);
             $timestamp = Carbon::now()->toDateTimeString();
 
@@ -623,6 +687,14 @@ class PostgresMassiveProductSeeder extends Seeder
             $typeSelectionRows = [];
 
             for ($i = 0; $i < $currentBatchSize; $i++) {
+                // Check if we would exceed 10 million product ID limit
+                if ($this->nextProductId > 10_000_000) {
+                    $this->writeOutput('');
+                    $this->writeOutput('⚠ WARNING: Reached 10 million product ID limit. Stopping seeding.');
+                    $remaining = 0;
+                    break;
+                }
+
                 $productId = $this->nextProductId++;
                 $isVariantProduct = $this->variantProductsSeeded < $variantTarget;
 
@@ -712,8 +784,16 @@ class PostgresMassiveProductSeeder extends Seeder
             $remaining -= $currentBatchSize;
             $batchIndex++;
 
+            $batchEndTime = microtime(true);
+            $batchDuration = $batchEndTime - $batchStartTime;
+
             if ($this->emitConsoleProgress && ($batchIndex % $this->progressLogFrequency === 0 || $remaining === 0)) {
-                $this->reportProgress($batchIndex, $remaining, $startTime);
+                $this->reportProgress($batchIndex, $remaining, $startTime, $batchDuration);
+            }
+
+            // Log milestone every 10,000 products
+            if ($this->productsSeeded % 10000 === 0 && $this->productsSeeded > 0) {
+                $this->logMilestone($this->productsSeeded, $startTime);
             }
 
             unset($productRows, $productImageRows, $variantRows, $variantImageRows, $assignmentRows, $typeSelectionRows);
@@ -1353,20 +1433,24 @@ class PostgresMassiveProductSeeder extends Seeder
         }
     }
 
-    protected function reportProgress(int $batchIndex, int $remaining, float $startTime): void
+    protected function reportProgress(int $batchIndex, int $remaining, float $startTime, float $batchDuration = 0): void
     {
         $elapsed = microtime(true) - $startTime;
         $rate = $elapsed > 0 ? $this->productsSeeded / $elapsed : 0;
         $eta = ($rate > 0 && $remaining > 0) ? $remaining / $rate : 0;
         $percentComplete = $this->totalProducts > 0 ? ($this->productsSeeded / $this->totalProducts) * 100 : 0;
 
+        // Format batch duration
+        $batchTimeStr = $batchDuration > 0 ? sprintf('%.2fs', $batchDuration) : 'N/A';
+
         $message = sprintf(
-            '⚡ Batch #%-4d │ Progress: %6.2f%% │ Seeded: %s │ Remaining: %s │ Rate: %s/s │ ETA: %s',
+            '⚡ Batch #%-4d │ Progress: %6.2f%% │ Seeded: %s │ Remaining: %s │ Rate: %s/s │ Batch: %s │ ETA: %s',
             $batchIndex,
             $percentComplete,
             str_pad(number_format($this->productsSeeded), 10, ' ', STR_PAD_LEFT),
             str_pad(number_format($remaining), 10, ' ', STR_PAD_LEFT),
             str_pad(number_format($rate, 0), 6, ' ', STR_PAD_LEFT),
+            str_pad($batchTimeStr, 8, ' ', STR_PAD_LEFT),
             $this->formatInterval($eta)
         );
 
@@ -1376,6 +1460,32 @@ class PostgresMassiveProductSeeder extends Seeder
         if ($batchIndex % 10 === 0) {
             $this->writeOutput('   └─ Variant: ' . number_format($this->variantProductsSeeded) . ' │ Non-Variant: ' . number_format($this->nonVariantProductsSeeded));
         }
+    }
+
+    protected function logMilestone(int $productsSeeded, float $startTime): void
+    {
+        $elapsed = microtime(true) - $startTime;
+        $rate = $elapsed > 0 ? $productsSeeded / $elapsed : 0;
+        $remaining = $this->totalProducts - $productsSeeded;
+        $eta = ($rate > 0 && $remaining > 0) ? $remaining / $rate : 0;
+        $percentComplete = $this->totalProducts > 0 ? ($productsSeeded / $this->totalProducts) * 100 : 0;
+
+        $this->writeOutput('');
+        $this->writeOutput('╔════════════════════════════════════════════════════════════════════╗');
+        $this->writeOutput(sprintf('║  🎯 MILESTONE: %s PRODUCTS SEEDED%s║',
+            number_format($productsSeeded),
+            str_repeat(' ', 37 - strlen(number_format($productsSeeded)))
+        ));
+        $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
+        $this->writeOutput(sprintf('  📊 Progress:       %6.2f%% complete', $percentComplete));
+        $this->writeOutput(sprintf('  ⚡ Current Rate:    %s products/second', number_format($rate, 0)));
+        $this->writeOutput(sprintf('  ⏱  Elapsed Time:   %s', $this->formatInterval($elapsed)));
+        $this->writeOutput(sprintf('  🎯 Remaining:      %s products', number_format($remaining)));
+        $this->writeOutput(sprintf('  ⏳ ETA:            %s', $this->formatInterval($eta)));
+        $this->writeOutput(sprintf('  📦 Variant:        %s products', number_format($this->variantProductsSeeded)));
+        $this->writeOutput(sprintf('  📋 Non-Variant:    %s products', number_format($this->nonVariantProductsSeeded)));
+        $this->writeOutput('═══════════════════════════════════════════════════════════════════════');
+        $this->writeOutput('');
     }
 
     protected function formatInterval(float $seconds): string
@@ -1401,8 +1511,191 @@ class PostgresMassiveProductSeeder extends Seeder
         }
     }
 
+    protected function applyPostgresOptimizations(): void
+    {
+        $this->writeOutput('');
+        $this->writeOutput('🔧 Applying PostgreSQL optimizations for bulk insert...');
+
+        $appliedCount = 0;
+        $failedCount = 0;
+
+        // Session-level optimizations (safe to apply)
+        $sessionSettings = [
+            ['maintenance_work_mem', '1GB', 'maintenance work memory'],
+            ['work_mem', '256MB', 'work memory'],
+            ['synchronous_commit', 'OFF', 'synchronous commit', !$this->useTransactions],
+        ];
+
+        foreach ($sessionSettings as $setting) {
+            [$param, $value, $description, $condition] = array_pad($setting, 4, true);
+
+            if ($condition === false) {
+                continue; // Skip if condition is false
+            }
+
+            try {
+                DB::statement("SET {$param} = '{$value}'");
+                $appliedCount++;
+            } catch (\Exception $e) {
+                // Try with lower value for memory settings
+                if (str_contains($param, 'mem')) {
+                    try {
+                        $lowerValue = str_replace(['2GB', '1GB', '256MB'], ['512MB', '256MB', '64MB'], $value);
+                        DB::statement("SET {$param} = '{$lowerValue}'");
+                        $appliedCount++;
+                        $this->writeOutput("  ⓘ Applied {$description} with reduced value: {$lowerValue}");
+                    } catch (\Exception $e2) {
+                        $failedCount++;
+                    }
+                } else {
+                    $failedCount++;
+                }
+            }
+        }
+
+        // Server-level settings (require superuser - log but don't fail)
+        $serverSettings = [
+            ['checkpoint_timeout', '1h', 'checkpoint timeout'],
+            ['max_wal_size', '10GB', 'max WAL size'],
+            ['autovacuum', 'OFF', 'autovacuum'],
+        ];
+
+        foreach ($serverSettings as $setting) {
+            [$param, $value, $description] = $setting;
+
+            try {
+                DB::statement("SET {$param} = '{$value}'");
+                $appliedCount++;
+            } catch (\Exception $e) {
+                // These typically require superuser privileges - it's fine if they fail
+                $failedCount++;
+            }
+        }
+
+        if ($appliedCount > 0) {
+            $this->writeOutput("  ✓ Applied {$appliedCount} optimizations");
+        }
+        if ($failedCount > 0) {
+            $this->writeOutput("  ⓘ Skipped {$failedCount} optimizations (require superuser or server config)");
+        }
+    }
+
+    protected function restorePostgresSettings(): void
+    {
+        $this->writeOutput('');
+        $this->writeOutput('🔧 Restoring PostgreSQL settings...');
+
+        $restoredCount = 0;
+        $failedCount = 0;
+
+        // Reset each setting individually to handle errors gracefully
+        $settings = [
+            'maintenance_work_mem',
+            'work_mem',
+            'checkpoint_timeout',
+            'max_wal_size',
+            'synchronous_commit',
+            'autovacuum',
+        ];
+
+        foreach ($settings as $setting) {
+            try {
+                DB::statement("RESET {$setting}");
+                $restoredCount++;
+            } catch (\Exception $e) {
+                // Silently skip settings that can't be reset (requires superuser or server restart)
+                $failedCount++;
+            }
+        }
+
+        if ($restoredCount > 0) {
+            $this->writeOutput("  ✓ Restored {$restoredCount} PostgreSQL settings");
+        }
+        if ($failedCount > 0) {
+            $this->writeOutput("  ⓘ Skipped {$failedCount} settings (require superuser or server config)");
+        }
+
+        // Run ANALYZE to update statistics
+        try {
+            $this->writeOutput('  Running ANALYZE to update table statistics...');
+            DB::statement("ANALYZE products");
+            DB::statement("ANALYZE product_variants");
+            DB::statement("ANALYZE product_images");
+            DB::statement("ANALYZE variant_images");
+            $this->writeOutput('  ✓ Table statistics updated');
+        } catch (\Exception $e) {
+            $this->writeOutput('  ⚠ Warning: Could not update table statistics: ' . $e->getMessage());
+        }
+    }
+
+    protected function setUnloggedTables(): void
+    {
+        $this->writeOutput('');
+        $this->writeOutput('🔧 Converting tables to UNLOGGED mode...');
+
+        // Must convert in order: child tables first, then parent tables
+        $tables = [
+            'variant_images',
+            'product_variant_option_assignments',
+            'product_variant_type_selections',
+            'product_variants',
+            'product_images',
+            'products',
+        ];
+
+        $successCount = 0;
+        foreach ($tables as $table) {
+            try {
+                DB::statement("ALTER TABLE {$table} SET UNLOGGED");
+                $successCount++;
+            } catch (\Exception $e) {
+                $this->writeOutput("  ⚠ Could not set {$table} to UNLOGGED: " . $e->getMessage());
+            }
+        }
+
+        if ($successCount > 0) {
+            $this->writeOutput("  ✓ Set {$successCount} tables to UNLOGGED (faster but no crash recovery)");
+        } else {
+            $this->writeOutput('  ⚠ Warning: Could not set any tables to UNLOGGED');
+            $this->writeOutput('  ⓘ This is OK - seeding will continue with normal (LOGGED) mode');
+        }
+    }
+
+    protected function restoreLoggedTables(): void
+    {
+        $this->writeOutput('');
+        $this->writeOutput('🔧 Restoring tables to LOGGED mode...');
+
+        // Must restore in reverse order: parent tables first, then child tables
+        $tables = [
+            'products',
+            'product_images',
+            'product_variants',
+            'product_variant_type_selections',
+            'product_variant_option_assignments',
+            'variant_images',
+        ];
+
+        $successCount = 0;
+        foreach ($tables as $table) {
+            try {
+                DB::statement("ALTER TABLE {$table} SET LOGGED");
+                $successCount++;
+            } catch (\Exception $e) {
+                // Silently ignore - table might not have been UNLOGGED
+            }
+        }
+
+        if ($successCount > 0) {
+            $this->writeOutput("  ✓ Restored {$successCount} tables to LOGGED mode");
+        }
+    }
+
     protected function syncSequences(): void
     {
+        $this->writeOutput('');
+        $this->writeOutput('🔧 Syncing PostgreSQL sequences...');
+
         $tables = [
             'products',
             'product_variants',
@@ -1413,7 +1706,185 @@ class PostgresMassiveProductSeeder extends Seeder
         ];
 
         foreach ($tables as $table) {
-            DB::statement("SELECT setval(pg_get_serial_sequence('{$table}', 'id'), COALESCE((SELECT MAX(id) FROM {$table}), 0))");
+            try {
+                DB::statement("SELECT setval(pg_get_serial_sequence('{$table}', 'id'), COALESCE((SELECT MAX(id) FROM {$table}), 0))");
+                $this->writeOutput('  ✓ Synced sequence for ' . $table);
+            } catch (\Exception $e) {
+                $this->writeOutput('  ⚠ Warning: Could not sync sequence for ' . $table . ': ' . $e->getMessage());
+            }
+        }
+    }
+
+    protected function dropNonPrimaryIndexes(): void
+    {
+        if (!$this->disableIndexesDuringInsert) {
+            return;
+        }
+
+        $this->writeOutput('');
+        $this->writeOutput('🔧 Dropping non-primary indexes for maximum insert speed...');
+
+        try {
+            // Drop indexes on products table
+            $this->dropIndexSafely('idx_products_status_featured');
+            $this->dropIndexSafely('idx_products_category_status');
+            $this->dropIndexSafely('idx_products_brand_status');
+            $this->dropIndexSafely('products_slug_unique');
+            $this->dropIndexSafely('products_cat_id_foreign');
+            $this->dropIndexSafely('products_brand_id_foreign');
+
+            // Drop indexes on product_variants table
+            $this->dropIndexSafely('idx_variants_product_status');
+            $this->dropIndexSafely('product_variants_product_id_foreign');
+            $this->dropIndexSafely('product_variants_sku_unique');
+
+            // Drop indexes on product_images table
+            $this->dropIndexSafely('idx_images_product_primary');
+            $this->dropIndexSafely('product_images_product_id_foreign');
+
+            // Drop indexes on variant_images table
+            $this->dropIndexSafely('variant_images_product_variant_id_foreign');
+
+            // Drop indexes on assignments table
+            $this->dropIndexSafely('product_variant_option_assignments_product_variant_id_foreign');
+            $this->dropIndexSafely('product_variant_option_assignments_product_variant_option_id_foreign');
+
+            // Drop indexes on type selections table
+            $this->dropIndexSafely('product_variant_type_selections_product_id_foreign');
+            $this->dropIndexSafely('product_variant_type_selections_product_variant_type_id_foreign');
+
+            $this->writeOutput('  ✓ Dropped non-primary indexes');
+            $this->writeOutput('  ⚠ IMPORTANT: Indexes will be recreated after seeding');
+        } catch (\Exception $e) {
+            $this->writeOutput('  ⚠ Warning: Could not drop all indexes: ' . $e->getMessage());
+        }
+    }
+
+    protected function recreateIndexes(): void
+    {
+        if (!$this->disableIndexesDuringInsert) {
+            return;
+        }
+
+        $this->writeOutput('');
+        $this->writeOutput('🔧 Recreating indexes...');
+
+        try {
+            // Recreate products indexes
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_status_featured ON products(status, is_featured, id)');
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_category_status ON products(cat_id, status, is_featured, id)');
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_brand_status ON products(brand_id, status, id)');
+            DB::statement('CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS products_slug_unique ON products(slug)');
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS products_cat_id_foreign ON products(cat_id)');
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS products_brand_id_foreign ON products(brand_id)');
+
+            // Recreate product_variants indexes
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_variants_product_status ON product_variants(product_id, status, stock)');
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS product_variants_product_id_foreign ON product_variants(product_id)');
+            DB::statement('CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS product_variants_sku_unique ON product_variants(sku)');
+
+            // Recreate product_images indexes
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_product_primary ON product_images(product_id, is_primary, sort_order)');
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS product_images_product_id_foreign ON product_images(product_id)');
+
+            // Recreate variant_images indexes
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS variant_images_product_variant_id_foreign ON variant_images(product_variant_id)');
+
+            // Recreate assignments indexes
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS product_variant_option_assignments_product_variant_id_foreign ON product_variant_option_assignments(product_variant_id)');
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS product_variant_option_assignments_product_variant_option_id_foreign ON product_variant_option_assignments(product_variant_option_id)');
+
+            // Recreate type selections indexes
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS product_variant_type_selections_product_id_foreign ON product_variant_type_selections(product_id)');
+            DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS product_variant_type_selections_product_variant_type_id_foreign ON product_variant_type_selections(product_variant_type_id)');
+
+            $this->writeOutput('  ✓ Indexes recreated');
+        } catch (\Exception $e) {
+            $this->writeOutput('  ⚠ Warning: Could not recreate all indexes: ' . $e->getMessage());
+        }
+    }
+
+    protected function dropIndexSafely(string $indexName): void
+    {
+        try {
+            DB::statement("DROP INDEX IF EXISTS {$indexName}");
+        } catch (\Exception $e) {
+            // Silently ignore errors
+        }
+    }
+
+    protected function dropForeignKeys(): void
+    {
+        if (!$this->dropForeignKeysDuringInsert) {
+            return;
+        }
+
+        $this->writeOutput('');
+        $this->writeOutput('🔧 Dropping foreign keys to enable full UNLOGGED mode...');
+
+        try {
+            // Drop FKs from carts table that prevent UNLOGGED
+            $this->dropConstraintSafely('carts', 'carts_product_id_foreign');
+            $this->dropConstraintSafely('carts', 'carts_product_variant_id_foreign');
+
+            // Drop FKs from wishlists
+            $this->dropConstraintSafely('wishlists', 'wishlists_product_id_foreign');
+            $this->dropConstraintSafely('wishlists', 'wishlists_product_variant_id_foreign');
+
+            // Drop FKs from orders (if any)
+            $this->dropConstraintSafely('orders', 'orders_product_id_foreign');
+
+            // Drop FKs from product_reviews
+            $this->dropConstraintSafely('product_reviews', 'product_reviews_product_id_foreign');
+
+            $this->writeOutput('  ✓ Dropped foreign keys');
+            $this->writeOutput('  ⚠ IMPORTANT: Foreign keys will be recreated after seeding');
+        } catch (\Exception $e) {
+            $this->writeOutput('  ⚠ Warning: Could not drop all foreign keys: ' . $e->getMessage());
+        }
+    }
+
+    protected function recreateForeignKeys(): void
+    {
+        if (!$this->dropForeignKeysDuringInsert) {
+            return;
+        }
+
+        $this->writeOutput('');
+        $this->writeOutput('🔧 Recreating foreign keys...');
+
+        try {
+            // Recreate carts FKs
+            DB::statement('ALTER TABLE carts ADD CONSTRAINT carts_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
+            DB::statement('ALTER TABLE carts ADD CONSTRAINT carts_product_variant_id_foreign FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE CASCADE NOT VALID');
+
+            // Recreate wishlists FKs
+            DB::statement('ALTER TABLE wishlists ADD CONSTRAINT wishlists_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
+            DB::statement('ALTER TABLE wishlists ADD CONSTRAINT wishlists_product_variant_id_foreign FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE CASCADE NOT VALID');
+
+            // Recreate product_reviews FKs
+            DB::statement('ALTER TABLE product_reviews ADD CONSTRAINT product_reviews_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
+
+            // Validate constraints asynchronously (doesn't block)
+            $this->writeOutput('  Validating constraints...');
+            DB::statement('ALTER TABLE carts VALIDATE CONSTRAINT carts_product_id_foreign');
+            DB::statement('ALTER TABLE carts VALIDATE CONSTRAINT carts_product_variant_id_foreign');
+            DB::statement('ALTER TABLE wishlists VALIDATE CONSTRAINT wishlists_product_id_foreign');
+            DB::statement('ALTER TABLE wishlists VALIDATE CONSTRAINT wishlists_product_variant_id_foreign');
+            DB::statement('ALTER TABLE product_reviews VALIDATE CONSTRAINT product_reviews_product_id_foreign');
+
+            $this->writeOutput('  ✓ Foreign keys recreated and validated');
+        } catch (\Exception $e) {
+            $this->writeOutput('  ⚠ Warning: Could not recreate all foreign keys: ' . $e->getMessage());
+        }
+    }
+
+    protected function dropConstraintSafely(string $table, string $constraint): void
+    {
+        try {
+            DB::statement("ALTER TABLE {$table} DROP CONSTRAINT IF EXISTS {$constraint}");
+        } catch (\Exception $e) {
+            // Silently ignore errors
         }
     }
 

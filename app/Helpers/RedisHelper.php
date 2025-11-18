@@ -575,4 +575,354 @@ class RedisHelper
 
         return round($bytes, 2) . ' ' . $units[$pow];
     }
+
+    /**
+     * Ping Redis to check connection
+     */
+    public static function ping(): bool
+    {
+        try {
+            return Redis::ping() !== false;
+        } catch (\Exception $e) {
+            Log::error("Redis ping failed: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get database size (total keys)
+     */
+    public static function dbSize(): int
+    {
+        try {
+            return Redis::dbSize();
+        } catch (\Exception $e) {
+            Log::error("Failed to get Redis DB size: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Set multiple key-value pairs atomically using MSET
+     * More efficient than multiple SET operations
+     */
+    public static function msetAtomic(array $data, int $ttl = 3600): bool
+    {
+        try {
+            // Prepare data for MSET
+            $msetData = [];
+            foreach ($data as $key => $value) {
+                $serialized = serialize($value);
+
+                // Compress if needed
+                if (strlen($serialized) > self::COMPRESSION_THRESHOLD) {
+                    $compressed = gzcompress($serialized, 6);
+                    $serialized = self::COMPRESSION_PREFIX . $compressed;
+                }
+
+                $msetData[$key] = $serialized;
+            }
+
+            // Execute MSET atomically
+            Redis::mset($msetData);
+
+            // Set TTL for each key using pipeline
+            Redis::pipeline(function ($pipe) use ($data, $ttl) {
+                foreach (array_keys($data) as $key) {
+                    $pipe->expire($key, $ttl);
+                }
+            });
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error("Redis msetAtomic failed: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Delete keys matching a pattern (use with caution)
+     * Uses SCAN to avoid blocking Redis
+     */
+    public static function deletePattern(string $pattern): int
+    {
+        try {
+            $deleted = 0;
+            $cursor = null;
+
+            do {
+                $result = Redis::scan($cursor, 'MATCH', $pattern, 'COUNT', 1000);
+                $cursor = $result[0] ?? null;
+                $keys = $result[1] ?? [];
+
+                if (!empty($keys)) {
+                    $deleted += Redis::del(...$keys);
+                }
+            } while ($cursor !== 0 && $cursor !== null);
+
+            Log::debug("Deleted {$deleted} keys matching pattern: {$pattern}");
+            return $deleted;
+        } catch (\Exception $e) {
+            Log::error("Failed to delete pattern {$pattern}: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Get keys matching a pattern with count limit
+     * More efficient than keys() for large datasets
+     */
+    public static function scanKeys(string $pattern, int $limit = 1000): array
+    {
+        try {
+            $keys = [];
+            $cursor = null;
+            $scanned = 0;
+
+            do {
+                $result = Redis::scan($cursor, 'MATCH', $pattern, 'COUNT', 100);
+                $cursor = $result[0] ?? null;
+                $foundKeys = $result[1] ?? [];
+
+                $keys = array_merge($keys, $foundKeys);
+                $scanned += count($foundKeys);
+
+                if ($scanned >= $limit) {
+                    break;
+                }
+            } while ($cursor !== 0 && $cursor !== null);
+
+            return array_slice($keys, 0, $limit);
+        } catch (\Exception $e) {
+            Log::error("Failed to scan keys with pattern {$pattern}: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Batch remember pattern - get from cache or execute callbacks and cache results
+     * Optimized for multiple cache checks in one operation
+     */
+    public static function rememberMany(array $items, int $ttl, callable $callback): array
+    {
+        try {
+            // Extract keys
+            $keys = array_keys($items);
+
+            // Fetch all cached values
+            $cached = self::mget($keys);
+
+            // Identify missing keys
+            $missing = [];
+            foreach ($keys as $key) {
+                if ($cached[$key] === null) {
+                    $missing[] = $key;
+                }
+            }
+
+            // Execute callback for missing items
+            if (!empty($missing)) {
+                $fresh = $callback($missing);
+
+                // Cache fresh data
+                $toCache = [];
+                foreach ($fresh as $key => $value) {
+                    $toCache[$key] = $value;
+                    $cached[$key] = $value;
+                }
+
+                if (!empty($toCache)) {
+                    self::mset($toCache, $ttl);
+                }
+            }
+
+            return $cached;
+        } catch (\Exception $e) {
+            Log::error("Redis rememberMany failed: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Lock mechanism for preventing cache stampede
+     * Returns true if lock acquired, false otherwise
+     */
+    public static function lock(string $key, int $ttl = 10): bool
+    {
+        try {
+            $lockKey = "lock:{$key}";
+            $result = Redis::set($lockKey, 1, 'NX', 'EX', $ttl);
+            return $result !== false && $result !== null;
+        } catch (\Exception $e) {
+            Log::error("Failed to acquire lock for {$key}: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Release lock
+     */
+    public static function unlock(string $key): bool
+    {
+        try {
+            $lockKey = "lock:{$key}";
+            return Redis::del($lockKey) > 0;
+        } catch (\Exception $e) {
+            Log::error("Failed to release lock for {$key}: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Remember with lock to prevent cache stampede
+     */
+    public static function rememberWithLock(string $key, int $ttl, callable $callback, int $lockTtl = 10)
+    {
+        try {
+            // Try to get from cache first
+            $value = self::get($key);
+            if ($value !== null) {
+                return $value;
+            }
+
+            // Try to acquire lock
+            if (!self::lock($key, $lockTtl)) {
+                // Lock not acquired, wait briefly and try cache again
+                usleep(100000); // 100ms
+                $value = self::get($key);
+                if ($value !== null) {
+                    return $value;
+                }
+
+                // Still no cache, execute callback without lock
+                Log::warning("Cache miss without lock for key: {$key}");
+                return $callback();
+            }
+
+            // Lock acquired, execute callback
+            try {
+                $value = $callback();
+                self::put($key, $value, $ttl);
+                return $value;
+            } finally {
+                self::unlock($key);
+            }
+        } catch (\Exception $e) {
+            Log::error("Redis rememberWithLock failed for {$key}: " . $e->getMessage());
+            self::unlock($key);
+            throw $e;
+        }
+    }
+
+    /**
+     * Increment cache version for mass invalidation
+     */
+    public static function incrementVersion(string $versionKey = 'meta:cache:version'): int
+    {
+        try {
+            return self::increment($versionKey, 1, 86400);
+        } catch (\Exception $e) {
+            Log::error("Failed to increment version: " . $e->getMessage());
+            return 1;
+        }
+    }
+
+    /**
+     * Get current cache version
+     */
+    public static function getVersion(string $versionKey = 'meta:cache:version'): int
+    {
+        try {
+            $version = self::get($versionKey);
+            return $version ?? 1;
+        } catch (\Exception $e) {
+            Log::error("Failed to get cache version: " . $e->getMessage());
+            return 1;
+        }
+    }
+
+    /**
+     * Get detailed Redis info
+     */
+    public static function getRedisInfo(): array
+    {
+        try {
+            $info = Redis::info();
+
+            return [
+                'version' => $info['redis_version'] ?? 'unknown',
+                'uptime_days' => isset($info['uptime_in_seconds']) ? round($info['uptime_in_seconds'] / 86400, 2) : 0,
+                'connected_clients' => $info['connected_clients'] ?? 0,
+                'used_memory' => isset($info['used_memory']) ? self::formatBytes($info['used_memory']) : '0',
+                'used_memory_peak' => isset($info['used_memory_peak']) ? self::formatBytes($info['used_memory_peak']) : '0',
+                'total_commands_processed' => $info['total_commands_processed'] ?? 0,
+                'instantaneous_ops_per_sec' => $info['instantaneous_ops_per_sec'] ?? 0,
+                'keyspace_hits' => $info['keyspace_hits'] ?? 0,
+                'keyspace_misses' => $info['keyspace_misses'] ?? 0,
+                'hit_rate' => self::calculateHitRate($info),
+            ];
+        } catch (\Exception $e) {
+            Log::error("Failed to get Redis info: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Calculate cache hit rate
+     */
+    private static function calculateHitRate(array $info): float
+    {
+        $hits = $info['keyspace_hits'] ?? 0;
+        $misses = $info['keyspace_misses'] ?? 0;
+        $total = $hits + $misses;
+
+        if ($total === 0) {
+            return 0.0;
+        }
+
+        return round(($hits / $total) * 100, 2);
+    }
+
+    /**
+     * Flush specific database
+     */
+    public static function flushDb(): bool
+    {
+        try {
+            Redis::flushDb();
+            Log::info("Redis database flushed");
+            return true;
+        } catch (\Exception $e) {
+            Log::error("Failed to flush Redis database: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get memory info for specific keys
+     */
+    public static function getKeyMemory(string $key): ?int
+    {
+        try {
+            return Redis::memory('USAGE', $key);
+        } catch (\Exception $e) {
+            Log::error("Failed to get memory usage for key {$key}: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Batch operation wrapper for pipeline
+     */
+    public static function pipeline(callable $callback): array
+    {
+        try {
+            return Redis::pipeline(function ($pipe) use ($callback) {
+                return $callback($pipe);
+            });
+        } catch (\Exception $e) {
+            Log::error("Redis pipeline failed: " . $e->getMessage());
+            return [];
+        }
+    }
 }

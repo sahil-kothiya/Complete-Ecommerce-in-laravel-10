@@ -15,10 +15,12 @@ return [
         'categories' => env('CACHE_TTL_CATEGORIES', 43200), // 12 hours
         'banners' => env('CACHE_TTL_BANNERS', 21600), // 6 hours
         'product_lists' => env('CACHE_TTL_PRODUCTS', 3600), // 1 hour
+        'product_cards' => env('CACHE_TTL_PRODUCT_CARDS', 7200), // 2 hours
+        'full_page' => env('CACHE_TTL_FULL_PAGE', 1800), // 30 minutes
         'wishlist' => env('CACHE_TTL_WISHLIST', 1800), // 30 minutes
         'cart' => env('CACHE_TTL_CART', 900), // 15 minutes
         'user_data' => env('CACHE_TTL_USER_DATA', 1800), // 30 minutes
-        'product_grids' => env('CACHE_TTL_USER_DATA', 1800), // 30 minutes
+        'product_grids' => env('CACHE_TTL_PRODUCT_GRIDS', 1800), // 30 minutes
     ],
 
     /*
@@ -34,8 +36,14 @@ return [
         'homepage' => 'cache:homepage:',
         'user' => 'user:',
         'product' => 'product:',
+        'product_card' => 'product:card:',
+        'product_light' => 'product:light:',
         'category' => 'category:',
+        'collection' => 'collection:',
+        'aggregate' => 'aggregate:',
         'search' => 'search:',
+        'meta' => 'meta:',
+        'lock' => 'lock:',
     ],
 
     /*

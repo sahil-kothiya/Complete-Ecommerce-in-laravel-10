@@ -24,6 +24,7 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
@@ -68,55 +69,87 @@ class FrontendController extends Controller
     }
 
     /**
-     * Display the homepage with cached data for categories, banners, and products.
-     * Optimized for ultra-high volume (10M+ records) with smart Redis caching.
+     * Display the homepage with ultra-fast Redis caching.
+     * Optimized for 10M+ products with multi-tier caching strategy.
+     * Target: < 15ms response time with cache hit, < 300ms with cache miss
      *
      * @return \Illuminate\View\View
      */
     public function home()
     {
         $startTime = microtime(true);
-        $ttl = $this->getTtlConfig();
 
-        // Cache key for complete homepage (most efficient - serve entire page from cache)
-        $completePageKey = self::HOMEPAGE_CACHE_PREFIX . 'complete_page';
+        // Get cache version for versioned cache invalidation
+        $cacheVersion = RedisHelper::getVersion('meta:cache:version');
+        $fullPageKey = self::HOMEPAGE_CACHE_PREFIX . "full_page_v{$cacheVersion}";
 
-        // Try to get complete cached page first (fastest path)
-        $cachedPage = RedisHelper::get($completePageKey);
-        if ($cachedPage) {
-            Log::debug('Homepage served from complete cache in ' . round((microtime(true) - $startTime) * 1000, 2) . 'ms');
+        // TIER 1: Try full page cache first (FASTEST PATH - 1-5ms)
+        $cachedPage = RedisHelper::get($fullPageKey);
+        if ($cachedPage !== null) {
+            $duration = round((microtime(true) - $startTime) * 1000, 2);
+            Log::debug("Homepage: Full cache hit", [
+                'duration_ms' => $duration,
+                'cache_age_seconds' => RedisHelper::ttl($fullPageKey),
+                'version' => $cacheVersion,
+            ]);
+
             return view('frontend.index', $cachedPage);
         }
 
-        // Individual cache keys for components
+        // TIER 2: Full page cache miss - build from components (FAST PATH - 20-50ms)
+        Log::info("Homepage: Full cache miss, building from components");
+
+        $ttl = $this->getTtlConfig();
+
+        // Define component cache keys
         $cacheKeys = [
             'categories' => self::HOMEPAGE_CACHE_PREFIX . 'categories',
             'banners' => self::HOMEPAGE_CACHE_PREFIX . 'banners',
-            'products' => self::HOMEPAGE_CACHE_PREFIX . 'product_lists',
-            'categoryProducts' => self::HOMEPAGE_CACHE_PREFIX . 'category_products', // NEW: Pre-grouped by category
+            'featured' => self::HOMEPAGE_CACHE_PREFIX . 'products:featured',
+            'categoryProducts' => self::HOMEPAGE_CACHE_PREFIX . 'category_products',
         ];
 
-        // Batch fetch all cached data in one Redis call (pipeline optimization)
-        $cachedData = RedisHelper::mget(array_values($cacheKeys));
+        // Batch fetch all components in one Redis call (pipeline optimization)
+        $cachedComponents = RedisHelper::mget(array_values($cacheKeys));
 
-        // Get or fetch each component
-        $categories = $cachedData[$cacheKeys['categories']] ?? $this->getCategoriesData($cacheKeys['categories'], $ttl['categories']);
-        $banners = $cachedData[$cacheKeys['banners']] ?? $this->getBannersData($cacheKeys['banners'], $ttl['banners']);
-        $products = $cachedData[$cacheKeys['products']] ?? $this->getHomepageProductsData($cacheKeys['products'], $ttl['product_lists']);
-        $categoryProducts = $cachedData[$cacheKeys['categoryProducts']] ?? $this->getHomepageCategoryProducts($cacheKeys['categoryProducts'], $ttl['product_lists']);
+        // Get or build each component
+        $categories = $cachedComponents[$cacheKeys['categories']]
+            ?? $this->getCategoriesData($cacheKeys['categories'], $ttl['categories']);
 
-        // Prepare final data structure
+        $banners = $cachedComponents[$cacheKeys['banners']]
+            ?? $this->getBannersData($cacheKeys['banners'], $ttl['banners']);
+
+        $featuredProducts = $cachedComponents[$cacheKeys['featured']]
+            ?? $this->getHomepageProductsData($cacheKeys['featured'], $ttl['product_lists']);
+
+        $categoryProducts = $cachedComponents[$cacheKeys['categoryProducts']]
+            ?? $this->getHomepageCategoryProducts($cacheKeys['categoryProducts'], $ttl['product_lists']);
+
+        // Assemble final data structure
         $data = [
+            'version' => $cacheVersion,
+            'generated_at' => now()->toIso8601String(),
             'categories' => $categories,
             'banners' => $banners,
-            'product_lists' => $products->take(12), // All products section (12 featured)
+            'product_lists' => is_array($featuredProducts) ? array_slice($featuredProducts, 0, 12) : collect($featuredProducts)->take(12)->all(),
             'dynamicCategoryProducts' => $categoryProducts,
         ];
 
-        // Cache complete page for ultra-fast serving (cache rendered data structure)
-        // RedisHelper::put($completePageKey, $data, $ttl['product_lists']);
+        // Cache complete page for ultra-fast subsequent requests (30 min TTL)
+        RedisHelper::put($fullPageKey, $data, 1800);
 
-        Log::info('Homepage generated and cached in ' . round((microtime(true) - $startTime) * 1000, 2) . 'ms');
+        $duration = round((microtime(true) - $startTime) * 1000, 2);
+        Log::info("Homepage: Built and cached", [
+            'duration_ms' => $duration,
+            'cache_version' => $cacheVersion,
+            'components_from_cache' => [
+                'categories' => $cachedComponents[$cacheKeys['categories']] !== null,
+                'banners' => $cachedComponents[$cacheKeys['banners']] !== null,
+                'featured' => $cachedComponents[$cacheKeys['featured']] !== null,
+                'category_products' => $cachedComponents[$cacheKeys['categoryProducts']] !== null,
+            ],
+        ]);
+
         return view('frontend.index', $data);
     }
 
@@ -229,117 +262,215 @@ class FrontendController extends Controller
 
     /**
      * Get homepage category products (pre-grouped and optimized for display)
-     * Strategy: Cache category products separately for faster homepage assembly
+     * Optimized for 10M+ products using category-indexed queries
      */
     private function getHomepageCategoryProducts(string $key, int $ttl)
     {
-        // Get active featured categories
-        $categories = Category::whereNull('parent_id')
+        $startTime = microtime(true);
+
+        // Get active featured categories (small query - fast)
+        $categories = Category::select(['id', 'title', 'slug', 'sort_order'])
+            ->whereNull('parent_id')
             ->where('status', 'active')
-            ->orderBy('title', 'asc')
+            ->where('is_featured', true)
+            ->orderBy('sort_order')
             ->limit(4) // Top 4 categories for homepage
-            ->get(['id', 'title', 'slug']);
+            ->get();
 
-        $categoryProducts = [];
-
-        foreach ($categories as $category) {
-            // Query products for this specific category (indexed query - very fast)
-            $products = Product::select([
-                'id',
-                'title',
-                'slug',
-                'base_price',
-                'base_discount',
-                'base_stock',
-                'has_variants',
-                'cat_id',
-                'condition',
-            ])
-                ->where('status', 'active')
-                ->where('is_featured', true)
-                ->where('cat_id', $category->id) // Indexed column - O(log n) lookup
-                ->with([
-                    // Load up to 3 product images (primary first) for homepage sections
-                    'images' => fn($q) => $q->select(['id','product_id','image_path','thumbnail_path','is_primary','sort_order'])
-                        ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)
-                        ->select(['id', 'product_id', 'image_path', 'is_primary']),
-                    'variants' => fn($q) => $q->where('status', 'active')
-                        ->where('stock', '>', 0)
-                        ->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
-                        ->limit(1) // Only first variant for homepage display
-                        ->with([
-                            // Load up to 3 variant images (primary first)
-                            'images' => fn($q) => $q->select(['id','product_variant_id','image_path','thumbnail_path','is_primary','sort_order'])
-                                ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)
-                                ->select(['id', 'product_variant_id', 'image_path', 'is_primary'])
-                        ])
-                ])
-                ->latest('id')
-                ->limit(8) // 8 products per category on homepage
-                ->get();
-
-            // Transform for display
-            $products->transform(function ($product) {
-                return $this->transformProductForDisplay($product);
-            });
-
-            if ($products->count() >= 4) { // Only show category if at least 4 products
-                $categoryProducts[$category->slug] = [
-                    'title' => $category->title,
-                    'products' => $products
-                ];
-            }
+        if ($categories->isEmpty()) {
+            RedisHelper::put($key, [], $ttl);
+            return [];
         }
 
+        $categoryProducts = [];
+        $totalCacheHits = 0;
+        $totalCacheMisses = 0;
+
+        foreach ($categories as $category) {
+            // STEP 1: Get product IDs for this category (indexed query - O(log n))
+            $productIds = DB::table('products')
+                ->select('id')
+                ->where('cat_id', $category->id) // Uses cat_id index
+                ->where('status', 'active')
+                ->where('is_featured', 1)
+                ->orderBy('id', 'DESC')
+                ->limit(8) // 8 products per category
+                ->pluck('id')
+                ->toArray();
+
+            if (count($productIds) < 4) {
+                continue; // Skip categories with less than 4 products
+            }
+
+            // STEP 2: Try to fetch from product card cache
+            $productCards = $this->batchFetchProductCards($productIds);
+            $totalCacheHits += count($productCards);
+
+            // STEP 3: Query database for cache misses
+            $missingIds = array_diff($productIds, array_keys($productCards));
+
+            if (!empty($missingIds)) {
+                $totalCacheMisses += count($missingIds);
+
+                $products = Product::select([
+                    'id', 'title', 'slug', 'base_price', 'base_discount',
+                    'base_stock', 'has_variants', 'cat_id', 'condition'
+                ])
+                    ->whereIn('id', $missingIds)
+                    ->with([
+                        'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                            ->take(3)
+                            ->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
+                        'variants' => fn($q) => $q->where('status', 'active')
+                            ->where('stock', '>', 0)
+                            ->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
+                            ->limit(1)
+                            ->with([
+                                'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                                    ->take(3)
+                                    ->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                            ])
+                    ])
+                    ->get();
+
+                // Transform and cache
+                foreach ($products as $product) {
+                    $card = $this->transformProductForDisplay($product);
+                    RedisHelper::put("product:card:{$product->id}", $card, 7200);
+                    $productCards[$product->id] = $card;
+                }
+            }
+
+            // STEP 4: Reassemble in correct order
+            $orderedProducts = [];
+            foreach ($productIds as $id) {
+                if (isset($productCards[$id])) {
+                    $orderedProducts[] = $productCards[$id];
+                }
+            }
+
+            $categoryProducts[$category->slug] = [
+                'title' => $category->title,
+                'products' => $orderedProducts
+            ];
+        }
+
+        // Cache the complete component
         RedisHelper::put($key, $categoryProducts, $ttl);
+
+        $duration = round((microtime(true) - $startTime) * 1000, 2);
+        Log::debug("Category products component built in {$duration}ms", [
+            'categories_count' => count($categoryProducts),
+            'total_products' => array_sum(array_map(fn($cat) => count($cat['products']), $categoryProducts)),
+            'cache_hits' => $totalCacheHits,
+            'cache_misses' => $totalCacheMisses,
+        ]);
+
         return $categoryProducts;
     }
 
     /**
      * Get homepage featured products (all products section)
-     * Optimized query with minimal data fetching
+     * Optimized for 10M+ products using indexed queries and entity caching
      */
     private function getHomepageProductsData(string $key, int $ttl)
     {
-        // Query products with optimized eager loading
-        // Index usage: status + is_featured (composite index recommended)
-        $products = Product::select([
-            'id',
-            'title',
-            'slug',
-            'base_price',
-            'base_discount',
-            'base_stock',
-            'has_variants',
-            'cat_id',
-            'condition',
-        ])
+        $startTime = microtime(true);
+
+        // STEP 1: Get featured product IDs only (fast indexed query - O(log n))
+        $productIds = DB::table('products')
+            ->select('id')
             ->where('status', 'active')
-            // ->where('is_featured', true) // Commented to show all active products
-            ->with([
-                // Load up to 3 product images (ordered) instead of only primary for hover scrolling
-                'images' => fn($q) => $q->orderBy('sort_order', 'asc')
-                    ->take(3)
-                    ->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
-                // Load ALL active variants with pricing & stock and up to 3 images each (for building a 3-image carousel)
-                'variants' => fn($q) => $q->where('status', 'active')
-                    ->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
-                    ->with([
-                        'images' => fn($q) => $q->orderBy('sort_order', 'asc')
-                            ->take(3)
-                            ->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
-                    ])
+            ->where('is_featured', 1)
+            ->orderBy('id', 'DESC')
+            ->limit(20) // Limit to 20 featured products for homepage
+            ->pluck('id')
+            ->toArray();
+
+        if (empty($productIds)) {
+            RedisHelper::put($key, [], $ttl);
+            return [];
+        }
+
+        // STEP 2: Try to fetch product cards from entity cache
+        $productCards = $this->batchFetchProductCards($productIds);
+
+        // STEP 3: Query database for cache misses only
+        $missingIds = array_diff($productIds, array_keys($productCards));
+
+        if (!empty($missingIds)) {
+            $products = Product::select([
+                'id', 'title', 'slug', 'base_price', 'base_discount',
+                'base_stock', 'has_variants', 'cat_id', 'condition'
             ])
-            ->latest('id')
-            ->limit(60) // Fetch more than needed for dynamic category filtering
-            ->get();
+                ->whereIn('id', $missingIds)
+                ->with([
+                    'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                        ->take(3)
+                        ->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
+                    'variants' => fn($q) => $q->where('status', 'active')
+                        ->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
+                        ->where('stock', '>', 0)
+                        ->take(1) // Only first variant for homepage
+                        ->with([
+                            'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                                ->take(3)
+                                ->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                        ])
+                ])
+                ->get();
 
-        // Transform products for display
-        $products->transform(function ($product) {
-            return $this->transformProductForDisplay($product);
-        });
+            // Cache individual product cards and add to results
+            foreach ($products as $product) {
+                $card = $this->transformProductForDisplay($product);
+                RedisHelper::put("product:card:{$product->id}", $card, 7200); // 2 hour TTL
+                $productCards[$product->id] = $card;
+            }
 
-        RedisHelper::put($key, $products, $ttl);
+            Log::debug("Featured products: DB query for " . count($missingIds) . " cache misses");
+        }
+
+        // STEP 4: Reassemble in correct order
+        $orderedProducts = [];
+        foreach ($productIds as $id) {
+            if (isset($productCards[$id])) {
+                $orderedProducts[] = $productCards[$id];
+            }
+        }
+
+        // Cache the complete component
+        RedisHelper::put($key, $orderedProducts, $ttl);
+
+        $duration = round((microtime(true) - $startTime) * 1000, 2);
+        Log::debug("Featured products component built in {$duration}ms", [
+            'total_products' => count($orderedProducts),
+            'cache_hits' => count($productIds) - count($missingIds),
+            'cache_misses' => count($missingIds),
+        ]);
+
+        return $orderedProducts;
+    }
+
+    /**
+     * Batch fetch product cards from Redis
+     * Uses Redis MGET for efficient bulk retrieval
+     */
+    private function batchFetchProductCards(array $productIds): array
+    {
+        if (empty($productIds)) {
+            return [];
+        }
+
+        $keys = array_map(fn($id) => "product:card:{$id}", $productIds);
+        $cachedData = RedisHelper::mget($keys);
+
+        $products = [];
+        foreach ($productIds as $index => $id) {
+            if ($cachedData[$keys[$index]] !== null) {
+                $products[$id] = $cachedData[$keys[$index]];
+            }
+        }
+
         return $products;
     }
 
