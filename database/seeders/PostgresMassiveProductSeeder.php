@@ -20,6 +20,7 @@ class PostgresMassiveProductSeeder extends Seeder
     protected int $totalProducts = 10_000_000;                    // Total number of products to generate
     protected ?int $variantProductTarget = 9_500_000;            // Target number of products with variants (null = use ratio)
     protected float $variantProductRatio = 0.95;             // Ratio of variant products if target not set (0.95 = 95%)
+    protected int $startProductIdIfEmpty = 8812000;          // Starting product ID when table is empty (set to 1 for fresh start)
 
     // Variant configuration per product
     protected int $minVariantsPerProduct = 3;                // Minimum variants per product
@@ -107,6 +108,7 @@ class PostgresMassiveProductSeeder extends Seeder
     protected int $productsSeeded = 0;
     protected int $variantProductsSeeded = 0;
     protected int $nonVariantProductsSeeded = 0;
+    protected int $existingProductsCount = 0;            // Products already in DB before seeding
 
     /**
      * Tracking inserted product IDs and SKU sequences
@@ -621,8 +623,9 @@ class PostgresMassiveProductSeeder extends Seeder
         $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
 
         $lastProductId = DB::table('products')->max('id');
-        // $this->nextProductId = $lastProductId ? ((int) $lastProductId + 1) : 1;
-        $startProductId = $lastProductId ? ((int) $lastProductId + 1) : 8602000;
+        $this->existingProductsCount = (int) DB::table('products')->count();
+
+        $startProductId = $lastProductId ? ((int) $lastProductId + 1) : $this->startProductIdIfEmpty;
 
         // Cap at 10 million
         if ($startProductId > 10_000_000) {
@@ -637,6 +640,7 @@ class PostgresMassiveProductSeeder extends Seeder
         $this->nextAssignmentId = $this->nextIdFor('product_variant_option_assignments');
         $this->nextTypeSelectionId = $this->nextIdFor('product_variant_type_selections');
 
+        $this->writeOutput('  Existing Products:      ' . str_pad(number_format($this->existingProductsCount), 12, ' ', STR_PAD_LEFT));
         $this->writeOutput('  Starting Sequence IDs:');
         $this->writeOutput('    • Products:             ' . str_pad(number_format($this->nextProductId), 12, ' ', STR_PAD_LEFT));
         $this->writeOutput('    • Variants:             ' . str_pad(number_format($this->nextVariantId), 12, ' ', STR_PAD_LEFT));
@@ -816,9 +820,12 @@ class PostgresMassiveProductSeeder extends Seeder
         $this->writeOutput('╔════════════════════════════════════════════════════════════════════╗');
         $this->writeOutput('║                     SEEDING SUMMARY                                ║');
         $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
-        $this->writeOutput('  Total Products:        ' . str_pad(number_format($this->productsSeeded), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('  Products Seeded:       ' . str_pad(number_format($this->productsSeeded), 15, ' ', STR_PAD_LEFT));
         $this->writeOutput('  → Variant Products:    ' . str_pad(number_format($this->variantProductsSeeded), 15, ' ', STR_PAD_LEFT));
         $this->writeOutput('  → Non-Variant:         ' . str_pad(number_format($this->nonVariantProductsSeeded), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('');
+        $this->writeOutput('  Previous DB Count:     ' . str_pad(number_format($this->existingProductsCount), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('  Total in Database:     ' . str_pad(number_format($this->existingProductsCount + $this->productsSeeded), 15, ' ', STR_PAD_LEFT));
         $this->writeOutput('');
         $this->writeOutput('  Images per Product:    ' . str_pad(number_format($this->productImagesPerProduct), 15, ' ', STR_PAD_LEFT));
         $this->writeOutput('  Images per Variant:    ' . str_pad(number_format($this->variantImagesPerVariant), 15, ' ', STR_PAD_LEFT));
@@ -1438,15 +1445,18 @@ class PostgresMassiveProductSeeder extends Seeder
         $elapsed = microtime(true) - $startTime;
         $rate = $elapsed > 0 ? $this->productsSeeded / $elapsed : 0;
         $eta = ($rate > 0 && $remaining > 0) ? $remaining / $rate : 0;
-        $percentComplete = $this->totalProducts > 0 ? ($this->productsSeeded / $this->totalProducts) * 100 : 0;
+        $totalExpected = $this->existingProductsCount + $this->totalProducts;
+        $currentTotal = $this->existingProductsCount + $this->productsSeeded;
+        $percentComplete = $totalExpected > 0 ? ($currentTotal / $totalExpected) * 100 : 0;
 
         // Format batch duration
         $batchTimeStr = $batchDuration > 0 ? sprintf('%.2fs', $batchDuration) : 'N/A';
 
         $message = sprintf(
-            '⚡ Batch #%-4d │ Progress: %6.2f%% │ Seeded: %s │ Remaining: %s │ Rate: %s/s │ Batch: %s │ ETA: %s',
+            '⚡ Batch #%-4d │ Progress: %6.2f%% │ DB Total: %s │ Seeded: %s │ Remaining: %s │ Rate: %s/s │ Batch: %s │ ETA: %s',
             $batchIndex,
             $percentComplete,
+            str_pad(number_format($currentTotal), 10, ' ', STR_PAD_LEFT),
             str_pad(number_format($this->productsSeeded), 10, ' ', STR_PAD_LEFT),
             str_pad(number_format($remaining), 10, ' ', STR_PAD_LEFT),
             str_pad(number_format($rate, 0), 6, ' ', STR_PAD_LEFT),
@@ -1468,7 +1478,9 @@ class PostgresMassiveProductSeeder extends Seeder
         $rate = $elapsed > 0 ? $productsSeeded / $elapsed : 0;
         $remaining = $this->totalProducts - $productsSeeded;
         $eta = ($rate > 0 && $remaining > 0) ? $remaining / $rate : 0;
-        $percentComplete = $this->totalProducts > 0 ? ($productsSeeded / $this->totalProducts) * 100 : 0;
+        $totalExpected = $this->existingProductsCount + $this->totalProducts;
+        $currentTotal = $this->existingProductsCount + $productsSeeded;
+        $percentComplete = $totalExpected > 0 ? ($currentTotal / $totalExpected) * 100 : 0;
 
         $this->writeOutput('');
         $this->writeOutput('╔════════════════════════════════════════════════════════════════════╗');
@@ -1478,6 +1490,7 @@ class PostgresMassiveProductSeeder extends Seeder
         ));
         $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
         $this->writeOutput(sprintf('  📊 Progress:       %6.2f%% complete', $percentComplete));
+        $this->writeOutput(sprintf('  📦 DB Total:       %s products', number_format($currentTotal)));
         $this->writeOutput(sprintf('  ⚡ Current Rate:    %s products/second', number_format($rate, 0)));
         $this->writeOutput(sprintf('  ⏱  Elapsed Time:   %s', $this->formatInterval($elapsed)));
         $this->writeOutput(sprintf('  🎯 Remaining:      %s products', number_format($remaining)));
