@@ -83,14 +83,14 @@ class ProductController extends Controller
             $rules['base_discount'] = 'nullable|numeric|min:0|max:100';
             $rules['base_stock'] = 'required|integer|min:0';
             $rules['base_sku'] = 'required|string|max:255|unique:products,base_sku';
-            // Exactly 1 images required for a normal (non-variant) product
+            // At least 1 image required for a normal (non-variant) product
             $rules['photo'] = [
                 'required',
                 'string',
                 function ($attribute, $value, $fail) {
                     $paths = array_filter(array_map('trim', explode(',', (string) $value)));
-                    if (count($paths) !== 3) {
-                        $fail('Exactly 1 product images are required.');
+                    if (count($paths) < 1) {
+                        $fail('At least 1 product image is required.');
                     }
                 }
             ];
@@ -113,7 +113,7 @@ class ProductController extends Controller
             'base_stock.min' => 'Stock cannot be negative.',
             'base_sku.required' => 'SKU is required.',
             'base_sku.unique' => 'This SKU is already in use.',
-            'photo.required' => 'Exactly 3 product images are required.',
+            'photo.required' => 'At least 1 product image is required.',
             'base_discount.min' => 'Discount cannot be negative.',
             'base_discount.max' => 'Discount cannot exceed 100%.',
             'variants.required' => 'Please generate variants before submitting.',
@@ -127,7 +127,17 @@ class ProductController extends Controller
             'alt_text.*.max' => 'Alt text cannot exceed 125 characters.',
         ];
 
-        $validatedData = $request->validate($rules, $messages);
+        try {
+            $validatedData = $request->validate($rules, $messages);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::warning('Product store - validation failed', [
+                'errors' => $e->errors(),
+                'request_has_photo' => $request->has('photo'),
+                'photo_value' => $request->input('photo'),
+                'has_variants' => $request->boolean('has_variants')
+            ]);
+            throw $e;
+        }
 
         Log::info('Product store - validation passed', array_merge(
             ['has_variants' => $request->boolean('has_variants')],
@@ -222,6 +232,15 @@ class ProductController extends Controller
             Log::info('Product store - product created', ['product_id' => $product->id, 'base_sku' => $product->base_sku ?? null]);
 
             if (!$request->boolean('has_variants') && !empty($webpPaths)) {
+                // Sync product_images sequence for PostgreSQL before inserting images
+                if ($driver === 'pgsql') {
+                    $seqRow = DB::selectOne("SELECT pg_get_serial_sequence('product_images', 'id') as seq");
+                    if ($seqRow && isset($seqRow->seq)) {
+                        DB::statement("SELECT setval('" . $seqRow->seq . "', (SELECT COALESCE(MAX(id), 0) FROM product_images))");
+                        Log::info('Product store - synced product_images sequence for pgsql', ['sequence' => $seqRow->seq]);
+                    }
+                }
+
                 $enableAltText = $request->boolean('enable_alt_text');
                 $altTexts = $enableAltText && $request->has('alt_text') ? array_values($request->input('alt_text', [])) : [];
 
@@ -435,6 +454,17 @@ class ProductController extends Controller
                 $variant->optionAssignments()->create([
                     'product_variant_option_id' => $optionId
                 ]);
+            }
+
+            // Sync variant_images sequence for PostgreSQL before inserting images
+            $pdo = DB::getPdo();
+            $driver = $pdo->getAttribute(\PDO::ATTR_DRIVER_NAME) ?? '';
+            if ($driver === 'pgsql') {
+                $seqRow = DB::selectOne("SELECT pg_get_serial_sequence('variant_images', 'id') as seq");
+                if ($seqRow && isset($seqRow->seq)) {
+                    DB::statement("SELECT setval('" . $seqRow->seq . "', (SELECT COALESCE(MAX(id), 0) FROM variant_images))");
+                    Log::info('Product store - synced variant_images sequence for pgsql', ['sequence' => $seqRow->seq]);
+                }
             }
 
             foreach ($webpPaths as $imgIndex => $path) {
@@ -824,9 +854,9 @@ class ProductController extends Controller
                         $webpFilename = 'product_' . uniqid() . "_{$index}.webp";
                         $webpPath = "public/products/{$webpFilename}";
                         Storage::put($webpPath, (string) $image);
-                        $newPhotoPaths[] = "products/{$webpFilename}";
+                        $newPhotoPaths[] = $webpFilename; // Store only filename (consistent with store method)
                         $newPhotoInputs[] = $index;
-                        Log::info('Image converted to webp', ['webp_path' => $webpPath]);
+                        Log::info('Image converted to webp', ['webp_path' => $webpPath, 'filename_only' => $webpFilename]);
                     } else {
                         Log::warning('Source image not found', ['path' => $fullPath]);
                     }
@@ -1205,56 +1235,145 @@ class ProductController extends Controller
 
     private function syncVariantImages(ProductVariant $variant, string $imagesInput)
     {
-        $allImageUrls = array_filter(array_map('trim', explode(',', $imagesInput)));
-        $existingImages = $variant->images()->get()->keyBy('id')->toArray();
+        $allImagePaths = array_filter(array_map('trim', explode(',', $imagesInput)));
+        $existingDbImages = $variant->images()->get()->keyBy('image_path');
         $sortOrder = 1;
-        $processedImages = [];
+        $newImagesToProcess = [];
+        $existingImagesToKeep = [];
 
-        Log::info('VARIANT IMAGE SYNC START', ['variant_id' => $variant->id, 'input_count' => count($allImageUrls), 'existing_count' => count($existingImages), 'input_urls' => $allImageUrls]);
+        Log::info('VARIANT IMAGE SYNC START', [
+            'variant_id' => $variant->id,
+            'input_count' => count($allImagePaths),
+            'existing_db_count' => $existingDbImages->count(),
+            'input_paths' => $allImagePaths
+        ]);
 
-        foreach ($allImageUrls as $index => $publicPath) {
-            $publicPath = ltrim($publicPath, '/');
+        // Separate existing images (already in DB) from new images (from file manager)
+        foreach ($allImagePaths as $index => $imagePath) {
+            $imagePath = ltrim($imagePath, '/');
+
+            // Check if this is an existing image (starts with variant_ and exists in DB)
+            if (preg_match('/^variant_[a-f0-9]+_\d+\.webp$/', $imagePath) && $existingDbImages->has($imagePath)) {
+                // This is an existing image - keep it
+                $existingImage = $existingDbImages->get($imagePath);
+                $existingImagesToKeep[$imagePath] = [
+                    'id' => $existingImage->id,
+                    'sort_order' => $sortOrder,
+                    'is_primary' => ($sortOrder === 1)
+                ];
+                $sortOrder++;
+                Log::debug('KEEPING EXISTING IMAGE', [
+                    'variant_id' => $variant->id,
+                    'image_id' => $existingImage->id,
+                    'path' => $imagePath,
+                    'sort_order' => $existingImagesToKeep[$imagePath]['sort_order']
+                ]);
+            } else {
+                // This is a new image from file manager - needs processing
+                $newImagesToProcess[] = [
+                    'path' => $imagePath,
+                    'index' => $index,
+                    'initial_sort_order' => $sortOrder
+                ];
+                $sortOrder++; // Reserve sort order for this new image
+                Log::debug('NEW IMAGE TO PROCESS', ['variant_id' => $variant->id, 'path' => $imagePath]);
+            }
+        }
+
+        // Process new images from file manager
+        $processedNewImages = [];
+        foreach ($newImagesToProcess as $imageData) {
+            $publicPath = $imageData['path'];
             $fullPath = storage_path("app/public/{$publicPath}");
 
-            Log::debug('Processing image', ['variant_id' => $variant->id, 'index' => $index, 'public_path' => $publicPath, 'full_path' => $fullPath, 'file_exists' => file_exists($fullPath)]);
+            Log::debug('Processing new image', [
+                'variant_id' => $variant->id,
+                'public_path' => $publicPath,
+                'full_path' => $fullPath,
+                'file_exists' => file_exists($fullPath)
+            ]);
 
             if (!file_exists($fullPath)) {
-                Log::warning('VARIANT IMAGE FILE NOT FOUND', ['variant_id' => $variant->id, 'public_path' => $publicPath, 'full_path' => $fullPath]);
+                Log::warning('NEW IMAGE FILE NOT FOUND', [
+                    'variant_id' => $variant->id,
+                    'public_path' => $publicPath,
+                    'full_path' => $fullPath
+                ]);
                 continue;
             }
 
             try {
                 $image = Image::make($fullPath)->encode('webp', 75);
-                $webpFilename = 'variant_' . uniqid() . '_' . $index . '.webp';
+                $webpFilename = 'variant_' . uniqid() . '_' . $imageData['index'] . '.webp';
                 Storage::put("public/products/variants/{$webpFilename}", (string) $image);
-                $processedImages[] = ['path' => $webpFilename, 'is_primary' => ($sortOrder === 1), 'sort_order' => $sortOrder]; // Store only filename
-                Log::info('VARIANT IMAGE CONVERTED', ['variant_id' => $variant->id, 'original_path' => $publicPath, 'filename' => $webpFilename, 'sort_order' => $sortOrder, 'is_primary' => ($sortOrder === 1)]);
-                $sortOrder++;
+                $processedNewImages[] = [
+                    'path' => $webpFilename,
+                    'is_primary' => ($imageData['initial_sort_order'] === 1),
+                    'sort_order' => $imageData['initial_sort_order']
+                ];
+                Log::info('NEW IMAGE CONVERTED', [
+                    'variant_id' => $variant->id,
+                    'original_path' => $publicPath,
+                    'filename' => $webpFilename,
+                    'sort_order' => $imageData['initial_sort_order']
+                ]);
             } catch (\Exception $e) {
-                Log::error('VARIANT IMAGE CONVERSION FAILED', ['variant_id' => $variant->id, 'public_path' => $publicPath, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+                Log::error('IMAGE CONVERSION FAILED', [
+                    'variant_id' => $variant->id,
+                    'public_path' => $publicPath,
+                    'error' => $e->getMessage()
+                ]);
                 continue;
             }
         }
 
-        if (empty($processedImages)) {
-            Log::error('NO IMAGES PROCESSED', ['variant_id' => $variant->id, 'input_urls' => $allImageUrls]);
+        // Verify we have at least one image (existing or new)
+        $totalImageCount = count($existingImagesToKeep) + count($processedNewImages);
+        if ($totalImageCount === 0) {
+            Log::error('NO IMAGES TO SAVE', ['variant_id' => $variant->id, 'input_paths' => $allImagePaths]);
             throw new \Exception('No valid images could be processed for variant ID ' . $variant->id);
         }
 
-        Log::info('DELETING OLD VARIANT IMAGES', ['variant_id' => $variant->id, 'old_image_count' => count($existingImages)]);
-
-        foreach ($existingImages as $image) {
-            if (Storage::exists("public/{$image['image_path']}")) {
-                Storage::delete("public/{$image['image_path']}");
-                Log::info('OLD IMAGE DELETED FROM STORAGE', ['variant_id' => $variant->id, 'image_id' => $image['id'], 'path' => $image['image_path']]);
+        // Delete images that are no longer in the input
+        $pathsToKeep = array_keys($existingImagesToKeep);
+        foreach ($existingDbImages as $dbImage) {
+            if (!in_array($dbImage->image_path, $pathsToKeep)) {
+                // Delete from storage
+                $storagePath = "public/products/variants/{$dbImage->image_path}";
+                if (Storage::exists($storagePath)) {
+                    Storage::delete($storagePath);
+                    Log::info('DELETED REMOVED IMAGE FROM STORAGE', [
+                        'variant_id' => $variant->id,
+                        'image_id' => $dbImage->id,
+                        'path' => $dbImage->image_path
+                    ]);
+                }
+                // Delete from database
+                $dbImage->delete();
+                Log::info('DELETED REMOVED IMAGE FROM DB', [
+                    'variant_id' => $variant->id,
+                    'image_id' => $dbImage->id
+                ]);
             }
-            VariantImage::where('id', $image['id'])->delete();
-            Log::info('OLD IMAGE DELETED FROM DATABASE', ['variant_id' => $variant->id, 'image_id' => $image['id']]);
         }
 
-        Log::info('CREATING NEW VARIANT IMAGE RECORDS', ['variant_id' => $variant->id, 'new_image_count' => count($processedImages)]);
+        // Update sort order and is_primary for existing images
+        foreach ($existingImagesToKeep as $path => $updateData) {
+            VariantImage::where('id', $updateData['id'])->update([
+                'sort_order' => $updateData['sort_order'],
+                'is_primary' => $updateData['is_primary']
+            ]);
+            Log::info('UPDATED EXISTING IMAGE', [
+                'variant_id' => $variant->id,
+                'image_id' => $updateData['id'],
+                'path' => $path,
+                'sort_order' => $updateData['sort_order'],
+                'is_primary' => $updateData['is_primary']
+            ]);
+        }
 
-        foreach ($processedImages as $imageData) {
+        // Create new image records
+        foreach ($processedNewImages as $imageData) {
             $created = VariantImage::create([
                 'product_variant_id' => $variant->id,
                 'image_path' => $imageData['path'],
@@ -1262,8 +1381,13 @@ class ProductController extends Controller
                 'is_primary' => $imageData['is_primary'],
                 'sort_order' => $imageData['sort_order'],
             ]);
-
-            Log::info('NEW VARIANT IMAGE CREATED', ['variant_id' => $variant->id, 'image_id' => $created->id, 'path' => $imageData['path'], 'is_primary' => $imageData['is_primary'], 'sort_order' => $imageData['sort_order']]);
+            Log::info('CREATED NEW IMAGE RECORD', [
+                'variant_id' => $variant->id,
+                'image_id' => $created->id,
+                'path' => $imageData['path'],
+                'is_primary' => $imageData['is_primary'],
+                'sort_order' => $imageData['sort_order']
+            ]);
         }
 
         if (class_exists('App\Helpers\RedisHelper')) {
@@ -1271,7 +1395,12 @@ class ProductController extends Controller
             Log::info('Redis cache invalidated', ['cache_key' => "product_variants:{$variant->product_id}"]);
         }
 
-        Log::info('VARIANT IMAGE SYNC COMPLETE', ['variant_id' => $variant->id, 'final_image_count' => count($processedImages)]);
+        Log::info('VARIANT IMAGE SYNC COMPLETE', [
+            'variant_id' => $variant->id,
+            'kept_existing' => count($existingImagesToKeep),
+            'added_new' => count($processedNewImages),
+            'final_total' => $totalImageCount
+        ]);
     }
 
     private function storeVariantImages(ProductVariant $variant, array $imageUrls)

@@ -124,7 +124,7 @@
         @endforeach
     @endif
 
-    @if ($product_lists?->count())
+    @if (!empty($product_lists) && count($product_lists) > 0)
         <section class="product-area section" id="all-products">
             <div class="container">
                 <div class="section-title text-center">
@@ -149,7 +149,7 @@
     @endif
 
     @foreach ($dynamicCategoryProducts as $slug => $categoryData)
-        @if ($categoryData['products']?->count())
+        @if (!empty($categoryData['products']) && count($categoryData['products']) > 0)
             <section class="product-area section" id="{{ $slug }}-products">
                 <div class="container">
                     <div class="section-title text-center">
@@ -212,8 +212,8 @@
         </div>
     </section>
 
-    @if ($product_lists?->count())
-        @foreach ($product_lists->take(5) as $product)
+    @if (!empty($product_lists) && count($product_lists) > 0)
+        @foreach (array_slice($product_lists, 0, 5) as $product)
             @include('frontend.partials.product-modal', ['product' => $product])
         @endforeach
     @endif

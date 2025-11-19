@@ -19,7 +19,7 @@ A complete Redis caching solution that makes your homepage load in **5-15ms** wi
 1. **`app/Helpers/RedisHelper.php`** - Enhanced with 15+ new methods
 2. **`app/Http/Controllers/FrontendController.php`** - Optimized homepage method
 3. **`app/Observers/ProductObserver.php`** - Smart cache invalidation
-4. **`config/cache_keys.php`** - Updated TTL and prefixes
+4. **`config/redis_cache.php`** - Centralized Redis configuration with TTL and all settings
 
 ---
 

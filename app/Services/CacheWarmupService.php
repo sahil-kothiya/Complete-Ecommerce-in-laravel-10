@@ -72,7 +72,7 @@ class CacheWarmupService
 
         try {
             $key = self::HOMEPAGE_CACHE_PREFIX . 'categories';
-            $ttl = config('cache_keys.ttl.categories', 43200);
+            $ttl = config('redis_cache.ttl.categories', 43200);
 
             // Fetch active parent categories
             $categories = Category::select(['id', 'title', 'slug', 'photo'])
@@ -109,7 +109,7 @@ class CacheWarmupService
 
         try {
             $key = self::HOMEPAGE_CACHE_PREFIX . 'banners';
-            $ttl = config('cache_keys.ttl.banners', 21600);
+            $ttl = config('redis_cache.ttl.banners', 21600);
 
             $banners = Banner::select(['id', 'title', 'slug', 'photo', 'description', 'status', 'link_type', 'link'])
                 ->with(['discounts' => fn($q) => $q->select(['discounts.id', 'discounts.title', 'discounts.type', 'discounts.value'])
@@ -146,7 +146,7 @@ class CacheWarmupService
 
         try {
             $key = self::HOMEPAGE_CACHE_PREFIX . 'products:featured';
-            $ttl = config('cache_keys.ttl.product_lists', 3600);
+            $ttl = config('redis_cache.ttl.featured_products', 3600);
 
             // Get featured product IDs (indexed query)
             $productIds = DB::table('products')
@@ -216,7 +216,7 @@ class CacheWarmupService
 
         try {
             $key = self::HOMEPAGE_CACHE_PREFIX . 'category_products';
-            $ttl = config('cache_keys.ttl.product_lists', 3600);
+            $ttl = config('redis_cache.ttl.category_products', 3600);
 
             // Get featured categories
             $categories = Category::select(['id', 'title', 'slug'])

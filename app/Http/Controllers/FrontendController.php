@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\ImageHelper;
 use App\Helpers\RedisHelper;
 use App\Helpers\UrlEncryptor;
 use App\Models\Banner;
@@ -44,6 +45,7 @@ class FrontendController extends Controller
 
     protected $recentProductService;
     private ProductSearchService $searchService;
+    private bool $homepageCacheEnabled;
 
     /**
      * Constructor to initialize services.
@@ -55,6 +57,12 @@ class FrontendController extends Controller
     {
         $this->searchService = $searchService;
         $this->recentProductService = $recentProductService;
+        $this->homepageCacheEnabled = (bool) ((config('app.homepage_cache_enabled')) ?? env('HOMEPAGE_CACHE_ENABLED', false));
+    }
+
+    private function isHomepageCacheEnabled(): bool
+    {
+        return $this->homepageCacheEnabled;
     }
 
     /**
@@ -77,80 +85,154 @@ class FrontendController extends Controller
      */
     public function home()
     {
+        Log::info('=== HOME PAGE REQUEST STARTED ===');
         $startTime = microtime(true);
 
-        // Get cache version for versioned cache invalidation
-        $cacheVersion = RedisHelper::getVersion('meta:cache:version');
-        $fullPageKey = self::HOMEPAGE_CACHE_PREFIX . "full_page_v{$cacheVersion}";
+        try {
+            Log::info('Step 1: Checking cache configuration');
+            $cacheEnabled = $this->isHomepageCacheEnabled();
+            Log::info('Cache enabled status', ['enabled' => $cacheEnabled]);
 
-        // TIER 1: Try full page cache first (FASTEST PATH - 1-5ms)
-        $cachedPage = RedisHelper::get($fullPageKey);
-        if ($cachedPage !== null) {
-            $duration = round((microtime(true) - $startTime) * 1000, 2);
-            Log::debug("Homepage: Full cache hit", [
-                'duration_ms' => $duration,
-                'cache_age_seconds' => RedisHelper::ttl($fullPageKey),
-                'version' => $cacheVersion,
+            // Get cache version for versioned cache invalidation when enabled
+            $cacheVersion = $cacheEnabled ? RedisHelper::getVersion('meta:cache:version') : 0;
+            $fullPageKey = $cacheEnabled ? self::HOMEPAGE_CACHE_PREFIX . "full_page_v{$cacheVersion}" : null;
+
+            Log::info('Step 2: Cache keys generated', [
+                'cache_version' => $cacheVersion,
+                'full_page_key' => $fullPageKey
             ]);
 
-            return view('frontend.index', $cachedPage);
+            // TIER 1: Try full page cache first (FASTEST PATH - 1-5ms)
+            $cachedPage = $cacheEnabled ? RedisHelper::get($fullPageKey) : null;
+            if ($cacheEnabled && $cachedPage !== null) {
+                $duration = round((microtime(true) - $startTime) * 1000, 2);
+                Log::info("Homepage: Full cache hit - returning cached page", [
+                    'duration_ms' => $duration,
+                    'cache_age_seconds' => RedisHelper::ttl($fullPageKey),
+                    'version' => $cacheVersion,
+                ]);
+
+                return view('frontend.index', $cachedPage);
+            }
+
+            Log::info('Step 3: Full page cache miss or disabled, building page');
+
+            // TIER 2: Full page cache miss or cache disabled - build from components
+            Log::info($cacheEnabled
+                ? 'Homepage: Full cache miss, building from components'
+                : 'Homepage cache disabled, building fresh response');
+
+            Log::info('Step 4: Getting TTL configuration');
+            $ttl = $this->getTtlConfig();
+            Log::info('TTL config loaded', ['ttl' => $ttl]);
+
+            // Define component cache keys
+            $cacheKeys = [
+                'categories' => $cacheEnabled ? self::HOMEPAGE_CACHE_PREFIX . "categories_v{$cacheVersion}" : null,
+                'banners' => $cacheEnabled ? self::HOMEPAGE_CACHE_PREFIX . "banners_v{$cacheVersion}" : null,
+                'featured' => $cacheEnabled ? self::HOMEPAGE_CACHE_PREFIX . "products:featured_v{$cacheVersion}" : null,
+                'categoryProducts' => $cacheEnabled ? self::HOMEPAGE_CACHE_PREFIX . "category_products_v{$cacheVersion}" : null,
+            ];
+
+            Log::info('Step 5: Cache keys defined', ['cache_keys' => $cacheKeys]);
+
+            // Batch fetch all components in one Redis call (pipeline optimization)
+            $cacheKeyList = $cacheEnabled ? array_values(array_filter($cacheKeys)) : [];
+            $cachedComponents = ($cacheEnabled && !empty($cacheKeyList))
+                ? RedisHelper::mget($cacheKeyList)
+                : [];
+
+            Log::info('Step 6: Cached components fetched', [
+                'cache_key_count' => count($cacheKeyList),
+                'cached_count' => count($cachedComponents)
+            ]);
+
+            $categoriesFromCache = $cacheEnabled && $cacheKeys['categories'] && isset($cachedComponents[$cacheKeys['categories']]);
+            $bannersFromCache = $cacheEnabled && $cacheKeys['banners'] && isset($cachedComponents[$cacheKeys['banners']]);
+            $featuredFromCache = $cacheEnabled && $cacheKeys['featured'] && isset($cachedComponents[$cacheKeys['featured']]);
+            $categoryProductsFromCache = $cacheEnabled && $cacheKeys['categoryProducts'] && isset($cachedComponents[$cacheKeys['categoryProducts']]);
+
+            Log::info('Step 7: Component cache status', [
+                'categories_from_cache' => $categoriesFromCache,
+                'banners_from_cache' => $bannersFromCache,
+                'featured_from_cache' => $featuredFromCache,
+                'category_products_from_cache' => $categoryProductsFromCache
+            ]);
+
+            // Get or build each component
+            Log::info('Step 8: Fetching categories');
+            $categories = $categoriesFromCache
+                ? $cachedComponents[$cacheKeys['categories']]
+                : $this->getCategoriesData($cacheKeys['categories'], $ttl['categories'], $cacheEnabled);
+            Log::info('Categories fetched', ['count' => is_countable($categories) ? count($categories) : 0]);
+
+            Log::info('Step 9: Fetching banners');
+            $banners = $bannersFromCache
+                ? $cachedComponents[$cacheKeys['banners']]
+                : $this->getBannersData($cacheKeys['banners'], $ttl['banners'], $cacheEnabled);
+            Log::info('Banners fetched', ['count' => is_countable($banners) ? count($banners) : 0]);
+
+            Log::info('Step 10: Fetching featured products');
+            $featuredProducts = $featuredFromCache
+                ? $cachedComponents[$cacheKeys['featured']]
+                : $this->getHomepageProductsData($cacheKeys['featured'], $ttl['featured_products'] ?? 3600, $cacheEnabled);
+            Log::info('Featured products fetched', ['count' => is_countable($featuredProducts) ? count($featuredProducts) : 0]);
+
+            Log::info('Step 11: Fetching category products');
+            $categoryProducts = $categoryProductsFromCache
+                ? $cachedComponents[$cacheKeys['categoryProducts']]
+                : $this->getHomepageCategoryProducts($cacheKeys['categoryProducts'], $ttl['category_products'] ?? 3600, $cacheEnabled);
+            Log::info('Category products fetched', ['count' => is_countable($categoryProducts) ? count($categoryProducts) : 0]);
+
+            // Assemble final data structure
+            Log::info('Step 12: Assembling final data structure');
+            $data = [
+                'version' => $cacheEnabled ? $cacheVersion : null,
+                'generated_at' => now()->toIso8601String(),
+                'categories' => $categories,
+                'banners' => $banners,
+                'product_lists' => is_array($featuredProducts) ? array_slice($featuredProducts, 0, 12) : collect($featuredProducts)->take(12)->all(),
+                'dynamicCategoryProducts' => $categoryProducts,
+            ];
+
+            Log::info('Data structure assembled', [
+                'categories_count' => is_countable($data['categories']) ? count($data['categories']) : 0,
+                'banners_count' => is_countable($data['banners']) ? count($data['banners']) : 0,
+                'product_lists_count' => is_countable($data['product_lists']) ? count($data['product_lists']) : 0,
+                'category_products_count' => is_countable($data['dynamicCategoryProducts']) ? count($data['dynamicCategoryProducts']) : 0
+            ]);
+
+            // Cache complete page for ultra-fast subsequent requests (30 min TTL)
+            if ($cacheEnabled) {
+                Log::info('Step 13: Caching complete page');
+                RedisHelper::put($fullPageKey, $data, 1800);
+            }
+
+            $duration = round((microtime(true) - $startTime) * 1000, 2);
+            Log::info("=== Homepage: Response built successfully ===", [
+                'duration_ms' => $duration,
+                'cache_version' => $cacheEnabled ? $cacheVersion : null,
+                'cache_enabled' => $cacheEnabled,
+                'components_from_cache' => [
+                    'categories' => $categoriesFromCache,
+                    'banners' => $bannersFromCache,
+                    'featured' => $featuredFromCache,
+                    'category_products' => $categoryProductsFromCache,
+                ],
+            ]);
+
+            return view('frontend.index', $data);
+        } catch (\Exception $e) {
+            Log::error('=== CRITICAL ERROR in home page ===', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            // Return error view or rethrow
+            throw $e;
         }
-
-        // TIER 2: Full page cache miss - build from components (FAST PATH - 20-50ms)
-        Log::info("Homepage: Full cache miss, building from components");
-
-        $ttl = $this->getTtlConfig();
-
-        // Define component cache keys
-        $cacheKeys = [
-            'categories' => self::HOMEPAGE_CACHE_PREFIX . 'categories',
-            'banners' => self::HOMEPAGE_CACHE_PREFIX . 'banners',
-            'featured' => self::HOMEPAGE_CACHE_PREFIX . 'products:featured',
-            'categoryProducts' => self::HOMEPAGE_CACHE_PREFIX . 'category_products',
-        ];
-
-        // Batch fetch all components in one Redis call (pipeline optimization)
-        $cachedComponents = RedisHelper::mget(array_values($cacheKeys));
-
-        // Get or build each component
-        $categories = $cachedComponents[$cacheKeys['categories']]
-            ?? $this->getCategoriesData($cacheKeys['categories'], $ttl['categories']);
-
-        $banners = $cachedComponents[$cacheKeys['banners']]
-            ?? $this->getBannersData($cacheKeys['banners'], $ttl['banners']);
-
-        $featuredProducts = $cachedComponents[$cacheKeys['featured']]
-            ?? $this->getHomepageProductsData($cacheKeys['featured'], $ttl['product_lists']);
-
-        $categoryProducts = $cachedComponents[$cacheKeys['categoryProducts']]
-            ?? $this->getHomepageCategoryProducts($cacheKeys['categoryProducts'], $ttl['product_lists']);
-
-        // Assemble final data structure
-        $data = [
-            'version' => $cacheVersion,
-            'generated_at' => now()->toIso8601String(),
-            'categories' => $categories,
-            'banners' => $banners,
-            'product_lists' => is_array($featuredProducts) ? array_slice($featuredProducts, 0, 12) : collect($featuredProducts)->take(12)->all(),
-            'dynamicCategoryProducts' => $categoryProducts,
-        ];
-
-        // Cache complete page for ultra-fast subsequent requests (30 min TTL)
-        RedisHelper::put($fullPageKey, $data, 1800);
-
-        $duration = round((microtime(true) - $startTime) * 1000, 2);
-        Log::info("Homepage: Built and cached", [
-            'duration_ms' => $duration,
-            'cache_version' => $cacheVersion,
-            'components_from_cache' => [
-                'categories' => $cachedComponents[$cacheKeys['categories']] !== null,
-                'banners' => $cachedComponents[$cacheKeys['banners']] !== null,
-                'featured' => $cachedComponents[$cacheKeys['featured']] !== null,
-                'category_products' => $cachedComponents[$cacheKeys['categoryProducts']] !== null,
-            ],
-        ]);
-
-        return view('frontend.index', $data);
     }
 
     /**
@@ -160,7 +242,7 @@ class FrontendController extends Controller
      * @param int $ttl Time to live
      * @return \Illuminate\Support\Collection
      */
-    protected function getFeaturedCategoriesData(string $key, int $ttl)
+    protected function getFeaturedCategoriesData(?string $key, int $ttl, bool $useCache = true)
     {
         $featuredCategories = Category::whereNull('parent_id')
             ->where('is_featured', true)
@@ -174,7 +256,9 @@ class FrontendController extends Controller
             }])
             ->get();
 
-        RedisHelper::put($key, $featuredCategories, $ttl);
+        if ($useCache && $key) {
+            RedisHelper::put($key, $featuredCategories, $ttl);
+        }
         return $featuredCategories;
     }
 
@@ -210,7 +294,7 @@ class FrontendController extends Controller
     private function getTtlConfig(): array
     {
         if (self::$ttlConfig === null) {
-            self::$ttlConfig = config('cache_keys.ttl');
+            self::$ttlConfig = config('redis_cache.ttl', []);
         }
         return self::$ttlConfig;
     }
@@ -223,8 +307,10 @@ class FrontendController extends Controller
      * @param int $ttl Time to live
      * @return \Illuminate\Support\Collection
      */
-    private function getCategoriesData(string $key, int $ttl)
+    private function getCategoriesData(?string $key, int $ttl, bool $useCache = true)
     {
+        Log::info('getCategoriesData: Starting', ['cache_key' => $key, 'use_cache' => $useCache]);
+
         // Query only active parent categories with minimal fields
         $categories = Category::select(['id', 'title', 'slug', 'photo'])
             ->whereNull('parent_id') // Only root categories for homepage
@@ -233,7 +319,13 @@ class FrontendController extends Controller
             ->limit(10) // Limit to 10 categories for homepage
             ->get();
 
-        RedisHelper::put($key, $categories, $ttl);
+        Log::info('getCategoriesData: Query executed', ['count' => $categories->count()]);
+
+        if ($useCache && $key) {
+            RedisHelper::put($key, $categories, $ttl);
+            Log::info('getCategoriesData: Cached', ['cache_key' => $key]);
+        }
+
         return $categories;
     }
 
@@ -245,8 +337,10 @@ class FrontendController extends Controller
      * @param int $ttl Time to live
      * @return \Illuminate\Support\Collection
      */
-    private function getBannersData(string $key, int $ttl)
+    private function getBannersData(?string $key, int $ttl, bool $useCache = true)
     {
+        Log::info('getBannersData: Starting', ['cache_key' => $key, 'use_cache' => $useCache]);
+
         $banners = Banner::select(['id', 'title', 'slug', 'photo', 'description', 'status', 'link_type', 'link'])
             ->with(['discounts' => fn($q) => $q->select(['discounts.id', 'discounts.title', 'discounts.type', 'discounts.value'])
                 ->with(['categories' => fn($q2) => $q2->select(['categories.id', 'categories.title', 'categories.slug'])])
@@ -256,7 +350,13 @@ class FrontendController extends Controller
             ->limit(5) // Limit to 5 banners for carousel
             ->get();
 
-        RedisHelper::put($key, $banners, $ttl);
+        Log::info('getBannersData: Query executed', ['count' => $banners->count()]);
+
+        if ($useCache && $key) {
+            RedisHelper::put($key, $banners, $ttl);
+            Log::info('getBannersData: Cached', ['cache_key' => $key]);
+        }
+
         return $banners;
     }
 
@@ -264,9 +364,10 @@ class FrontendController extends Controller
      * Get homepage category products (pre-grouped and optimized for display)
      * Optimized for 10M+ products using category-indexed queries
      */
-    private function getHomepageCategoryProducts(string $key, int $ttl)
+    private function getHomepageCategoryProducts(?string $key, int $ttl, bool $useCache = true)
     {
         $startTime = microtime(true);
+        Log::info('getHomepageCategoryProducts: Starting', ['cache_key' => $key, 'use_cache' => $useCache]);
 
         // Get active featured categories (small query - fast)
         $categories = Category::select(['id', 'title', 'slug', 'sort_order'])
@@ -277,8 +378,13 @@ class FrontendController extends Controller
             ->limit(4) // Top 4 categories for homepage
             ->get();
 
+        Log::info('getHomepageCategoryProducts: Featured categories loaded', ['count' => $categories->count()]);
+
         if ($categories->isEmpty()) {
-            RedisHelper::put($key, [], $ttl);
+            Log::warning('getHomepageCategoryProducts: No featured categories found');
+            if ($useCache && $key) {
+                RedisHelper::put($key, [], $ttl);
+            }
             return [];
         }
 
@@ -303,7 +409,7 @@ class FrontendController extends Controller
             }
 
             // STEP 2: Try to fetch from product card cache
-            $productCards = $this->batchFetchProductCards($productIds);
+            $productCards = $this->batchFetchProductCards($productIds, $useCache);
             $totalCacheHits += count($productCards);
 
             // STEP 3: Query database for cache misses
@@ -322,21 +428,28 @@ class FrontendController extends Controller
                             ->take(3)
                             ->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
                         'variants' => fn($q) => $q->where('status', 'active')
-                            ->where('stock', '>', 0)
                             ->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
-                            ->limit(1)
                             ->with([
                                 'images' => fn($q) => $q->orderBy('sort_order', 'asc')
                                     ->take(3)
                                     ->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
-                            ])
+                            ]),
+                        'brand' => fn($q) => $q->select(['id', 'title', 'slug'])
                     ])
                     ->get();
 
+                $imageCollections = ProductImage::whereIn('product_id', $missingIds)
+                    ->orderBy('sort_order', 'asc')
+                    ->get()
+                    ->groupBy('product_id');
+
                 // Transform and cache
                 foreach ($products as $product) {
+                    $product->setRelation('images', $imageCollections->get($product->id, collect()));
                     $card = $this->transformProductForDisplay($product);
-                    RedisHelper::put("product:card:{$product->id}", $card, 7200);
+                    if ($useCache) {
+                        RedisHelper::put("product:card:{$product->id}", $card, 7200);
+                    }
                     $productCards[$product->id] = $card;
                 }
             }
@@ -356,7 +469,9 @@ class FrontendController extends Controller
         }
 
         // Cache the complete component
-        RedisHelper::put($key, $categoryProducts, $ttl);
+        if ($useCache && $key) {
+            RedisHelper::put($key, $categoryProducts, $ttl);
+        }
 
         $duration = round((microtime(true) - $startTime) * 1000, 2);
         Log::debug("Category products component built in {$duration}ms", [
@@ -373,9 +488,10 @@ class FrontendController extends Controller
      * Get homepage featured products (all products section)
      * Optimized for 10M+ products using indexed queries and entity caching
      */
-    private function getHomepageProductsData(string $key, int $ttl)
+    private function getHomepageProductsData(?string $key, int $ttl, bool $useCache = true)
     {
         $startTime = microtime(true);
+        Log::info('getHomepageProductsData: Starting', ['cache_key' => $key, 'use_cache' => $useCache]);
 
         // STEP 1: Get featured product IDs only (fast indexed query - O(log n))
         $productIds = DB::table('products')
@@ -387,13 +503,18 @@ class FrontendController extends Controller
             ->pluck('id')
             ->toArray();
 
+        Log::info('getHomepageProductsData: Product IDs fetched', ['count' => count($productIds)]);
+
         if (empty($productIds)) {
-            RedisHelper::put($key, [], $ttl);
+            Log::warning('getHomepageProductsData: No featured products found');
+            if ($useCache && $key) {
+                RedisHelper::put($key, [], $ttl);
+            }
             return [];
         }
 
         // STEP 2: Try to fetch product cards from entity cache
-        $productCards = $this->batchFetchProductCards($productIds);
+        $productCards = $this->batchFetchProductCards($productIds, $useCache);
 
         // STEP 3: Query database for cache misses only
         $missingIds = array_diff($productIds, array_keys($productCards));
@@ -410,20 +531,27 @@ class FrontendController extends Controller
                         ->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
                     'variants' => fn($q) => $q->where('status', 'active')
                         ->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
-                        ->where('stock', '>', 0)
-                        ->take(1) // Only first variant for homepage
                         ->with([
                             'images' => fn($q) => $q->orderBy('sort_order', 'asc')
                                 ->take(3)
                                 ->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
-                        ])
+                        ]),
+                    'brand' => fn($q) => $q->select(['id', 'title', 'slug'])
                 ])
                 ->get();
 
+            $imageCollections = ProductImage::whereIn('product_id', $missingIds)
+                ->orderBy('sort_order', 'asc')
+                ->get()
+                ->groupBy('product_id');
+
             // Cache individual product cards and add to results
             foreach ($products as $product) {
+                $product->setRelation('images', $imageCollections->get($product->id, collect()));
                 $card = $this->transformProductForDisplay($product);
-                RedisHelper::put("product:card:{$product->id}", $card, 7200); // 2 hour TTL
+                if ($useCache) {
+                    RedisHelper::put("product:card:{$product->id}", $card, 7200); // 2 hour TTL
+                }
                 $productCards[$product->id] = $card;
             }
 
@@ -439,7 +567,9 @@ class FrontendController extends Controller
         }
 
         // Cache the complete component
-        RedisHelper::put($key, $orderedProducts, $ttl);
+        if ($useCache && $key) {
+            RedisHelper::put($key, $orderedProducts, $ttl);
+        }
 
         $duration = round((microtime(true) - $startTime) * 1000, 2);
         Log::debug("Featured products component built in {$duration}ms", [
@@ -455,9 +585,9 @@ class FrontendController extends Controller
      * Batch fetch product cards from Redis
      * Uses Redis MGET for efficient bulk retrieval
      */
-    private function batchFetchProductCards(array $productIds): array
+    private function batchFetchProductCards(array $productIds, bool $useCache = true): array
     {
-        if (empty($productIds)) {
+        if (empty($productIds) || !$useCache) {
             return [];
         }
 
@@ -477,43 +607,123 @@ class FrontendController extends Controller
     /**
      * Transform product for display (reusable method)
      * Optimized for both variant and non-variant products
+     * Returns a plain object that survives Redis serialization
      */
     private function transformProductForDisplay($product)
     {
-        // Select primary image based on product type
+        Log::debug('transformProductForDisplay: Starting', ['product_id' => $product->id, 'has_variants' => $product->has_variants]);
+
+        // Build images array
+        $images = [];
+        $variantsData = [];
+        $variantStockTotal = 0;
+        $variantMaxDiscount = 0;
+
         if ($product->has_variants && $product->variants->count() > 0) {
-            // For variant products, use first active variant's image
-            $firstVariant = $product->variants->first();
-            $primaryImage = $firstVariant?->images->first();
-        } else {
-            // For simple products, use product's primary image
-            $primaryImage = $product->images->first();
+            Log::debug('transformProductForDisplay: Processing variants', ['variant_count' => $product->variants->count()]);
+
+            foreach ($product->variants as $variant) {
+                // Gather images (limit 3) for this variant
+                $variantImages = $variant->relationLoaded('images')
+                    ? $variant->images
+                    : VariantImage::where('product_variant_id', $variant->id)
+                        ->orderBy('sort_order', 'asc')
+                        ->take(3)
+                        ->get();
+
+                $variantImageArray = [];
+                if ($variantImages->isNotEmpty()) {
+                    foreach ($variantImages->take(3) as $img) {
+                        $variantImageArray[] = [
+                            'image_path' => $img->url ?? asset('images/no-image.png'),
+                            'thumbnail_path' => $img->thumbnail_url ?? $img->url ?? asset('images/no-image.png'),
+                            'alt_text' => $img->alt_text ?? $product->title,
+                        ];
+                    }
+                }
+
+                // Build variant data record (raw values only; frontend handles pricing calculations)
+                $variantRecord = [
+                    'id' => $variant->id,
+                    'price' => (float)$variant->price,
+                    'discount' => (float)($variant->discount ?? 0),
+                    'stock' => (int)$variant->stock,
+                    'status' => $variant->status,
+                    'images' => $variantImageArray,
+                ];
+
+                $variantsData[] = $variantRecord;
+                $variantStockTotal += (int)$variant->stock;
+                $variantMaxDiscount = max($variantMaxDiscount, (float)($variant->discount ?? 0));
+
+                // Also expose first variant images globally if master images list still small
+                if (empty($images) && !empty($variantImageArray)) {
+                    $images = $variantImageArray; // seed product-level images with variant images
+                }
+            }
         }
 
-        // Set primary_image attribute for blade compatibility
-        if ($primaryImage) {
-            $product->primary_image = [
-                'image_path' => $primaryImage->url,  // Use url accessor (handles storage path)
-                'thumbnail_path' => $primaryImage->thumbnail_url ?? $primaryImage->url,
-                'alt_text' => $product->title
+        // For simple products or if no variant images, use product images
+        if (empty($images)) {
+            $productImages = $product->relationLoaded('images')
+                ? $product->images
+                        : ProductImage::where('product_id', $product->id)
+                            ->orderBy('sort_order', 'asc')
+                            ->take(3)
+                            ->get();
+
+            if ($productImages->isNotEmpty()) {
+                foreach ($productImages->take(3) as $img) {
+                    $images[] = [
+                        'image_path' => $img->url ?? asset('images/no-image.png'),
+                        'thumbnail_path' => $img->thumbnail_url ?? $img->url ?? asset('images/no-image.png'),
+                        'alt_text' => $img->alt_text ?? $product->title,
+                    ];
+                }
+            }
+        }
+
+        // Fallback to placeholder if still no images
+        if (empty($images)) {
+            $images[] = [
+                'image_path' => asset('images/no-image.png'),
+                'thumbnail_path' => asset('images/no-image.png'),
+                'alt_text' => $product->title,
             ];
-        } else {
-            $product->primary_image = null;
         }
 
-        // Lightweight aggregation only; pricing & discount calculations moved to frontend
-        if ($product->has_variants && $product->variants->count() > 0) {
-            $product->stock = $product->variants->sum('stock');
-            $product->max_discount = $product->base_discount ?? 0; // expose base discount for badge until JS recalculates
+        // Calculate stock and max discount
+        if ($product->has_variants && count($variantsData) > 0) {
+            $stock = $variantStockTotal;
+            $maxDiscount = $variantMaxDiscount ?: ($product->base_discount ?? 0);
         } else {
-            $product->stock = $product->base_stock;
-            $product->max_discount = $product->base_discount ?? 0;
+            $stock = $product->base_stock ?? 0;
+            $maxDiscount = $product->base_discount ?? 0;
         }
 
-        // Remove deprecated server-computed pricing fields to avoid confusion
-        unset($product->discounted_price, $product->original_price);
-
-        return $product;
+        // Return a plain stdClass object that survives serialization
+        return (object)[
+            'id' => $product->id,
+            'title' => $product->title,
+            'slug' => $product->slug,
+            'base_price' => (float)$product->base_price,
+            'base_discount' => (float)($product->base_discount ?? 0),
+            'base_stock' => (int)($product->base_stock ?? 0),
+            'has_variants' => (bool)$product->has_variants,
+            'cat_id' => $product->cat_id,
+            'condition' => $product->condition ?? 'default',
+            'stock' => $stock,
+            'max_discount' => $maxDiscount,
+            'images' => $images,
+            'variants' => $variantsData, // raw variant data for client-side calculations
+            'brand' => $product->brand ? (object)[
+                'id' => $product->brand->id,
+                'title' => $product->brand->title,
+                'slug' => $product->brand->slug,
+            ] : null,
+            'rating_average' => $product->rating_average ?? 0,
+            'rating_count' => $product->rating_count ?? 0,
+        ];
     }
 
     /**
@@ -667,7 +877,7 @@ class FrontendController extends Controller
         }
 
         $data = $this->fetchOptimizedProductGridsData($request, $ttl);
-        $this->cacheCompletePageData($cacheKey, $data, $ttl['product_lists']);
+        $this->cacheCompletePageData($cacheKey, $data, $ttl['category_products'] ?? 3600);
         Log::info("Product grids served fresh in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
         return view('frontend.pages.product-grids', $data);
     }
@@ -896,7 +1106,7 @@ class FrontendController extends Controller
             unset($product->original_price, $product->discounted_price);
         }
 
-        $recentProducts = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['product_lists']);
+        $recentProducts = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['latest_products'] ?? 1800);
 
         return [
             'products' => $products,
@@ -1076,7 +1286,7 @@ class FrontendController extends Controller
         // Removed deprecated setPath call
         $products->appends($request->except('page'));
 
-        $recentProducts = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['product_lists']);
+        $recentProducts = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['latest_products'] ?? 1800);
 
         return [
             'products' => $products,
@@ -1508,7 +1718,7 @@ class FrontendController extends Controller
 
             if (!RedisHelper::exists($cacheKey)) {
                 $data = $this->fetchOptimizedProductGridsData($request, $ttl);
-                $this->cacheCompletePageData($cacheKey, $data, $ttl['product_lists']);
+                $this->cacheCompletePageData($cacheKey, $data, $ttl['category_products'] ?? 3600);
             }
         } catch (\Exception $e) {
             Log::warning("Failed to pre-warm filter cache: " . $e->getMessage());
@@ -1563,7 +1773,7 @@ class FrontendController extends Controller
 
                 if (!RedisHelper::exists($cacheKey)) {
                     $data = $this->fetchOptimizedProductGridsData($request, $ttl);
-                    $this->cacheCompletePageData($cacheKey, $data, $ttl['product_lists']);
+                    $this->cacheCompletePageData($cacheKey, $data, $ttl['category_products'] ?? 3600);
                 }
 
                 $results["filter_combo_{$index}"] = [
@@ -1628,7 +1838,7 @@ class FrontendController extends Controller
         $query = $request->input('search', '');
         $perPage = 9;
         $ttl = $this->getTtlConfig();
-        $recent_products = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['product_lists']);
+        $recent_products = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['latest_products'] ?? 1800);
 
         if (empty($query)) {
             $products = Product::where('status', 'active')
@@ -2038,14 +2248,11 @@ class FrontendController extends Controller
         }
 
         return $product->variants->map(function ($variant) {
-            // Process images with proper path
+            // Process images with centralized helper to keep paths consistent
             $processedImages = $variant->images->map(function ($img) {
-                $path = $img->image_path;
-                if (strpos($path, 'storage/') !== 0) {
-                    $path = 'storage/' . ltrim($path, '/');
-                }
                 return [
-                    'image_path' => asset($path),
+                    'image_path' => ImageHelper::variantImageUrl($img->image_path),
+                    'thumbnail_path' => ImageHelper::variantImageUrl($img->thumbnail_path ?? $img->image_path, true),
                     'is_primary' => $img->is_primary
                 ];
             })->toArray();
@@ -2140,8 +2347,8 @@ class FrontendController extends Controller
                     'in_stock' => $variant->stock > 0,
                     'images' => $variant->images->map(fn($img) => [
                         'id' => $img->id,
-                        'image_path' => asset((strpos($img->image_path, 'storage/') === 0 ? $img->image_path : 'storage/' . ltrim($img->image_path, '/'))),
-                        'thumbnail_path' => asset((strpos($img->thumbnail_path ?? $img->image_path, 'storage/') === 0 ? ($img->thumbnail_path ?? $img->image_path) : 'storage/' . ltrim($img->thumbnail_path ?? $img->image_path, '/'))),
+                        'image_path' => ImageHelper::variantImageUrl($img->image_path),
+                        'thumbnail_path' => ImageHelper::variantImageUrl($img->thumbnail_path ?? $img->image_path, true),
                         'is_primary' => $img->is_primary
                     ])
                 ]

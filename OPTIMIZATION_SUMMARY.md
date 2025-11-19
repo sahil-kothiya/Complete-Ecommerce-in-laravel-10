@@ -93,7 +93,7 @@ A complete, production-ready Redis caching solution that achieves **sub-1-second
   - `idx_categories_featured` - Featured categories
 
 ### **9. Configuration Updates**
-- **`config/cache_keys.php`**
+- **`config/redis_cache.php`**
   - Updated TTL values for all cache types
   - New cache prefixes for entity caching
   - Product card cache configuration
@@ -380,7 +380,7 @@ php artisan migrate:refresh --path=database/migrations/2025_11_15_000000_add_per
 - **Controller**: `app/Http/Controllers/FrontendController.php`
 - **Observer**: `app/Observers/ProductObserver.php`
 - **Commands**: `app/Console/Commands/Cache*.php`
-- **Config**: `config/cache_keys.php`
+- **Config**: `config/redis_cache.php`
 - **Migration**: `database/migrations/2025_11_15_000000_add_performance_indexes_for_caching.php`
 
 ---

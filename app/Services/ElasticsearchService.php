@@ -388,7 +388,10 @@ class ElasticsearchService
                 Log::warning("Elasticsearch cluster health is poor", $response);
             }
         } catch (\Exception $e) {
-            Log::error("Elasticsearch health check failed: " . $e->getMessage());
+            // Suppress noisy health-check error logs when Elasticsearch is down.
+            // We still mark Elasticsearch as unavailable so the application
+            // uses the fallback behaviour, but avoid logging this exception
+            // repeatedly to reduce log noise.
             $this->isAvailable = false;
         }
 

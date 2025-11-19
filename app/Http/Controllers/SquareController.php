@@ -23,25 +23,40 @@ class SquareController extends Controller
 
     public function __construct()
     {
-        // Get configuration values
-        $accessToken = config('services.square.access_token');
-        $environment = config('services.square.environment', 'sandbox');
+        // Initialize Square client only when needed (lazy loading)
+        // This prevents errors during route caching when Square SDK isn't installed
+    }
 
-        // Validate access token
-        if (empty($accessToken)) {
-            throw new \InvalidArgumentException('Square access token is required. Please set SQUARE_ACCESS_TOKEN in your .env file.');
+    protected function getClient()
+    {
+        if ($this->client === null) {
+            // Check if Square SDK is available
+            if (!class_exists(\Square\Environment::class)) {
+                throw new \RuntimeException('Square SDK is not installed. Please run: composer require square/square');
+            }
+
+            // Get configuration values
+            $accessToken = config('services.square.access_token');
+            $environment = config('services.square.environment', 'sandbox');
+
+            // Validate access token
+            if (empty($accessToken)) {
+                throw new \InvalidArgumentException('Square access token is required. Please set SQUARE_ACCESS_TOKEN in your .env file.');
+            }
+
+            // Set environment - use Environment constants from Square SDK
+            $squareEnvironment = $environment === 'production'
+                ? Environment::PRODUCTION
+                : Environment::SANDBOX;
+
+            // Initialize Square client with proper configuration
+            $this->client = new SquareClient(options: [
+                'accessToken' => $accessToken,
+                'environment' => $squareEnvironment,
+            ]);
         }
 
-        // Set environment - use Environment constants from Square SDK
-        $squareEnvironment = $environment === 'production'
-            ? Environment::PRODUCTION
-            : Environment::SANDBOX;
-
-        // Initialize Square client with proper configuration
-        $this->client = new SquareClient(options: [
-            'accessToken' => $accessToken,
-            'environment' => $squareEnvironment,
-        ]);
+        return $this->client;
     }
 
     public function payment(Request $request = null)
@@ -183,7 +198,7 @@ class SquareController extends Controller
             }
 
             // Make the payment request
-            $paymentsApi = $this->client->getPaymentsApi();
+            $paymentsApi = $this->getClient()->getPaymentsApi();
             $response = $paymentsApi->createPayment($createPaymentRequest);
 
             if ($response->isSuccess()) {

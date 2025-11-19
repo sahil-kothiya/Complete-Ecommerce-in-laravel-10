@@ -1,11 +1,26 @@
 {{-- Quick View Modal --}}
-<div class="modal fade" id="productModal{{ $product->id }}" tabindex="-1" role="dialog"
-    aria-labelledby="productModalLabel{{ $product->id }}" aria-hidden="true">
+@php
+    // Normalize product data (handles both fresh models and cached plain objects/arrays)
+    $productData = is_array($product) ? (object) $product : $product;
+    $images = collect($productData->images ?? []);
+    $productId = $productData->id ?? 0;
+    $productTitle = $productData->title ?? 'Product';
+    $productSlug = $productData->slug ?? '';
+    $productStock = $productData->stock ?? 0;
+    $productSummary = $productData->summary ?? '';
+    $productSize = $productData->size ?? '';
+
+    // Handle price and discount for both base and variant products
+    $basePrice = $productData->base_price ?? ($productData->price ?? 0);
+    $baseDiscount = $productData->base_discount ?? ($productData->discount ?? 0);
+@endphp
+<div class="modal fade" id="productModal{{ $productId }}" tabindex="-1" role="dialog"
+    aria-labelledby="productModalLabel{{ $productId }}" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
         <div class="modal-content">
             <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title font-weight-bold" id="productModalLabel{{ $product->id }}">
-                    {{ $product->title }}
+                <h5 class="modal-title font-weight-bold" id="productModalLabel{{ $productId }}">
+                    {{ $productTitle }}
                 </h5>
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                     <span>&times;</span>
@@ -17,19 +32,28 @@
                     {{-- Left Side: Product Images --}}
                     <div class="col-md-6">
                         <div class="quickview-carousel">
-                            @if ($product->images && $product->images->count() > 0)
+                            @if ($images->count() > 0)
+                                @php
+                                    $firstImage = $images->first();
+                                    $firstImageObj = is_array($firstImage) ? (object) $firstImage : $firstImage;
+                                    $firstImageUrl = $firstImageObj->image_path ?? asset('images/no-image.jpg');
+                                @endphp
                                 <div class="main-image mb-3">
-                                    <img id="mainImage{{ $product->id }}" src="{{ $product->images->first()->url }}"
-                                        class="img-fluid w-100 rounded main-product-image" alt="{{ $product->title }}"
+                                    <img id="mainImage{{ $productId }}" src="{{ $firstImageUrl }}"
+                                        class="img-fluid w-100 rounded main-product-image" alt="{{ $productTitle }}"
                                         loading="lazy">
                                 </div>
-                                @if ($product->images->count() > 1)
+                                @if ($images->count() > 1)
                                     <div class="thumbnail-images">
-                                        @foreach ($product->images as $index => $image)
-                                            <img src="{{ $image->url }}"
+                                        @foreach ($images as $index => $image)
+                                            @php
+                                                $imgObj = is_array($image) ? (object) $image : $image;
+                                                $imgUrl = $imgObj->image_path ?? asset('images/no-image.jpg');
+                                            @endphp
+                                            <img src="{{ $imgUrl }}"
                                                 class="img-thumbnail thumbnail-image {{ $index === 0 ? 'active' : '' }}"
-                                                alt="{{ $product->title }}" data-main-image="{{ $image->url }}"
-                                                data-product-id="{{ $product->id }}" loading="lazy">
+                                                alt="{{ $productTitle }}" data-main-image="{{ $imgUrl }}"
+                                                data-product-id="{{ $productId }}" loading="lazy">
                                         @endforeach
                                     </div>
                                 @endif
@@ -46,13 +70,12 @@
                     <div class="col-md-6">
                         <div class="quickview-content">
                             {{-- Product Title --}}
-                            <h5 class="product-title mb-3">{{ $product->title }}</h5>
+                            <h5 class="product-title mb-3">{{ $productTitle }}</h5>
 
                             {{-- Rating --}}
                             @php
-                                $rate =
-                                    DB::table('product_reviews')->where('product_id', $product->id)->avg('rate') ?? 0;
-                                $rateCount = DB::table('product_reviews')->where('product_id', $product->id)->count();
+                                $rate = DB::table('product_reviews')->where('product_id', $productId)->avg('rate') ?? 0;
+                                $rateCount = DB::table('product_reviews')->where('product_id', $productId)->count();
                             @endphp
                             <div class="product-rating mb-3">
                                 <div class="stars">
@@ -66,25 +89,25 @@
 
                             {{-- Price --}}
                             <div class="price-section mb-3">
-                                @if ($product->discount > 0)
+                                @if ($baseDiscount > 0)
                                     <span class="current-price h4 text-danger font-weight-bold">
-                                        ${{ number_format($product->price - ($product->price * $product->discount) / 100, 2) }}
+                                        ${{ number_format($basePrice - ($basePrice * $baseDiscount) / 100, 2) }}
                                     </span>
                                     <del
-                                        class="original-price text-muted ml-2">${{ number_format($product->price, 2) }}</del>
-                                    <span class="discount-badge badge badge-primary ml-2">{{ $product->discount }}%
+                                        class="original-price text-muted ml-2">${{ number_format($basePrice, 2) }}</del>
+                                    <span class="discount-badge badge badge-primary ml-2">{{ $baseDiscount }}%
                                         OFF</span>
                                 @else
                                     <span
-                                        class="current-price h4 font-weight-bold text-dark">${{ number_format($product->price, 2) }}</span>
+                                        class="current-price h4 font-weight-bold text-dark">${{ number_format($basePrice, 2) }}</span>
                                 @endif
                             </div>
 
                             {{-- Stock Status --}}
                             <div class="stock-status mb-3">
-                                @if ($product->stock > 0)
+                                @if ($productStock > 0)
                                     <span class="badge badge-success">
-                                        <i class="fa fa-check"></i> {{ $product->stock }} in stock
+                                        <i class="fa fa-check"></i> {{ $productStock }} in stock
                                     </span>
                                 @else
                                     <span class="badge badge-danger">
@@ -94,18 +117,18 @@
                             </div>
 
                             {{-- Product Summary --}}
-                            @if ($product->summary)
+                            @if ($productSummary)
                                 <div class="product-summary mb-3">
-                                    <p class="text-muted">{!! Str::limit(strip_tags($product->summary), 150) !!}</p>
+                                    <p class="text-muted">{!! Str::limit(strip_tags($productSummary), 150) !!}</p>
                                 </div>
                             @endif
 
                             {{-- Size Selection --}}
-                            @if ($product->size)
+                            @if ($productSize)
                                 <div class="form-group mb-3">
-                                    <label for="size-select-{{ $product->id }}" class="font-weight-bold">Size:</label>
-                                    <select class="form-control" id="size-select-{{ $product->id }}" name="size">
-                                        @foreach (explode(',', $product->size) as $size)
+                                    <label for="size-select-{{ $productId }}" class="font-weight-bold">Size:</label>
+                                    <select class="form-control" id="size-select-{{ $productId }}" name="size">
+                                        @foreach (explode(',', $productSize) as $size)
                                             <option value="{{ trim($size) }}">{{ trim($size) }}</option>
                                         @endforeach
                                     </select>
@@ -113,25 +136,25 @@
                             @endif
 
                             {{-- Add to Cart Form --}}
-                            @if ($product->stock > 0)
+                            @if ($productStock > 0)
                                 <form action="{{ route('single-add-to-cart') }}" method="POST" class="quickview-form">
                                     @csrf
-                                    <input type="hidden" name="slug" value="{{ $product->slug }}">
+                                    <input type="hidden" name="slug" value="{{ $productSlug }}">
 
                                     {{-- Quantity Controls --}}
                                     <div class="form-group mb-3">
                                         <label class="font-weight-bold mb-2">Quantity:</label>
                                         <div class="quantity-controls d-flex align-items-center">
                                             <button type="button" class="btn btn-outline-secondary btn-sm quantity-btn"
-                                                data-action="decrease" data-product-id="{{ $product->id }}">
+                                                data-action="decrease" data-product-id="{{ $productId }}">
                                                 <i class="fa fa-minus"></i>
                                             </button>
-                                            <input type="number" id="quantity-{{ $product->id }}"
-                                                name="quant[{{ $product->id }}]"
+                                            <input type="number" id="quantity-{{ $productId }}"
+                                                name="quant[{{ $productId }}]"
                                                 class="form-control quantity-input mx-2 text-center" value="1"
-                                                min="1" max="{{ $product->stock }}" readonly>
+                                                min="1" max="{{ $productStock }}" readonly>
                                             <button type="button" class="btn btn-outline-secondary btn-sm quantity-btn"
-                                                data-action="increase" data-product-id="{{ $product->id }}">
+                                                data-action="increase" data-product-id="{{ $productId }}">
                                                 <i class="fa fa-plus"></i>
                                             </button>
                                         </div>
@@ -146,7 +169,7 @@
                                                 </button>
                                             </div>
                                             <div class="col-3">
-                                                <a href="{{ route('add-to-wishlist', $product->slug) }}"
+                                                <a href="{{ route('add-to-wishlist', $productSlug) }}"
                                                     class="btn btn-outline-secondary btn-lg btn-block"
                                                     title="Add to Wishlist">
                                                     <i class="fa fa-heart"></i>
@@ -166,7 +189,7 @@
                             {{-- Product Actions --}}
                             <div class="product-actions mt-4 pt-3 border-top">
                                 <div class="d-flex justify-content-between align-items-center">
-                                    <a href="{{ route('product-detail', $product->slug) }}"
+                                    <a href="{{ route('product-detail', $productSlug) }}"
                                         class="btn btn-link p-0 text-decoration-none">
                                         <i class="fa fa-eye mr-1"></i>View Full Details
                                     </a>

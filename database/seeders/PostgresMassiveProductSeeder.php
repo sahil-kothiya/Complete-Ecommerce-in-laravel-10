@@ -20,7 +20,8 @@ class PostgresMassiveProductSeeder extends Seeder
     protected int $totalProducts = 10_000_000;                    // Total number of products to generate
     protected ?int $variantProductTarget = 9_500_000;            // Target number of products with variants (null = use ratio)
     protected float $variantProductRatio = 0.95;             // Ratio of variant products if target not set (0.95 = 95%)
-    protected int $startProductIdIfEmpty = 8812000;          // Starting product ID when table is empty (set to 1 for fresh start)
+    protected int $startProductIdIfEmpty = 10_000_000;          // Starting product ID when table is empty (set to 1 for fresh start)
+    protected ?int $maxProductIdLimit = null;                   // Maximum product ID limit (null = no limit)
 
     // Variant configuration per product
     protected int $minVariantsPerProduct = 3;                // Minimum variants per product
@@ -242,6 +243,9 @@ class PostgresMassiveProductSeeder extends Seeder
             if ($this->syncSequencesAfterSeeding) {
                 $this->syncSequences();
             }
+
+            // Verify seeded data
+            $this->verifySeededData();
         }
     }
 
@@ -627,9 +631,9 @@ class PostgresMassiveProductSeeder extends Seeder
 
         $startProductId = $lastProductId ? ((int) $lastProductId + 1) : $this->startProductIdIfEmpty;
 
-        // Cap at 10 million
-        if ($startProductId > 10_000_000) {
-            throw new RuntimeException('Product ID would exceed 10 million limit. Current max ID: ' . $lastProductId);
+        // Check configurable limit if set
+        if ($this->maxProductIdLimit !== null && $startProductId > $this->maxProductIdLimit) {
+            throw new RuntimeException("Product ID would exceed configured limit of {$this->maxProductIdLimit}. Current max ID: {$lastProductId}. Set \$maxProductIdLimit = null to remove limit.");
         }
 
         $this->nextProductId = $startProductId;
@@ -1838,16 +1842,11 @@ class PostgresMassiveProductSeeder extends Seeder
         try {
             // Drop FKs from carts table that prevent UNLOGGED
             $this->dropConstraintSafely('carts', 'carts_product_id_foreign');
-            $this->dropConstraintSafely('carts', 'carts_product_variant_id_foreign');
 
             // Drop FKs from wishlists
             $this->dropConstraintSafely('wishlists', 'wishlists_product_id_foreign');
-            $this->dropConstraintSafely('wishlists', 'wishlists_product_variant_id_foreign');
 
-            // Drop FKs from orders (if any)
-            $this->dropConstraintSafely('orders', 'orders_product_id_foreign');
-
-            // Drop FKs from product_reviews
+            // Drop FKs from product_reviews (if table exists)
             $this->dropConstraintSafely('product_reviews', 'product_reviews_product_id_foreign');
 
             $this->writeOutput('  ✓ Dropped foreign keys');
@@ -1867,28 +1866,64 @@ class PostgresMassiveProductSeeder extends Seeder
         $this->writeOutput('🔧 Recreating foreign keys...');
 
         try {
-            // Recreate carts FKs
-            DB::statement('ALTER TABLE carts ADD CONSTRAINT carts_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
-            DB::statement('ALTER TABLE carts ADD CONSTRAINT carts_product_variant_id_foreign FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE CASCADE NOT VALID');
+            $successCount = 0;
+            $failedCount = 0;
 
-            // Recreate wishlists FKs
-            DB::statement('ALTER TABLE wishlists ADD CONSTRAINT wishlists_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
-            DB::statement('ALTER TABLE wishlists ADD CONSTRAINT wishlists_product_variant_id_foreign FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE CASCADE NOT VALID');
+            // Recreate carts FKs (only product_id exists)
+            try {
+                DB::statement('ALTER TABLE carts ADD CONSTRAINT carts_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
+                $successCount++;
+            } catch (\Exception $e) {
+                $failedCount++;
+            }
 
-            // Recreate product_reviews FKs
-            DB::statement('ALTER TABLE product_reviews ADD CONSTRAINT product_reviews_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
+            // Recreate wishlists FKs (only product_id exists)
+            try {
+                DB::statement('ALTER TABLE wishlists ADD CONSTRAINT wishlists_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
+                $successCount++;
+            } catch (\Exception $e) {
+                $failedCount++;
+            }
+
+            // Recreate product_reviews FKs (if table exists)
+            try {
+                DB::statement('ALTER TABLE product_reviews ADD CONSTRAINT product_reviews_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
+                $successCount++;
+            } catch (\Exception $e) {
+                $failedCount++;
+            }
 
             // Validate constraints asynchronously (doesn't block)
-            $this->writeOutput('  Validating constraints...');
-            DB::statement('ALTER TABLE carts VALIDATE CONSTRAINT carts_product_id_foreign');
-            DB::statement('ALTER TABLE carts VALIDATE CONSTRAINT carts_product_variant_id_foreign');
-            DB::statement('ALTER TABLE wishlists VALIDATE CONSTRAINT wishlists_product_id_foreign');
-            DB::statement('ALTER TABLE wishlists VALIDATE CONSTRAINT wishlists_product_variant_id_foreign');
-            DB::statement('ALTER TABLE product_reviews VALIDATE CONSTRAINT product_reviews_product_id_foreign');
+            if ($successCount > 0) {
+                $this->writeOutput('  Validating constraints...');
 
-            $this->writeOutput('  ✓ Foreign keys recreated and validated');
+                try {
+                    DB::statement('ALTER TABLE carts VALIDATE CONSTRAINT carts_product_id_foreign');
+                } catch (\Exception $e) {
+                    // Ignore validation errors
+                }
+
+                try {
+                    DB::statement('ALTER TABLE wishlists VALIDATE CONSTRAINT wishlists_product_id_foreign');
+                } catch (\Exception $e) {
+                    // Ignore validation errors
+                }
+
+                try {
+                    DB::statement('ALTER TABLE product_reviews VALIDATE CONSTRAINT product_reviews_product_id_foreign');
+                } catch (\Exception $e) {
+                    // Ignore validation errors
+                }
+            }
+
+            if ($successCount > 0) {
+                $this->writeOutput("  ✓ Recreated {$successCount} foreign key constraint(s)");
+            }
+            if ($failedCount > 0) {
+                $this->writeOutput("  ⓘ Skipped {$failedCount} constraint(s) (table or column may not exist)");
+            }
         } catch (\Exception $e) {
-            $this->writeOutput('  ⚠ Warning: Could not recreate all foreign keys: ' . $e->getMessage());
+            $this->writeOutput('  ⚠ Warning: Error during foreign key recreation: ' . $e->getMessage());
         }
     }
 
@@ -1909,5 +1944,131 @@ class PostgresMassiveProductSeeder extends Seeder
         }
 
         return substr($fragment, 0, 6);
+    }
+
+    protected function verifySeededData(): void
+    {
+        $this->writeOutput('');
+        $this->writeOutput('╔════════════════════════════════════════════════════════════════════╗');
+        $this->writeOutput('║                 POST-SEEDING VERIFICATION                          ║');
+        $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
+        $this->writeOutput('');
+
+        try {
+            // Count records in each table
+            $productCount = DB::table('products')->count();
+            $variantCount = DB::table('product_variants')->count();
+            $productImageCount = DB::table('product_images')->count();
+            $variantImageCount = DB::table('variant_images')->count();
+            $assignmentCount = DB::table('product_variant_option_assignments')->count();
+            $typeSelectionCount = DB::table('product_variant_type_selections')->count();
+
+            $this->writeOutput('📊 Record Counts:');
+            $this->writeOutput('  Products:                    ' . str_pad(number_format($productCount), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Product Variants:            ' . str_pad(number_format($variantCount), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Product Images:              ' . str_pad(number_format($productImageCount), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Variant Images:              ' . str_pad(number_format($variantImageCount), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Variant Assignments:         ' . str_pad(number_format($assignmentCount), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Type Selections:             ' . str_pad(number_format($typeSelectionCount), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('');
+
+            // Get ID ranges
+            $minProductId = DB::table('products')->min('id');
+            $maxProductId = DB::table('products')->max('id');
+
+            $this->writeOutput('🔢 Product ID Range:');
+            $this->writeOutput('  Min ID:                      ' . str_pad(number_format($minProductId), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Max ID:                      ' . str_pad(number_format($maxProductId), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Range Span:                  ' . str_pad(number_format($maxProductId - $minProductId + 1), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('');
+
+            // Verify data integrity
+            $this->writeOutput('🔍 Data Integrity Checks:');
+
+            // Check for orphaned variants
+            $orphanedVariants = DB::table('product_variants')
+                ->whereNotExists(function($query) {
+                    $query->select(DB::raw(1))
+                          ->from('products')
+                          ->whereColumn('products.id', 'product_variants.product_id');
+                })
+                ->count();
+
+            $this->writeOutput('  Orphaned Variants:           ' . str_pad(number_format($orphanedVariants), 15, ' ', STR_PAD_LEFT) . ($orphanedVariants > 0 ? ' ⚠️' : ' ✅'));
+
+            // Check for orphaned product images
+            $orphanedProductImages = DB::table('product_images')
+                ->whereNotExists(function($query) {
+                    $query->select(DB::raw(1))
+                          ->from('products')
+                          ->whereColumn('products.id', 'product_images.product_id');
+                })
+                ->count();
+
+            $this->writeOutput('  Orphaned Product Images:     ' . str_pad(number_format($orphanedProductImages), 15, ' ', STR_PAD_LEFT) . ($orphanedProductImages > 0 ? ' ⚠️' : ' ✅'));
+
+            // Check for orphaned variant images
+            $orphanedVariantImages = DB::table('variant_images')
+                ->whereNotExists(function($query) {
+                    $query->select(DB::raw(1))
+                          ->from('product_variants')
+                          ->whereColumn('product_variants.id', 'variant_images.product_variant_id');
+                })
+                ->count();
+
+            $this->writeOutput('  Orphaned Variant Images:     ' . str_pad(number_format($orphanedVariantImages), 15, ' ', STR_PAD_LEFT) . ($orphanedVariantImages > 0 ? ' ⚠️' : ' ✅'));
+
+            // Check for products without images
+            $productsWithoutImages = DB::table('products')
+                ->whereNotExists(function($query) {
+                    $query->select(DB::raw(1))
+                          ->from('product_images')
+                          ->whereColumn('product_images.product_id', 'products.id');
+                })
+                ->count();
+
+            $this->writeOutput('  Products Without Images:     ' . str_pad(number_format($productsWithoutImages), 15, ' ', STR_PAD_LEFT) . ($productsWithoutImages > 0 ? ' ⚠️' : ' ✅'));
+
+            // Check for variants without assignments
+            $variantsWithoutAssignments = DB::table('product_variants')
+                ->whereNotExists(function($query) {
+                    $query->select(DB::raw(1))
+                          ->from('product_variant_option_assignments')
+                          ->whereColumn('product_variant_option_assignments.product_variant_id', 'product_variants.id');
+                })
+                ->count();
+
+            $this->writeOutput('  Variants Without Assignments:' . str_pad(number_format($variantsWithoutAssignments), 15, ' ', STR_PAD_LEFT) . ($variantsWithoutAssignments > 0 ? ' ⚠️' : ' ✅'));
+
+            $this->writeOutput('');
+
+            // Average stats
+            $avgVariantsPerProduct = $productCount > 0 ? $variantCount / $productCount : 0;
+            $avgImagesPerProduct = $productCount > 0 ? $productImageCount / $productCount : 0;
+            $avgImagesPerVariant = $variantCount > 0 ? $variantImageCount / $variantCount : 0;
+
+            $this->writeOutput('📈 Averages:');
+            $this->writeOutput('  Variants per Product:        ' . str_pad(number_format($avgVariantsPerProduct, 2), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Images per Product:          ' . str_pad(number_format($avgImagesPerProduct, 2), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Images per Variant:          ' . str_pad(number_format($avgImagesPerVariant, 2), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('');
+
+            // Summary
+            $totalIssues = $orphanedVariants + $orphanedProductImages + $orphanedVariantImages +
+                          $productsWithoutImages + $variantsWithoutAssignments;
+
+            if ($totalIssues === 0) {
+                $this->writeOutput('✅ All integrity checks passed!');
+            } else {
+                $this->writeOutput('⚠️  Found ' . $totalIssues . ' integrity issue(s) - review recommended');
+            }
+
+            $this->writeOutput('═══════════════════════════════════════════════════════════════════════');
+            $this->writeOutput('');
+
+        } catch (\Exception $e) {
+            $this->writeOutput('⚠️  Verification failed: ' . $e->getMessage());
+            $this->writeOutput('');
+        }
     }
 }

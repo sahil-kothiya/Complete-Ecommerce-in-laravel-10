@@ -62,12 +62,9 @@
                                     $primary = $product_detail->primary_image;
                                     $mainImagePath =
                                         $primary?->image_path ?? ($allImages->first()?->image_path ?? null);
-                                    if ($mainImagePath) {
-                                        $mainImagePath = ltrim($mainImagePath, '/');
-                                        if (strpos($mainImagePath, 'storage/') !== 0) {
-                                            $mainImagePath = 'storage/' . $mainImagePath;
-                                        }
-                                    }
+                                    $mainImageUrl = $mainImagePath
+                                        ? product_image_url($mainImagePath)
+                                        : asset('images/no-image.png');
                                 @endphp
 
                                 <div class="main-image-container position-relative mb-3"
@@ -76,11 +73,10 @@
                                         style="top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.8);display:flex;align-items:center;justify-content:center;z-index:10;">
                                         <div class="spinner-border text-primary" style="width:2rem;height:2rem;"></div>
                                     </div>
-                                    <img src="{{ $mainImagePath ? asset($mainImagePath) : asset('images/no-image.png') }}"
-                                        alt="{{ $product_detail->title }}" class="main-image img-fluid" id="mainImage"
-                                        tabindex="15"
+                                    <img src="{{ $mainImageUrl }}" alt="{{ $product_detail->title }}"
+                                        class="main-image img-fluid" id="mainImage" tabindex="15"
                                         style="max-height:500px;object-fit:contain;border-radius:10px;width:100%;min-width:300px;border:2px solid #eee;transition:opacity .3s ease;"
-                                        data-original-src="{{ $mainImagePath ? asset($mainImagePath) : asset('images/no-image.png') }}">
+                                        data-original-src="{{ $mainImageUrl }}">
                                 </div>
 
                                 <div class="thumbnail-carousel mt-2">
@@ -218,19 +214,12 @@
                                                                                         $colorVariant->images->first()
                                                                                             ->image_path
                                                                                     : null;
-                                                                            if ($thumbImage) {
-                                                                                $thumbImage = ltrim($thumbImage, '/');
-                                                                                if (
-                                                                                    strpos($thumbImage, 'storage/') !==
-                                                                                    0
-                                                                                ) {
-                                                                                    $thumbImage =
-                                                                                        'storage/' . $thumbImage;
-                                                                                }
-                                                                            }
+                                                                            $thumbImage = $thumbImage
+                                                                                ? variant_image_url($thumbImage)
+                                                                                : null;
                                                                         @endphp
                                                                         @if ($thumbImage)
-                                                                            <img src="{{ asset($thumbImage) }}"
+                                                                            <img src="{{ $thumbImage }}"
                                                                                 alt="{{ $option->value }}">
                                                                         @else
                                                                             <div class="color-box"

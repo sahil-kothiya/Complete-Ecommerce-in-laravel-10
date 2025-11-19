@@ -264,16 +264,18 @@
                     <h6 class="mb-3 text-uppercase font-weight-bold">Product Images</h6>
                     <div class="form-group">
                         <label for="photo">Photos <span class="text-danger">*</span> <small class="text-muted">(At
-                                least 1 image required; creation needs exactly 3)</small></label>
+                                least 1 image required)</small></label>
                         <div class="input-group">
                             @php
+                                // Store PATHS in input (not URLs) for backend processing
+                                // Use image_path directly from DB
                                 $existingPhotoValue =
                                     !$product->has_variants && $product->images->count()
-                                        ? $product->images->map(fn($img) => $img->url)->implode(',')
+                                        ? $product->images->pluck('image_path')->implode(',')
                                         : '';
                             @endphp
                             <input type="text" id="photo" name="photo" class="form-control"
-                                value="{{ old('photo', $existingPhotoValue) }}" placeholder="Comma-separated image URLs"
+                                value="{{ old('photo', $existingPhotoValue) }}" placeholder="Comma-separated image paths"
                                 readonly tabindex="17">
                             <div class="input-group-append">
                                 <a id="lfm" data-input="photo" data-preview="holder" class="btn btn-primary"><i
@@ -284,19 +286,26 @@
                             <span class="invalid-feedback d-block">{{ $message }}</span>
                         @enderror
                         <div id="image-preview-area" class="mt-3">
-                            <div id="holder" class="d-flex flex-wrap gap-3">
+                            <div id="holder" class="d-flex flex-wrap" style="gap: 1rem;">
                                 @if ($product->images->count() && !$product->has_variants)
                                     @foreach ($product->images as $index => $image)
-                                        @php $imageUrl = $image->url; @endphp
+                                        @php
+                                            // Try multiple URL formats to ensure image loads
+                                            $imageUrl = $image->url;
+                                            $fallbackUrl = asset('storage/products/' . $image->image_path);
+                                        @endphp
                                         <div class="image-container"
-                                            data-image-id="{{ $product->images[$index]->id ?? '' }}">
+                                            data-image-id="{{ $product->images[$index]->id ?? '' }}"
+                                            data-path="{{ $image->image_path }}">
                                             @if ($index === 0)
                                                 <div class="primary-badge">
                                                     <span class="badge badge-success">Primary</span>
                                                 </div>
                                             @endif
-                                            <img src="{{ $imageUrl }}" class="image-preview"
-                                                alt="Product Image {{ $index + 1 }}">
+                                            <img src="{{ $imageUrl }}" data-fallback="{{ $fallbackUrl }}"
+                                                class="image-preview" alt="Product Image {{ $index + 1 }}"
+                                                data-path="{{ $image->image_path }}"
+                                                onerror="if(this.dataset.fallback && this.src !== this.dataset.fallback) { this.src = this.dataset.fallback; } else { this.src='{{ asset('backend/img/avatar.webp') }}'; this.alt='Image Not Found'; }">
                                             @if (isset($product->images[$index]))
                                                 <button type="button" class="btn btn-danger btn-sm delete-image-btn"
                                                     data-image-id="{{ $product->images[$index]->id }}"
@@ -307,8 +316,8 @@
                                         </div>
                                     @endforeach
                                 @endif
+                                <div id="new-images" class="d-flex flex-wrap" style="gap: 1rem;"></div>
                             </div>
-                            <div id="new-images" style="display: none;"></div>
                         </div>
                     </div>
                     <div class="form-group form-check" id="alt-text-toggle"
@@ -918,10 +927,146 @@
                 ]
             });
 
-            // Initialize File Manager
-            $('#lfm').filemanager('image');
-            $('.lfm-variant').each(function() {
-                $(this).filemanager('image');
+            // Initialize File Manager with custom behavior to APPEND images
+            // This handler works for BOTH product images AND variant images
+            function initializeFileManagerButton(selector, isVariant = false) {
+                $(document).off('click', selector).on('click', selector, function(e) {
+                    e.preventDefault();
+                    const $btn = $(this);
+                    const inputId = $btn.data('input');
+                    const previewId = $btn.data('preview');
+                    const $input = $('#' + inputId);
+                    const $preview = $('#' + previewId);
+
+                    // Store the original value to append to it
+                    const originalValue = $input.val().trim();
+
+                    // Open file manager
+                    window.open('/filemanager?type=image', 'FileManager', 'width=900,height=600');
+
+                    // Helper function to normalize image URLs for backend storage
+                    function normalizeImageUrl(url) {
+                        // If it's already a relative path, return as-is
+                        if (!url.includes('://')) {
+                            return url;
+                        }
+
+                        // Extract the path after /storage/
+                        // e.g., http://localhost:8000/storage/photos/1/Products/abc.webp -> photos/1/Products/abc.webp
+                        const match = url.match(/\/storage\/(.+)$/);
+                        if (match) {
+                            return match[1];
+                        }
+
+                        // Fallback: return the original URL
+                        return url;
+                    }
+
+                    // Custom SetUrl function that APPENDS instead of REPLACES
+                    window.SetUrl = function(files) {
+                        // Normalize URLs to relative paths for backend storage
+                        const newUrls = files.map(f => normalizeImageUrl(f.url));
+
+                        // Keep full URLs for preview display
+                        const newDisplayUrls = files.map(f => f.url);
+
+                        // Get existing URLs
+                        const existingUrls = originalValue ? originalValue.split(',').map(u => u.trim())
+                            .filter(u => u) : [];
+
+                        // Combine existing and new URLs (avoid duplicates)
+                        const allUrls = [...existingUrls];
+                        newUrls.forEach(url => {
+                            if (!allUrls.includes(url)) {
+                                allUrls.push(url);
+                            }
+                        });
+
+                        // Update input value with normalized paths and trigger change
+                        $input.val(allUrls.join(',')).trigger('change');
+
+                        // For NON-VARIANTS, trigger the updateImagePreview function
+                        if (!isVariant) {
+                            if (typeof updateImagePreview === 'function') {
+                                updateImagePreview();
+                            }
+                        }
+                        // For variants, update the preview holder by APPENDING new images only
+                        else if (isVariant && $preview.length) {
+                            // Get URLs of images already in the preview
+                            const existingPreviewUrls = [];
+                            $preview.find('img.image-preview').each(function() {
+                                existingPreviewUrls.push($(this).attr('src'));
+                            });
+
+                            // Only add NEW images that aren't already in the preview
+                            const imagesToAdd = newDisplayUrls.filter(url => !existingPreviewUrls
+                                .includes(url));
+
+                            imagesToAdd.forEach((displayUrl, idx) => {
+                                const normalizedUrl = normalizeImageUrl(displayUrl);
+                                const isPrimary = existingPreviewUrls.length === 0 && idx === 0;
+
+                                // Create container matching existing structure
+                                const $container = $('<div class="image-container"></div>');
+
+                                // Create image with error handling (use display URL for src)
+                                const $img = $('<img class="image-preview" />').attr('src',
+                                        displayUrl)
+                                    .attr('alt', 'Variant Image')
+                                    .on('error', function() {
+                                        $(this).attr('src',
+                                            '{{ asset('backend/img/avatar.webp') }}');
+                                        $(this).attr('alt', 'Image Not Found');
+                                    });
+
+                                // Add delete button (for new images, we'll use a class to handle client-side deletion)
+                                const $deleteBtn = $(
+                                        '<button type="button" class="btn btn-danger btn-sm remove-new-image-btn" title="Remove Image"></button>'
+                                    )
+                                    .html('<i class="fa fa-trash"></i>')
+                                    .on('click', function() {
+                                        // Remove from preview
+                                        $container.remove();
+
+                                        // Update input value using normalized URL
+                                        const currentUrls = $input.val().split(',').map(u =>
+                                            u.trim()).filter(u => u);
+                                        const updatedUrls = currentUrls.filter(u => u !==
+                                            normalizedUrl);
+                                        $input.val(updatedUrls.join(','));
+                                    });
+
+                                // Add primary badge if needed
+                                if (isPrimary) {
+                                    const $primaryBadge = $('<div class="primary-badge"></div>')
+                                        .html(
+                                            '<small class="badge badge-success">Primary</small>'
+                                        );
+                                    $container.append($primaryBadge);
+                                }
+
+                                // Append elements in correct order
+                                $container.append($img);
+                                $container.append($deleteBtn);
+                                $preview.append($container);
+                            });
+                        }
+                    };
+
+                    return false;
+                });
+            }
+
+            // Initialize main product image file manager
+            initializeFileManagerButton('#lfm', false);
+
+            // Initialize existing variant file managers
+            initializeFileManagerButton('.lfm-variant', true);
+
+            // Re-initialize variant file managers when new variants are added
+            $(document).on('DOMNodeInserted', '#variant-preview', function() {
+                initializeFileManagerButton('.lfm-variant', true);
             });
 
             // Initialize Select2
@@ -1633,49 +1778,6 @@
                 $(this).siblings('.valid-feedback').remove();
             });
 
-            // Initialize Summernote
-            $('.summernote').summernote({
-                height: 200,
-                tabsize: 2,
-                toolbar: [
-                    ['style', ['style']],
-                    ['font', ['bold', 'underline', 'clear']],
-                    ['color', ['color']],
-                    ['para', ['ul', 'ol', 'paragraph']],
-                    ['table', ['table']],
-                    ['insert', ['link']],
-                    ['view', ['fullscreen', 'codeview']]
-                ]
-            });
-
-            // Initialize File Manager
-            $('#lfm').filemanager('image');
-            $('.lfm-variant').each(function() {
-                $(this).filemanager('image');
-            });
-
-            // Initialize Select2
-            $('.type-select').each(function() {
-                const typeId = $(this).data('type-id');
-                $(this).select2({
-                    placeholder: `Select ${$(this).prev().text()} options`,
-                    allowClear: true,
-                    width: '100%',
-                    dropdownParent: $('#variants-panel')
-                });
-            });
-
-            // Auto-generate slug
-            $('#inputTitle').on('input', function() {
-                const title = $(this).val().trim();
-                const slug = title.toLowerCase()
-                    .replace(/[^a-z0-9\s-]/g, '')
-                    .replace(/\s+/g, '-')
-                    .replace(/-+/g, '-')
-                    .substring(0, 100);
-                $('#slug').val(slug);
-            });
-
             // Toggle variants panel
             $('#has_variants').change(function() {
                 const isChecked = this.checked;
@@ -2062,7 +2164,8 @@
                             newVariantIndex++;
                         });
 
-                        $('.lfm-variant').filemanager('image');
+                        // Re-initialize file managers for new variant rows with append behavior
+                        initializeFileManagerButton('.lfm-variant', true);
 
                         console.log(`%c✅ SUCCESS: ${newVariants.length} variants added!`,
                             'color:#4CAF50;font-weight:bold;font-size:14px');
@@ -2323,38 +2426,56 @@
                 const $altContainer = $('#alt-text-section'); // correct container id
 
                 // Clear previously generated dynamic images & alt text (leave existing ones intact)
-                $holder.find('#new-images').empty();
+                $('#new-images').empty();
                 $altContainer.empty();
 
                 if (!imageInput) {
-                    $holder.find('#new-images').hide();
+                    $('#new-images').hide();
                     $altToggle.hide();
                     $altSection.hide();
                     return;
                 }
 
-                const allUrls = imageInput.split(',').map(u => u.trim()).filter(u => u);
-                // Collect URLs already rendered (existing DB images) to avoid duplication
-                const existingUrls = $('#holder img.image-preview').map(function() {
-                    return $(this).attr('src');
-                }).get();
-                const newUrls = allUrls.filter(u => existingUrls.indexOf(u) === -1);
+                const allPaths = imageInput.split(',').map(u => u.trim()).filter(u => u);
 
-                $holder.find('#new-images').show();
+                // Collect paths already rendered (existing DB images) to avoid duplication
+                // Use data-path attribute which contains the actual stored path
+                const existingPaths = $('#holder .image-container:not([data-dynamic])').map(
+                    function() {
+                        return $(this).attr('data-path') || $(this).find('img').attr('data-path');
+                    }).get().filter(p => p);
+
+                console.log('Existing paths from DB:', existingPaths);
+                console.log('All paths in input:', allPaths);
+
+                const newPaths = allPaths.filter(p => existingPaths.indexOf(p) === -1);
+
+                console.log('New paths to display:', newPaths);
+
+                if (newPaths.length === 0) {
+                    $('#new-images').hide();
+                    return;
+                }
+
+                $('#new-images').show();
                 $altToggle.show();
 
-                newUrls.forEach((url, index) => {
+                newPaths.forEach((path, index) => {
+                    // Convert stored path to display URL
+                    const displayUrl = path.includes('://') ? path : '/storage/' + path;
+
                     const container = $('<div class="image-container" data-dynamic="true"></div>');
                     const img = $('<img />', {
-                        src: url,
+                        src: displayUrl,
                         class: 'image-preview',
-                        alt: `Product Image ${index + 1}`,
+                        alt: `Product Image ${existingPaths.length + index + 1}`,
                         'data-index': index,
-                        'data-is-primary': index === 0,
-                        'data-fallback-text': `Product Image ${index + 1}`
+                        'data-path': path,
+                        'data-is-primary': (index === 0 && existingPaths.length === 0),
+                        'data-fallback-text': `Product Image ${existingPaths.length + index + 1}`
                     });
 
-                    if (index === 0 && existingUrls.length === 0) {
+                    if (index === 0 && existingPaths.length === 0) {
                         // Only show a Primary badge if no existing images already mark one
                         container.append(
                             '<div class="primary-badge"><span class="badge badge-success">Primary</span></div>'
@@ -2362,18 +2483,31 @@
                     }
 
                     img.on('error', function() {
-                        const fallback = $(
-                            '<div class="image-not-found"><i class="fa fa-image"></i><span>Image not available</span></div>'
-                        );
-                        container.append(fallback);
-                        $(this).remove();
+                        $(this).attr('src', '{{ asset('backend/img/avatar.webp') }}');
+                        $(this).attr('alt', 'Image Not Found');
                     });
 
+                    // Add delete button for new images
+                    const deleteBtn = $(
+                            '<button type="button" class="btn btn-danger btn-sm remove-new-image-btn" title="Remove Image"></button>'
+                        )
+                        .html('<i class="fa fa-trash"></i>')
+                        .on('click', function() {
+                            // Remove from preview
+                            container.remove();
+                            // Update input value using the stored path
+                            const currentPaths = $('#photo').val().split(',').map(p => p.trim()).filter(
+                                p => p);
+                            const updatedPaths = currentPaths.filter(p => p !== path);
+                            $('#photo').val(updatedPaths.join(',')).trigger('change');
+                        });
+
                     container.append(img);
-                    $holder.find('#new-images').append(container);
+                    container.append(deleteBtn);
+                    $('#new-images').append(container);
 
                     if ($('#enable_alt_text').is(':checked')) {
-                        createAltTextInput(url, index, $altContainer);
+                        createAltTextInput(displayUrl, index, $altContainer);
                     }
                 });
 
@@ -2444,19 +2578,7 @@
 
             $('#photo').on('input change', updateImagePreview);
 
-            $('#lfm').on('click', function() {
-                const originalValue = $('#photo').val();
-                let checkCount = 0;
-                const interval = setInterval(() => {
-                    checkCount++;
-                    if ($('#photo').val() !== originalValue) {
-                        updateImagePreview();
-                        clearInterval(interval);
-                    } else if (checkCount > 20) {
-                        clearInterval(interval);
-                    }
-                }, 500);
-            });
+            // Image preview update is now triggered by the change event in the custom SetUrl function above
 
             $(document).on('click', '.auto-generate-alt', function() {
                 const index = $(this).data('index');

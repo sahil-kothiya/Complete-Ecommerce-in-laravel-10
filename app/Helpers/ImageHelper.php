@@ -27,6 +27,23 @@ class ImageHelper
         // Strip any leading path separators that might have been stored
         $filename = ltrim($filename, '/\\');
 
+        // If full storage path already present, return directly
+        if (strpos($filename, 'storage/') === 0) {
+            return asset($filename);
+        }
+
+        // Legacy full relative paths without storage prefix
+        if (strpos($filename, 'photos/') === 0 || strpos($filename, 'products/') === 0) {
+            return asset('storage/' . $filename);
+        }
+
+        // Filename-only new optimized storage (just product_*.webp)
+        // Ensure products directory always included – previous logic produced /storage/product_xxx.webp (404)
+        if (preg_match('/^product_[A-Za-z0-9]/', $filename)) {
+            return asset('storage/products/' . $filename);
+        }
+
+        // New format: just filename, use configured base path
         $basePath = config('app.product_image_path', 'storage/products/');
         $cdnUrl = config('app.cdn_url');
 
@@ -55,6 +72,27 @@ class ImageHelper
         // Strip any leading path separators that might have been stored
         $filename = ltrim($filename, '/\\');
 
+        // Already has storage prefix – return
+        if (strpos($filename, 'storage/') === 0) {
+            return asset($filename);
+        }
+
+        // Legacy relative paths
+        if (strpos($filename, 'photos/') === 0 || strpos($filename, 'products/variants/') === 0 || strpos($filename, 'products/') === 0) {
+            return asset('storage/' . $filename);
+        }
+
+        // If this is actually a product image (product_ prefix), redirect to product path
+        if (preg_match('/^product_[A-Za-z0-9]/', $filename)) {
+            return self::productImageUrl($filename);
+        }
+
+        // Filename-only optimized variant (variant_*.webp) – ensure variants directory included
+        if (preg_match('/^variant_[A-Za-z0-9]/', $filename)) {
+            return asset('storage/products/variants/' . $filename);
+        }
+
+        // New format: just filename, use configured base path
         $basePath = config('app.variant_image_path', 'storage/products/variants/');
         $cdnUrl = config('app.cdn_url');
 
@@ -143,11 +181,19 @@ class ImageHelper
             if (empty($filename)) {
                 return self::defaultProductImage();
             }
-
+            $filename = ltrim($filename, '/\\');
+            if (strpos($filename, 'storage/') === 0) {
+                return asset($filename);
+            }
+            if (strpos($filename, 'photos/') === 0 || strpos($filename, 'products/') === 0) {
+                return asset('storage/' . $filename);
+            }
+            if (preg_match('/^product_[A-Za-z0-9]/', $filename)) {
+                return asset('storage/products/' . $filename);
+            }
             if ($cdnUrl) {
                 return rtrim($cdnUrl, '/') . '/' . trim($basePath, '/') . '/' . $filename;
             }
-
             return asset(trim($basePath, '/') . '/' . $filename);
         }, $filenames);
     }
@@ -167,11 +213,23 @@ class ImageHelper
             if (empty($filename)) {
                 return self::defaultVariantImage();
             }
-
+            $filename = ltrim($filename, '/\\');
+            if (strpos($filename, 'storage/') === 0) {
+                return asset($filename);
+            }
+            if (strpos($filename, 'photos/') === 0 || strpos($filename, 'products/variants/') === 0 || strpos($filename, 'products/') === 0) {
+                return asset('storage/' . $filename);
+            }
+            // If this is actually a product image (product_ prefix), redirect to product path
+            if (preg_match('/^product_[A-Za-z0-9]/', $filename)) {
+                return self::productImageUrl($filename);
+            }
+            if (preg_match('/^variant_[A-Za-z0-9]/', $filename)) {
+                return asset('storage/products/variants/' . $filename);
+            }
             if ($cdnUrl) {
                 return rtrim($cdnUrl, '/') . '/' . trim($basePath, '/') . '/' . $filename;
             }
-
             return asset(trim($basePath, '/') . '/' . $filename);
         }, $filenames);
     }

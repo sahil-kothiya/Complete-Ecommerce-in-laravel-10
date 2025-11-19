@@ -1,124 +1,88 @@
 <!-- Product Card -->
 @php
+    // Normalize product data (handles both fresh models and cached plain objects/arrays)
+    $productData = is_array($product) ? (object) $product : $product;
+
+    $normalizeToArray = function ($value) {
+        if ($value instanceof \Illuminate\Support\Collection) {
+            return $value->all();
+        }
+
+        if (is_object($value)) {
+            if ($value instanceof \Traversable) {
+                return iterator_to_array($value);
+            }
+
+            if (property_exists($value, 'items') && is_array($value->items)) {
+                return $value->items;
+            }
+        }
+
+        if (is_array($value)) {
+            return $value;
+        }
+
+        return [];
+    };
+
+    // Ensure collections are properly handled
+    $variants = collect($normalizeToArray($productData->variants ?? []));
+    $images = collect($normalizeToArray($productData->images ?? []));
+
     // Precompute lightweight variant meta for frontend pricing logic
     $variantMeta = [];
-    if ($product->has_variants && $product->relationLoaded('variants') && $product->variants->count()) {
-        $variantMeta = $product->variants
+    if (($productData->has_variants ?? false) && $variants->count()) {
+        $variantMeta = $variants
             ->map(
                 fn($v) => [
-                    'p' => (float) ($v->price ?? 0),
-                    'd' => (float) ($v->discount ?? 0),
-                    's' => (int) ($v->stock ?? 0),
+                    'p' => (float) (is_object($v) ? $v->price ?? 0 : $v['price'] ?? 0),
+                    'd' => (float) (is_object($v) ? $v->discount ?? 0 : $v['discount'] ?? 0),
+                    's' => (int) (is_object($v) ? $v->stock ?? 0 : $v['stock'] ?? 0),
                 ],
             )
             ->values();
     }
-    $totalStock = $product->has_variants
-        ? $product->variants->sum('stock') ?? 0
-        : $product->base_stock ?? ($product->stock ?? 0);
-    $baseDiscount = (float) ($product->base_discount ?? 0);
+
+    $totalStock =
+        $productData->has_variants ?? false
+            ? $variants->sum(fn($v) => is_object($v) ? $v->stock ?? 0 : $v['stock'] ?? 0)
+            : $productData->base_stock ?? ($productData->stock ?? 0);
+    $baseDiscount = (float) ($productData->base_discount ?? 0);
 @endphp
-<div class="product-card-container mb-4 isotope-item category-{{ $product->cat_id }} px-3"
-    data-product-id="{{ $product->id }}" data-product-brand="{{ $product->brand->slug ?? '' }}"
-    data-product-base-price="{{ $product->base_price }}" data-product-base-discount="{{ $baseDiscount }}"
-    data-product-has-variants="{{ $product->has_variants ? '1' : '0' }}"
+<div class="product-card-container mb-4 isotope-item category-{{ $productData->cat_id ?? '' }} px-3"
+    data-product-id="{{ $productData->id }}"
+    data-product-brand="{{ is_object($productData->brand ?? null) ? $productData->brand->slug ?? '' : '' }}"
+    data-product-base-price="{{ $productData->base_price ?? 0 }}" data-product-base-discount="{{ $baseDiscount }}"
+    data-product-has-variants="{{ $productData->has_variants ?? false ? '1' : '0' }}"
     data-product-variants='@json($variantMeta)' data-product-stock-total="{{ $totalStock }}"
-    data-product-rating="{{ $product->rating_average ?? 0 }}">
+    data-product-rating="{{ $productData->rating_average ?? 0 }}">
     <div class="card h-100 border-0 d-flex flex-column product-card shadow-sm rounded">
         <div class="position-relative bg-light" style="aspect-ratio: 1 / 1;">
             <div class="slider-wrapper w-100 h-100" data-slider>
                 <div class="slider-track d-flex h-100">
                     @php
-                        // -----------------------------------------------------------------
-                        // 1. Build a collection of images that will be rendered in the slider
-                        // -----------------------------------------------------------------
-                        $images = collect();
-
-                        // ---------- WITH VARIANTS ----------
-                        if ($product->has_variants && $product->variants && $product->variants->count()) {
-                            // Aggregate up to 3 images from the first in-stock active variants
-                            $variantImages = collect();
-                            $sortedVariants = $product->variants
-                                ->sortByDesc(fn($v) => $v->stock > 0 ? 1 : 0) // prioritize in-stock
-                                ->values();
-                            foreach ($sortedVariants as $variant) {
-                                if (
-                                    $variant->relationLoaded('images') &&
-                                    $variant->images &&
-                                    $variant->images->count()
-                                ) {
-                                    foreach ($variant->images as $vImg) {
-                                        $variantImages->push($vImg);
-                                        if ($variantImages->count() >= 3) {
-                                            break 2;
-                                        }
-                                    }
-                                } elseif (isset($variant->primaryImage) && $variant->primaryImage) {
-                                    $variantImages->push($variant->primaryImage);
-                                    if ($variantImages->count() >= 3) {
-                                        break;
-                                    }
-                                }
-                            }
-                            if ($variantImages->count()) {
-                                $images = $variantImages;
-                            }
-                        }
-
-                        // ---------- WITHOUT VARIANTS ----------
-                        if ($images->isEmpty()) {
-                            // a) Prefer eager-loaded `images` relationship
-                            if ($product->relationLoaded('images') && $product->images && $product->images->count()) {
-                                $images = $product->images;
-                            }
-                            // b) Fallback to accessor `primaryImage`
-                            elseif (isset($product->primaryImage) && $product->primaryImage) {
-                                $images = collect([$product->primaryImage]);
-                            }
-                            // c) Check for primary_image array (set by controller)
-                            elseif (isset($product->primary_image) && $product->primary_image) {
-                                $images = collect([
-                                    (object) [
-                                        'image_path' => $product->primary_image['image_path'],
-                                        'thumbnail_path' =>
-                                            $product->primary_image['thumbnail_path'] ??
-                                            $product->primary_image['image_path'],
-                                        'alt_text' => $product->primary_image['alt_text'] ?? $product->title,
-                                    ],
-                                ]);
-                            }
-                        }
-
-                        // If still empty → show a placeholder
+                        // Images are already provided in the transformed product data
+                        // Just ensure we have at least one image
                         if ($images->isEmpty()) {
                             $images = collect([
                                 (object) [
-                                    'image_path' => 'images/no-image.png',
-                                    'alt_text' => $product->title,
+                                    'image_path' => asset('images/no-image.png'),
+                                    'thumbnail_path' => asset('images/no-image.png'),
+                                    'alt_text' => $productData->title ?? 'Product',
                                 ],
                             ]);
                         }
 
-                        // Limit number of images displayed in card to max 3 (performance + UX)
+                        // Limit to 3 images for performance
                         $images = $images->take(3);
-                        // dd($images);
                     @endphp
 
                     @foreach ($images as $index => $img)
                         @php
-                            // Use the model's url accessor (handles storage path correctly)
-// The accessor automatically prepends 'products/' or 'products/variants/' to filename
-if (is_object($img) && method_exists($img, 'getAttribute')) {
-    // Model instance with accessor
-    $imgSrc = $img->url ?? asset('images/no-image.png');
-    $thumbnailSrc = $img->thumbnail_url ?? $imgSrc;
-} else {
-    // Array or stdClass from controller (already has full path from url accessor)
-    $imgSrc = $img->image_path ?? asset('images/no-image.png');
-                                $thumbnailSrc = $img->thumbnail_path ?? $imgSrc;
-                            }
-
-                            $altText = $img->alt_text ?? $product->title;
+                            $imgObj = is_array($img) ? (object) $img : $img;
+                            $imgSrc = $imgObj->image_path ?? asset('images/no-image.png');
+                            $thumbnailSrc = $imgObj->thumbnail_path ?? $imgSrc;
+                            $altText = $imgObj->alt_text ?? ($productData->title ?? 'Product');
                         @endphp
 
                         <img src="{{ $thumbnailSrc }}" class="slider-image" alt="{{ $altText }}"
@@ -129,37 +93,40 @@ if (is_object($img) && method_exists($img, 'getAttribute')) {
                 </div>
             </div>
 
-            @if (isset($product->max_discount) && $product->max_discount > 0)
-                <span class="badge badge-primary badge-status">{{ $product->max_discount }}% Off</span>
-            @elseif($product->condition === 'new')
+            @if (isset($productData->max_discount) && $productData->max_discount > 0)
+                <span class="badge badge-primary badge-status">{{ $productData->max_discount }}% Off</span>
+            @elseif(($productData->condition ?? '') === 'new')
                 <span class="badge badge-success badge-status">New</span>
-            @elseif(($product->stock ?? 0) <= 0)
+            @elseif($totalStock <= 0)
                 <span class="badge badge-danger badge-status">Sold Out</span>
             @endif
         </div>
 
         <div class="card-body d-flex flex-column px-3 py-2">
             <h6 class="text-dark text-truncate mb-1">
-                <a href="{{ route('product-detail', $product->slug) }}" class="text-dark">
-                    {{ Str::limit($product->title, 50) }}
+                <a href="{{ route('product-detail', $productData->slug) }}" class="text-dark">
+                    {{ Str::limit($productData->title ?? 'Product', 50) }}
                 </a>
             </h6>
 
             <!-- Brand Display -->
-            @if (isset($product->brand))
+            @if (isset($productData->brand) && $productData->brand)
+                @php
+                    $brand = is_array($productData->brand) ? (object) $productData->brand : $productData->brand;
+                @endphp
                 <small class="text-muted mb-1">
-                    <i class="fa fa-tag"></i> {{ $product->brand->title }}
+                    <i class="fa fa-tag"></i> {{ $brand->title ?? '' }}
                 </small>
             @endif
 
             <!-- Rating Display -->
-            @if (isset($product->rating_average) && $product->rating_average > 0)
+            @if (isset($productData->rating_average) && $productData->rating_average > 0)
                 <div class="mb-1">
                     <small class="text-warning">
                         @for ($i = 1; $i <= 5; $i++)
-                            <i class="fa fa-star{{ $i <= $product->rating_average ? '' : '-o' }}"></i>
+                            <i class="fa fa-star{{ $i <= $productData->rating_average ? '' : '-o' }}"></i>
                         @endfor
-                        <span class="text-muted">({{ $product->rating_count ?? 0 }})</span>
+                        <span class="text-muted">({{ $productData->rating_count ?? 0 }})</span>
                     </small>
                 </div>
             @endif
@@ -170,23 +137,23 @@ if (is_object($img) && method_exists($img, 'getAttribute')) {
             </div>
 
             @php
-                $productStock = $product->stock ?? 0;
-                $inWishlist = class_exists('Helper') ? Helper::isProductInWishlist($product->slug) : false;
+                $productStock = $totalStock;
+                $inWishlist = class_exists('Helper') ? Helper::isProductInWishlist($productData->slug) : false;
             @endphp
 
             <div class="mt-auto">
-                <a href="{{ route('add-to-cart', $product->slug) }}"
+                <a href="{{ route('add-to-cart', $productData->slug) }}"
                     class="btn btn-sm btn-block btn-dark text-uppercase mb-3 text-center {{ $productStock <= 0 ? 'disabled' : '' }}">
                     <i class="ti-shopping-cart mr-1"></i>
                     {{ $productStock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
                 </a>
 
                 <div class="d-flex justify-content-between align-items-center small text-muted px-1">
-                    <a href="{{ route('add-to-wishlist', $product->slug) }}" class="text-decoration-none">
+                    <a href="{{ route('add-to-wishlist', $productData->slug) }}" class="text-decoration-none">
                         <i class="ti-heart mr-1" style="color: {{ $inWishlist ? 'red' : '#6c757d' }}"></i> Wishlist
                     </a>
                     <a href="#" class="text-decoration-none text-muted hover-text-dark"
-                        onclick="event.preventDefault(); $('#productModal{{ $product->id }}').modal('show');">
+                        onclick="event.preventDefault(); $('#productModal{{ $productData->id }}').modal('show');">
                         <i class="ti-eye mr-1"></i> Quick View
                     </a>
                 </div>

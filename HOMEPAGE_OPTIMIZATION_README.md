@@ -153,7 +153,7 @@ Ensure cron is configured:
 - `app/Helpers/RedisHelper.php` - Enhanced with 15+ methods
 - `app/Http/Controllers/FrontendController.php` - Optimized homepage
 - `app/Observers/ProductObserver.php` - Smart cache invalidation
-- `config/cache_keys.php` - Updated TTL and prefixes
+- `config/redis_cache.php` - Centralized Redis configuration with TTL and prefixes
 
 ---
 

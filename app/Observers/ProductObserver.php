@@ -4,7 +4,7 @@ namespace App\Observers;
 
 use App\Models\Product;
 use App\Services\ElasticsearchService;
-use App\Helpers\RedisHelper;
+use App\Services\RedisCacheService;
 use App\Jobs\IndexProductInElasticsearch;
 use App\Jobs\RemoveProductFromElasticsearch;
 use App\Jobs\ClearProductRelatedCaches;
@@ -108,14 +108,11 @@ class ProductObserver
     private function invalidateProductCaches(Product $product): void
     {
         try {
-            $keys = [
-                "product:{$product->id}",
-                "product:slug:{$product->slug}",
-                "product:card:{$product->id}",
-                "product:light:{$product->id}",
-            ];
-
-            RedisHelper::forgetMany($keys);
+            // Use centralized cache invalidation
+            RedisCacheService::invalidate('product', [
+                'id' => $product->id,
+                'slug' => $product->slug,
+            ]);
 
             Log::debug("Invalidated product caches for product: {$product->id}");
         } catch (\Exception $e) {
@@ -131,17 +128,12 @@ class ProductObserver
     {
         try {
             // Strategy 1: Increment cache version (atomic, instant invalidation)
-            $newVersion = RedisHelper::incrementVersion('meta:cache:version');
+            $newVersion = RedisCacheService::incrementVersion();
 
             Log::info("Invalidated homepage cache by incrementing version to: {$newVersion}");
 
-            // Strategy 2: Also clear component caches for fresh rebuild
-            $componentKeys = [
-                'cache:homepage:products:featured',
-                'cache:homepage:category_products',
-            ];
-
-            RedisHelper::forgetMany($componentKeys);
+            // Strategy 2: Also use pattern-based invalidation for featured products
+            RedisCacheService::invalidate('product_featured');
 
             Log::debug("Cleared homepage component caches");
         } catch (\Exception $e) {

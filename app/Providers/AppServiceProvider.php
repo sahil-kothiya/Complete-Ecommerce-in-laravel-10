@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 
 use App\Helpers\RedisHelper;
 
@@ -39,6 +40,7 @@ use App\Observers\{
 };
 use App\Services\DiscountService;
 use App\Services\ResponseCacheService;
+use Carbon\Carbon;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -70,10 +72,11 @@ class AppServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        // Singleton for TTL configuration to avoid repeated config calls
-        $this->app->singleton('cache.ttl', function () {
-            return Config::get('cache_keys.ttl');
+        // Singleton for Redis cache configuration to avoid repeated config calls
+        $this->app->singleton('redis.cache.config', function () {
+            return Config::get('redis_cache');
         });
+
         $this->app->singleton(ResponseCacheService::class);
         // $this->app->singleton(DiscountService::class, function () {
         //     return new DiscountService();
@@ -82,6 +85,19 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Force PHP locale and Carbon locale to English so logs and
+        // locale-aware output remain in default English
+        @setlocale(LC_ALL, 'en_US.UTF-8');
+        if (class_exists('\Locale')) {
+            // set Intl default locale if extension available
+            try {
+                \Locale::setDefault('en');
+            } catch (\Throwable $e) {
+                // ignore if not supported
+            }
+        }
+        Carbon::setLocale('en');
+
         $this->registerObservers();
 
         // Skip processing for backend routes - early return for performance
@@ -90,6 +106,7 @@ class AppServiceProvider extends ServiceProvider
         }
 
         $this->shareGlobalData();
+        $this->initializeCriticalCaches();
         // $this->setupUserSpecificData();
 
         View::composer('*', function ($view) {
@@ -151,7 +168,7 @@ class AppServiceProvider extends ServiceProvider
     private function getTtlConfig(): array
     {
         if (self::$ttlConfig === null) {
-            self::$ttlConfig = app('cache.ttl');
+            self::$ttlConfig = Config::get('redis_cache.ttl', []);
         }
 
         return self::$ttlConfig;
@@ -257,18 +274,82 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
-     * Warm up cache for critical data (call this from a command/job)
+     * Initialize critical caches on first boot
+     * Only runs if Redis is enabled and caches are empty
      */
-    public function warmUpCache(): void
+    private function initializeCriticalCaches(): void
     {
+        // Only in production/staging and if Redis is enabled
+        if (!app()->environment(['production', 'local']) || !Config::get('redis_cache.enabled.master', false)) {
+            return;
+        }
+
+        // Check if already initialized (avoid warming on every request)
+        $initKey = 'meta:cache:initialized';
+        if (RedisHelper::has($initKey)) {
+            return;
+        }
+
+        try {
+            // Warm critical data on first boot
+            $this->warmUpCriticalCaches();
+
+            // Mark as initialized (expires in 1 hour, will re-warm if Redis is flushed)
+            RedisHelper::put($initKey, true, 3600);
+        } catch (\Throwable $e) {
+            Log::warning('Cache initialization failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Warm up critical caches (settings, categories, banners)
+     */
+    private function warmUpCriticalCaches(): void
+    {
+        $config = Config::get('redis_cache');
+
+        if (!$config['warming']['enabled'] ?? false) {
+            return;
+        }
+
         $ttl = $this->getTtlConfig();
-        $prefix = 'cache:homepage:';
 
-        // Warm up settings
-        $settingsKey = $prefix . 'settings';
-        $this->getCachedSettings($settingsKey, $ttl['settings']);
+        // Warm settings (always needed)
+        if ($config['warming']['warm_items']['homepage'] ?? true) {
+            $settingsKey = 'page:home:settings';
+            $this->getCachedSettings($settingsKey, $ttl['settings'] ?? 86400);
+            Log::info('Cache warmed: settings');
+        }
 
-        // You can add more cache warming here
-        // Example: categories, banners, etc.
+        // Warm categories if enabled
+        if ($config['warming']['warm_items']['categories'] ?? true) {
+            try {
+                $categories = Category::where('status', 'active')
+                    ->select('id', 'title', 'slug', 'photo', 'is_parent')
+                    ->orderBy('title', 'ASC')
+                    ->get();
+
+                RedisHelper::put('component:categories', $categories, $ttl['categories'] ?? 43200);
+                Log::info('Cache warmed: categories', ['count' => $categories->count()]);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to warm categories cache: ' . $e->getMessage());
+            }
+        }
+
+        // Warm featured products if enabled
+        if ($config['warming']['warm_items']['featured_products'] ?? true) {
+            try {
+                $featured = Product::where('status', 'active')
+                    ->where('is_featured', 1)
+                    ->select('id', 'title', 'slug', 'price', 'photo')
+                    ->limit(20)
+                    ->get();
+
+                RedisHelper::put('component:featured', $featured, $ttl['featured_products'] ?? 3600);
+                Log::info('Cache warmed: featured products', ['count' => $featured->count()]);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to warm featured products cache: ' . $e->getMessage());
+            }
+        }
     }
 }
