@@ -6,7 +6,7 @@ use Elasticsearch\Client;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Cache;
-use App\Helpers\RedisHelper;
+use App\Services\RedisCacheService;
 
 class ElasticsearchService
 {
@@ -180,7 +180,7 @@ class ElasticsearchService
         $cacheKey = 'autocomplete:' . md5($query) . ':' . $limit;
 
         // Check Redis cache first
-        $cached = RedisHelper::get($cacheKey);
+        $cached = RedisCacheService::get($cacheKey);
         if ($cached) {
             return $cached;
         }
@@ -234,7 +234,7 @@ class ElasticsearchService
             }
 
             // Cache for 5 minutes
-            RedisHelper::put($cacheKey, $suggestions, 300);
+            RedisCacheService::put($cacheKey, $suggestions, 300);
             return $suggestions;
         } catch (\Exception $e) {
             Log::error('Elasticsearch autocomplete failed: ' . $e->getMessage());

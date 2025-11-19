@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Helpers\RedisHelper;
+use App\Services\RedisCacheService;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Cart;
 use Illuminate\Support\Facades\Cache;
@@ -379,8 +379,8 @@ class Product extends Model
     {
         $key = "product_variants:{$this->id}";
 
-        if (RedisHelper::has($key)) {
-            return RedisHelper::get($key);
+        if (RedisCacheService::has($key)) {
+            return RedisCacheService::get($key);
         }
 
         $variants = $this->activeVariants()
@@ -396,7 +396,7 @@ class Product extends Model
             ]);
 
         $json = $variants->toJson();
-        RedisHelper::put($key, $json, 3600);
+        RedisCacheService::put($key, $json, 3600);
 
         return $json;
     }
@@ -410,12 +410,12 @@ class Product extends Model
 
         static::updated(function ($product) {
             Cache::forget("product_rating:{$product->id}");
-            RedisHelper::forget("product_variants:{$product->id}");
+            RedisCacheService::forget("product_variants:{$product->id}");
         });
 
         static::deleted(function ($product) {
             Cache::forget("product_rating:{$product->id}");
-            RedisHelper::forget("product_variants:{$product->id}");
+            RedisCacheService::forget("product_variants:{$product->id}");
         });
     }
 

@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Helpers\RedisHelper;
+use App\Services\RedisCacheService;
 use App\Services\CacheWarmupService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Redis;
@@ -61,7 +61,7 @@ class CacheStatus extends Command
     {
         $this->line("🔗 <options=bold>Redis Connection</>");
 
-        $info = RedisHelper::getRedisInfo();
+        $info = RedisCacheService::getRedisInfo();
 
         if (empty($info)) {
             $this->error("   ✗ Redis is not connected");
@@ -92,7 +92,7 @@ class CacheStatus extends Command
 
         $status = $service->getWarmupStatus();
 
-        $cacheVersion = RedisHelper::getVersion('meta:cache:version');
+        $cacheVersion = RedisCacheService::getVersion();
         $this->line("   Cache Version: {$cacheVersion}");
         $this->newLine();
 
@@ -127,7 +127,7 @@ class CacheStatus extends Command
         ];
 
         foreach ($patterns as $name => $pattern) {
-            $keys = RedisHelper::scanKeys($pattern, 1000);
+            $keys = RedisCacheService::keys($pattern, 1000);
             $count = count($keys);
             $this->line("   " . ucfirst($name) . " keys: {$count}");
         }
@@ -135,7 +135,7 @@ class CacheStatus extends Command
         $this->newLine();
 
         // Total keys
-        $totalKeys = RedisHelper::dbSize();
+        $totalKeys = RedisCacheService::dbSize();
         $this->line("   <options=bold>Total keys in database: {$totalKeys}</>");
 
         $this->newLine();

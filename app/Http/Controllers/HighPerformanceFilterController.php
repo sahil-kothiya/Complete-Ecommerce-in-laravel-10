@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Helpers\RedisHelper;
+use App\Services\RedisCacheService;
 use App\Helpers\UrlEncryptor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,20 +27,20 @@ class HighPerformanceFilterController extends Controller
         $categoryContext = $this->resolveCategoryContext($request, $path);
         $currentFilters = $this->parseCurrentFilters($request);
         $cacheKeys = $this->generateCacheKeys($categoryContext, $currentFilters, $request);
-        
+
         $cachedData = $this->getCachedDataPipeline($cacheKeys);
 
         // Build filter data
         $filterData = $cachedData['filters'] ?? $this->buildOptimizedFilterData($categoryContext, $currentFilters);
         if (!isset($cachedData['filters'])) {
-            RedisHelper::put($cacheKeys['filters'], $filterData, self::CACHE_TTL);
+            RedisCacheService::put($cacheKeys['filters'], $filterData, self::CACHE_TTL);
         }
 
         // Build product data
         $productData = $cachedData['products'] ?? $this->getOptimizedFilteredProducts($categoryContext, $currentFilters, $request);
         $isSimilar = $productData['sim'] ?? false;
         if (!isset($cachedData['products']) && !$isSimilar) {
-            RedisHelper::put($cacheKeys['products'], $productData, self::PRODUCTS_CACHE_TTL);
+            RedisCacheService::put($cacheKeys['products'], $productData, self::PRODUCTS_CACHE_TTL);
         }
 
         // Compact response with abbreviated keys
@@ -75,21 +75,9 @@ class HighPerformanceFilterController extends Controller
     private function getCachedDataPipeline(array $cacheKeys): array
     {
         $validKeys = array_filter($cacheKeys);
-        $results = \Illuminate\Support\Facades\Redis::pipeline(function ($pipe) use ($validKeys) {
-            foreach ($validKeys as $key) {
-                $pipe->get($key);
-            }
-        });
 
-        $cachedData = [];
-        $keyNames = array_keys($validKeys);
-        foreach ($results as $index => $result) {
-            if ($result) {
-                $cachedData[$keyNames[$index]] = RedisHelper::deserializeData($result);
-            }
-        }
-
-        return $cachedData;
+        // Use RedisCacheService::mget() which handles deserialization automatically
+        return RedisCacheService::mget($validKeys);
     }
 
     private function buildOptimizedFilterData($category, array $currentFilters): array
@@ -112,16 +100,16 @@ class HighPerformanceFilterController extends Controller
     private function getAggregatedStats($category, array $currentFilters): array
     {
         $cacheKey = 'ag6_' . md5(serialize([$category?->id, $currentFilters]));
-        
+
         return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($category, $currentFilters) {
             $baseQuery = $this->buildBaseStatsQuery($category, $currentFilters);
             $baseSql = $baseQuery->toSql();
             $bindings = $baseQuery->getBindings();
-            
+
             $sql = "
                 WITH fp AS ({$baseSql}),
                 vmin AS (
-                    SELECT 
+                    SELECT
                         p.id as product_id,
                         MIN(v.price) FILTER (WHERE v.stock > 0) as min_orig_instock,
                         MIN(v.price * (1 - COALESCE(v.discount, 0) / 100.0)) FILTER (WHERE v.stock > 0) as min_disc_instock,
@@ -131,7 +119,7 @@ class HighPerformanceFilterController extends Controller
                     GROUP BY p.id
                 ),
                 vmaxd AS (
-                    SELECT 
+                    SELECT
                         p.id as product_id,
                         MAX(v.discount) FILTER (WHERE v.stock > 0 AND v.status = 'active') as max_variant_disc
                     FROM fp p
@@ -139,15 +127,15 @@ class HighPerformanceFilterController extends Controller
                     GROUP BY p.id
                 ),
                 ps AS (
-                    SELECT 
+                    SELECT
                         MIN(effective_price) as mn,
                         MAX(effective_price) as mx
                     FROM (
-                        SELECT 
-                            CASE 
+                        SELECT
+                            CASE
                                 WHEN NOT p.has_variants AND p.base_stock > 0 THEN p.base_price * (1 - COALESCE(p.base_discount, 0) / 100.0)
                                 WHEN p.has_variants AND v.has_stock THEN v.min_disc_instock
-                                ELSE NULL 
+                                ELSE NULL
                             END as effective_price
                         FROM fp p
                         LEFT JOIN vmin v ON p.id = v.product_id
@@ -156,32 +144,32 @@ class HighPerformanceFilterController extends Controller
                     WHERE effective_price IS NOT NULL
                 ),
                 avs AS (
-                    SELECT 
+                    SELECT
                         COUNT(*) FILTER (WHERE (NOT p.has_variants AND p.base_stock > 0) OR (p.has_variants AND COALESCE(v.has_stock, false))) as ins,
                         COUNT(*) FILTER (WHERE NOT ((NOT p.has_variants AND p.base_stock > 0) OR (p.has_variants AND COALESCE(v.has_stock, false)))) as oos
                     FROM fp p
                     LEFT JOIN vmin v ON p.id = v.product_id
                 ),
                 dcs AS (
-                    SELECT 
-                        COUNT(*) FILTER (WHERE 
-                            ((NOT p.has_variants AND p.base_discount >= 5 AND p.base_stock > 0) OR 
+                    SELECT
+                        COUNT(*) FILTER (WHERE
+                            ((NOT p.has_variants AND p.base_discount >= 5 AND p.base_stock > 0) OR
                              (p.has_variants AND COALESCE(vd.max_variant_disc, 0) >= 5 AND COALESCE(v.has_stock, false)))
                         ) as d5,
-                        COUNT(*) FILTER (WHERE 
-                            ((NOT p.has_variants AND p.base_discount >= 10 AND p.base_stock > 0) OR 
+                        COUNT(*) FILTER (WHERE
+                            ((NOT p.has_variants AND p.base_discount >= 10 AND p.base_stock > 0) OR
                              (p.has_variants AND COALESCE(vd.max_variant_disc, 0) >= 10 AND COALESCE(v.has_stock, false)))
                         ) as d10,
-                        COUNT(*) FILTER (WHERE 
-                            ((NOT p.has_variants AND p.base_discount >= 20 AND p.base_stock > 0) OR 
+                        COUNT(*) FILTER (WHERE
+                            ((NOT p.has_variants AND p.base_discount >= 20 AND p.base_stock > 0) OR
                              (p.has_variants AND COALESCE(vd.max_variant_disc, 0) >= 20 AND COALESCE(v.has_stock, false)))
                         ) as d20,
-                        COUNT(*) FILTER (WHERE 
-                            ((NOT p.has_variants AND p.base_discount >= 30 AND p.base_stock > 0) OR 
+                        COUNT(*) FILTER (WHERE
+                            ((NOT p.has_variants AND p.base_discount >= 30 AND p.base_stock > 0) OR
                              (p.has_variants AND COALESCE(vd.max_variant_disc, 0) >= 30 AND COALESCE(v.has_stock, false)))
                         ) as d30,
-                        COUNT(*) FILTER (WHERE 
-                            ((NOT p.has_variants AND p.base_discount >= 50 AND p.base_stock > 0) OR 
+                        COUNT(*) FILTER (WHERE
+                            ((NOT p.has_variants AND p.base_discount >= 50 AND p.base_stock > 0) OR
                              (p.has_variants AND COALESCE(vd.max_variant_disc, 0) >= 50 AND COALESCE(v.has_stock, false)))
                         ) as d50
                     FROM fp p
@@ -189,7 +177,7 @@ class HighPerformanceFilterController extends Controller
                     LEFT JOIN vmaxd vd ON p.id = vd.product_id
                 ),
                 brs AS (
-                    SELECT 
+                    SELECT
                         b.slug, b.title, COUNT(DISTINCT f.id) as cnt
                     FROM fp f
                     INNER JOIN brands b ON f.brand_id = b.id
@@ -202,7 +190,7 @@ class HighPerformanceFilterController extends Controller
                     LIMIT 50
                 ),
                 rts AS (
-                    SELECT 
+                    SELECT
                         FLOOR(prc.average_rating) as rt,
                         COUNT(DISTINCT f.id) as cnt
                     FROM fp f
@@ -212,7 +200,7 @@ class HighPerformanceFilterController extends Controller
                     AND ((NOT f.has_variants AND f.base_stock > 0) OR (f.has_variants AND v.has_stock))
                     GROUP BY FLOOR(prc.average_rating)
                 )
-                SELECT 
+                SELECT
                     json_build_object(
                         'p', (SELECT row_to_json(p) FROM ps p),
                         'av', (SELECT row_to_json(a) FROM avs a),
@@ -250,7 +238,7 @@ class HighPerformanceFilterController extends Controller
             'price_range' => 1,
             'discounts' => 1  // Added this line
         ]);
-        
+
         $this->applyFiltersToQuery($query, $filtersWithoutPriceAndDiscount);
 
         return $query;
@@ -322,7 +310,7 @@ class HighPerformanceFilterController extends Controller
     {
         $query = DB::table('products as p')
             ->select([
-                'p.id', 'p.title', 'p.slug', 'p.base_price', 'p.base_discount', 
+                'p.id', 'p.title', 'p.slug', 'p.base_price', 'p.base_discount',
                 'p.base_stock', 'p.condition', 'p.has_variants',
                 'b.title as bt', 'b.slug as bs',
                 'prc.average_rating as ar', 'prc.total_reviews as tr',
@@ -347,10 +335,10 @@ class HighPerformanceFilterController extends Controller
                     ) as effective_discount
                 '),
                 DB::raw('
-                    CASE 
-                        WHEN p.has_variants THEN 
+                    CASE
+                        WHEN p.has_variants THEN
                             COALESCE(cheapest_v.stock > 0, false)
-                        ELSE (p.base_stock > 0) 
+                        ELSE (p.base_stock > 0)
                     END as is_in_stock
                 ')
             ])
@@ -358,7 +346,7 @@ class HighPerformanceFilterController extends Controller
             ->leftJoin('product_ratings_cache as prc', 'p.id', '=', 'prc.product_id')
             // ✅ FIXED: Properly get cheapest in-stock variant using LATERAL join
             ->leftJoinSub(
-                'SELECT DISTINCT ON (product_id) 
+                'SELECT DISTINCT ON (product_id)
                     product_id,
                     price,
                     discount,
@@ -378,7 +366,7 @@ class HighPerformanceFilterController extends Controller
             })
             ->where('p.status', 'active')
             ->groupBy([
-                'p.id', 'p.title', 'p.slug', 'p.base_price', 'p.base_discount', 
+                'p.id', 'p.title', 'p.slug', 'p.base_price', 'p.base_discount',
                 'p.base_stock', 'p.condition', 'p.has_variants',
                 'b.title', 'b.slug', 'prc.average_rating', 'prc.total_reviews',
                 'cheapest_v.price', 'cheapest_v.discount', 'cheapest_v.stock', 'cheapest_v.min_disc_price'
@@ -481,19 +469,19 @@ class HighPerformanceFilterController extends Controller
         switch ($sortBy) {
             case 'price_low_high':
                 $query->orderByRaw('
-                    CASE 
-                        WHEN p.has_variants THEN 
+                    CASE
+                        WHEN p.has_variants THEN
                             COALESCE((SELECT MIN(v.price * (1 - COALESCE(v.discount, 0) / 100.0)) FROM product_variants v WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0), p.base_price * (1 - p.base_discount / 100.0))
-                        ELSE p.base_price * (1 - COALESCE(p.base_discount, 0) / 100.0) 
+                        ELSE p.base_price * (1 - COALESCE(p.base_discount, 0) / 100.0)
                     END ASC
                 ');
                 break;
             case 'price_high_low':
                 $query->orderByRaw('
-                    CASE 
-                        WHEN p.has_variants THEN 
+                    CASE
+                        WHEN p.has_variants THEN
                             COALESCE((SELECT MIN(v.price * (1 - COALESCE(v.discount, 0) / 100.0)) FROM product_variants v WHERE v.product_id = p.id AND v.status = \'active\' AND v.stock > 0), p.base_price * (1 - p.base_discount / 100.0))
-                        ELSE p.base_price * (1 - COALESCE(p.base_discount, 0) / 100.0) 
+                        ELSE p.base_price * (1 - COALESCE(p.base_discount, 0) / 100.0)
                     END DESC
                 ');
                 break;
@@ -523,7 +511,7 @@ class HighPerformanceFilterController extends Controller
             $images = [];
             if (!empty($p->imgs)) {
                 $imgArr = is_string($p->imgs) ? explode(',', trim($p->imgs, '{}')) : (array) $p->imgs;
-                
+
                 $imageData = [];
                 foreach ($imgArr as $img) {
                     if (empty($img)) continue;
@@ -535,7 +523,7 @@ class HighPerformanceFilterController extends Controller
                         ];
                     }
                 }
-                
+
                 if (!empty($imageData)) {
                     usort($imageData, fn($a, $b) => $a['so'] <=> $b['so']);
                     $images = array_column($imageData, 'p');
@@ -566,12 +554,12 @@ class HighPerformanceFilterController extends Controller
     private function getCountEstimate($category, array $filters): int
     {
         $cacheKey = 'cnt6_' . md5(serialize([$category?->id, $filters]));
-        
+
         return Cache::remember($cacheKey, 300, function () use ($category, $filters) {
             if ($this->shouldUseEstimate($filters)) {
                 $estimate = DB::selectOne("
-                    SELECT reltuples::BIGINT as estimate 
-                    FROM pg_class 
+                    SELECT reltuples::BIGINT as estimate
+                    FROM pg_class
                     WHERE relname = 'products'
                 ")->estimate ?? 0;
 
@@ -586,7 +574,7 @@ class HighPerformanceFilterController extends Controller
                 $query->leftJoin('product_ratings_cache as prc', 'p.id', '=', 'prc.product_id');
             }
             $this->applyFiltersToQuery($query, $filters);
-            
+
             return $query->count();
         });
     }
@@ -644,7 +632,7 @@ class HighPerformanceFilterController extends Controller
     private function formatBrandStats(?array $brands, array $filters): array
     {
         if (!$brands) return [];
-        
+
         return array_map(function ($b) use ($filters) {
             return [
                 's' => $b['slug'],
@@ -710,7 +698,7 @@ class HighPerformanceFilterController extends Controller
         try {
             $decodedPath = UrlEncryptor::decodePath($path);
             $segments = array_filter(explode('/', trim($decodedPath, '/')));
-            
+
             if (empty($segments)) return null;
 
             return Category::whereNull('parent_id')

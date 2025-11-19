@@ -686,6 +686,76 @@ class RedisCacheService
     }
 
     /**
+     * Get Redis server information
+     */
+    public static function getRedisInfo(): array
+    {
+        try {
+            if (!self::isEnabled()) {
+                return [];
+            }
+
+            $info = Redis::info();
+            $stats = Redis::info('stats');
+
+            $hits = $stats['keyspace_hits'] ?? 0;
+            $misses = $stats['keyspace_misses'] ?? 0;
+            $total = $hits + $misses;
+            $hitRate = $total > 0 ? round(($hits / $total) * 100, 2) : 0;
+
+            return [
+                'version' => $info['redis_version'] ?? 'unknown',
+                'uptime_days' => isset($info['uptime_in_days']) ? $info['uptime_in_days'] : 0,
+                'connected_clients' => $info['connected_clients'] ?? 0,
+                'used_memory' => self::formatBytes($info['used_memory'] ?? 0),
+                'used_memory_peak' => self::formatBytes($info['used_memory_peak'] ?? 0),
+                'instantaneous_ops_per_sec' => $stats['instantaneous_ops_per_sec'] ?? 0,
+                'hit_rate' => $hitRate,
+                'keyspace_hits' => $hits,
+                'keyspace_misses' => $misses,
+            ];
+        } catch (\Throwable $e) {
+            Log::error("Failed to get Redis info: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get total number of keys in database
+     */
+    public static function dbSize(): int
+    {
+        try {
+            return Redis::dbSize();
+        } catch (\Throwable $e) {
+            Log::error("Failed to get Redis dbSize: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Get TTL (time to live) for a key in seconds
+     */
+    public static function ttl(string $key): ?int
+    {
+        try {
+            $ttl = Redis::ttl($key);
+            return $ttl >= 0 ? $ttl : null;
+        } catch (\Throwable $e) {
+            Log::error("Failed to get TTL for key {$key}: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Delete keys matching a pattern (alias for forgetPattern)
+     */
+    public static function deletePattern(string $pattern): int
+    {
+        return self::forgetPattern($pattern);
+    }
+
+    /**
      * Encode data based on configuration
      */
     private static function encode(mixed $data): string
@@ -694,8 +764,12 @@ class RedisCacheService
 
         return match ($method) {
             'json' => json_encode($data),
-            'msgpack' => extension_loaded('msgpack') ? msgpack_pack($data) : serialize($data),
-            'igbinary' => extension_loaded('igbinary') ? igbinary_serialize($data) : serialize($data),
+            'msgpack' => (extension_loaded('msgpack') && function_exists('msgpack_pack'))
+                ? msgpack_pack($data)
+                : serialize($data),
+            'igbinary' => (extension_loaded('igbinary') && function_exists('igbinary_serialize'))
+                ? igbinary_serialize($data)
+                : serialize($data),
             default => serialize($data),
         };
     }
@@ -715,8 +789,12 @@ class RedisCacheService
         try {
             return match ($method) {
                 'json' => json_decode($data, true),
-                'msgpack' => extension_loaded('msgpack') ? msgpack_unpack($data) : unserialize($data),
-                'igbinary' => extension_loaded('igbinary') ? igbinary_unserialize($data) : unserialize($data),
+                'msgpack' => (extension_loaded('msgpack') && function_exists('msgpack_unpack'))
+                    ? msgpack_unpack($data)
+                    : unserialize($data),
+                'igbinary' => (extension_loaded('igbinary') && function_exists('igbinary_unserialize'))
+                    ? igbinary_unserialize($data)
+                    : unserialize($data),
                 default => unserialize($data),
             };
         } catch (\Throwable $e) {
@@ -735,8 +813,12 @@ class RedisCacheService
 
         try {
             $compressed = match ($method) {
-                'lz4' => extension_loaded('lz4') ? lz4_compress($data, $level) : gzcompress($data, $level),
-                'zstd' => extension_loaded('zstd') ? zstd_compress($data, $level) : gzcompress($data, $level),
+                'lz4' => (extension_loaded('lz4') && function_exists('lz4_compress'))
+                    ? lz4_compress($data, $level)
+                    : gzcompress($data, $level),
+                'zstd' => (extension_loaded('zstd') && function_exists('zstd_compress'))
+                    ? zstd_compress($data, $level)
+                    : gzcompress($data, $level),
                 default => gzcompress($data, $level),
             };
 

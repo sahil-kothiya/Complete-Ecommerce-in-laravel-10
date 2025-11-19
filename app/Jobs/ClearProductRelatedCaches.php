@@ -2,7 +2,7 @@
 
 namespace App\Jobs;
 
-use App\Helpers\RedisHelper;
+use App\Services\RedisCacheService;
 use App\Models\Product;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -93,7 +93,7 @@ class ClearProductRelatedCaches implements ShouldQueue
             'cache:homepage:category_banners',
         ];
 
-        RedisHelper::forgetMany($homepageCaches);
+        RedisCacheService::forgetMany($homepageCaches);
 
         // Also clear Laravel cache
         foreach ($homepageCaches as $key) {
@@ -117,7 +117,7 @@ class ClearProductRelatedCaches implements ShouldQueue
                 $categoryCaches[] = "cache:subcategory:{$this->productData['child_cat_id']}:count";
             }
 
-            RedisHelper::forgetMany($categoryCaches);
+            RedisCacheService::forgetMany($categoryCaches);
 
             // Clear category-specific pagination caches
             $this->clearCategoryPaginationCaches();
@@ -136,7 +136,7 @@ class ClearProductRelatedCaches implements ShouldQueue
             'cache:product_grids:max_price',
         ];
 
-        RedisHelper::forgetMany($productGridsCaches);
+        RedisCacheService::forgetMany($productGridsCaches);
 
         // Clear complete page caches with wildcard patterns
         $patterns = [
@@ -146,9 +146,9 @@ class ClearProductRelatedCaches implements ShouldQueue
         ];
 
         foreach ($patterns as $pattern) {
-            $keys = RedisHelper::keys($pattern);
+            $keys = RedisCacheService::keys($pattern);
             if (!empty($keys)) {
-                RedisHelper::forgetMany($keys);
+                RedisCacheService::forgetMany($keys);
             }
         }
     }
@@ -164,7 +164,7 @@ class ClearProductRelatedCaches implements ShouldQueue
                 "cache:brand:{$this->productData['brand_id']}:count",
             ];
 
-            RedisHelper::forgetMany($brandCaches);
+            RedisCacheService::forgetMany($brandCaches);
         }
     }
 
@@ -180,9 +180,9 @@ class ClearProductRelatedCaches implements ShouldQueue
         ];
 
         foreach ($patterns as $pattern) {
-            $keys = RedisHelper::keys($pattern);
+            $keys = RedisCacheService::keys($pattern);
             if (!empty($keys)) {
-                RedisHelper::forgetMany($keys);
+                RedisCacheService::forgetMany($keys);
             }
         }
     }
@@ -208,9 +208,9 @@ class ClearProductRelatedCaches implements ShouldQueue
         ];
 
         foreach ($patterns as $pattern) {
-            $keys = RedisHelper::keys($pattern);
+            $keys = RedisCacheService::keys($pattern);
             if (!empty($keys)) {
-                RedisHelper::forgetMany($keys);
+                RedisCacheService::forgetMany($keys);
                 Log::debug("Cleared " . count($keys) . " pagination cache entries for pattern: {$pattern}");
             }
         }
@@ -234,9 +234,9 @@ class ClearProductRelatedCaches implements ShouldQueue
         }
 
         foreach ($patterns as $pattern) {
-            $keys = RedisHelper::keys($pattern);
+            $keys = RedisCacheService::keys($pattern);
             if (!empty($keys)) {
-                RedisHelper::forgetMany($keys);
+                RedisCacheService::forgetMany($keys);
                 Log::debug("Cleared " . count($keys) . " category pagination cache entries for pattern: {$pattern}");
             }
         }

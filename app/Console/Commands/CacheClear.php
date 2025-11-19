@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Helpers\RedisHelper;
+use App\Services\RedisCacheService;
 use Illuminate\Console\Command;
 
 class CacheClear extends Command
@@ -58,14 +58,14 @@ class CacheClear extends Command
 
         try {
             foreach ($patterns as $p) {
-                $deleted = RedisHelper::deletePattern($p);
+                $deleted = RedisCacheService::deletePattern($p);
                 $totalDeleted += $deleted;
                 $this->line("   ✓ Cleared {$deleted} keys matching: {$p}");
             }
 
             // Increment version for full page cache invalidation
             if ($pattern === 'homepage' || $pattern === 'all') {
-                $newVersion = RedisHelper::incrementVersion('meta:cache:version');
+                $newVersion = RedisCacheService::incrementVersion('meta:cache:version');
                 $this->line("   ✓ Incremented cache version to: {$newVersion}");
             }
 

@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Helpers\RedisHelper;
+use App\Services\RedisCacheService;
 use App\Models\Banner;
 use App\Models\Category;
 use App\Models\Product;
@@ -83,7 +83,7 @@ class CacheWarmupService
                 ->get();
 
             // Cache the data
-            RedisHelper::put($key, $categories, $ttl);
+            RedisCacheService::put($key, $categories, $ttl);
 
             return [
                 'success' => true,
@@ -120,7 +120,7 @@ class CacheWarmupService
                 ->limit(5)
                 ->get();
 
-            RedisHelper::put($key, $banners, $ttl);
+            RedisCacheService::put($key, $banners, $ttl);
 
             return [
                 'success' => true,
@@ -186,11 +186,11 @@ class CacheWarmupService
 
                 // Cache individual product card
                 $cardKey = self::PRODUCT_CARD_PREFIX . $product->id;
-                RedisHelper::put($cardKey, $card, 7200);
+                RedisCacheService::put($cardKey, $card, 7200);
             }
 
             // Cache the collection
-            RedisHelper::put($key, $productCards, $ttl);
+            RedisCacheService::put($key, $productCards, $ttl);
 
             return [
                 'success' => true,
@@ -281,7 +281,7 @@ class CacheWarmupService
             }
 
             // Cache category products
-            RedisHelper::put($key, $categoryProducts, $ttl);
+            RedisCacheService::put($key, $categoryProducts, $ttl);
 
             return [
                 'success' => true,
@@ -307,7 +307,7 @@ class CacheWarmupService
         $startTime = microtime(true);
 
         try {
-            $version = RedisHelper::getVersion();
+            $version = RedisCacheService::getVersion();
             $key = self::HOMEPAGE_CACHE_PREFIX . "full_page_v{$version}";
             $ttl = 1800; // 30 minutes
 
@@ -319,7 +319,7 @@ class CacheWarmupService
                 'category_products' => self::HOMEPAGE_CACHE_PREFIX . 'category_products',
             ];
 
-            $components = RedisHelper::mget(array_values($cacheKeys));
+            $components = RedisCacheService::mget(array_values($cacheKeys));
 
             // Build full page data
             $fullPageData = [
@@ -332,7 +332,7 @@ class CacheWarmupService
             ];
 
             // Cache full page
-            RedisHelper::put($key, $fullPageData, $ttl);
+            RedisCacheService::put($key, $fullPageData, $ttl);
 
             return [
                 'success' => true,
@@ -426,7 +426,7 @@ class CacheWarmupService
                     if ($product) {
                         $card = $this->transformToProductCard($product);
                         $key = self::PRODUCT_CARD_PREFIX . $productId;
-                        RedisHelper::put($key, $card, 7200);
+                        RedisCacheService::put($key, $card, 7200);
                         $results['cached_count']++;
                     }
                 } catch (\Exception $e) {
@@ -459,7 +459,7 @@ class CacheWarmupService
             $this->clearHomepageCaches();
 
             // Increment version for full page cache
-            RedisHelper::incrementVersion();
+            RedisCacheService::incrementVersion();
 
             // Warmup all caches
             $results = $this->warmupHomepage();
@@ -489,7 +489,7 @@ class CacheWarmupService
         ];
 
         foreach ($patterns as $pattern) {
-            RedisHelper::deletePattern($pattern);
+            RedisCacheService::deletePattern($pattern);
         }
 
         Log::info('Cleared all homepage caches');
@@ -501,7 +501,7 @@ class CacheWarmupService
     public function getWarmupStatus(): array
     {
         $cacheKeys = [
-            'full_page' => self::HOMEPAGE_CACHE_PREFIX . 'full_page_v' . RedisHelper::getVersion(),
+            'full_page' => self::HOMEPAGE_CACHE_PREFIX . 'full_page_v' . RedisCacheService::getVersion(),
             'categories' => self::HOMEPAGE_CACHE_PREFIX . 'categories',
             'banners' => self::HOMEPAGE_CACHE_PREFIX . 'banners',
             'featured_products' => self::HOMEPAGE_CACHE_PREFIX . 'products:featured',
@@ -510,8 +510,8 @@ class CacheWarmupService
 
         $status = [];
         foreach ($cacheKeys as $name => $key) {
-            $exists = RedisHelper::exists($key);
-            $ttl = $exists ? RedisHelper::ttl($key) : null;
+            $exists = RedisCacheService::has($key);
+            $ttl = $exists ? RedisCacheService::ttl($key) : null;
 
             $status[$name] = [
                 'key' => $key,

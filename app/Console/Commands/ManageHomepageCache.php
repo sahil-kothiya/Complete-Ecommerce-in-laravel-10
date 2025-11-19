@@ -4,14 +4,17 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use App\Http\Controllers\FrontendController;
-use App\Helpers\RedisHelper;
+use App\Services\RedisCacheService;
+use App\Services\ProductSearchService;
+use App\Services\RecentProductService;
+use Illuminate\Support\Facades\Redis;
 
 class ManageHomepageCache extends Command
 {
     /**
      * The name and signature of the console command.
      */
-    protected $signature = 'cache:homepage 
+    protected $signature = 'cache:homepage
                            {action : The action to perform (warm|clear|status|health)}
                            {--force : Force the action without confirmation}';
 
@@ -26,7 +29,10 @@ class ManageHomepageCache extends Command
     public function handle()
     {
         $action = $this->argument('action');
-        $controller = new FrontendController();
+        $controller = new FrontendController(
+            app(ProductSearchService::class),
+            app(RecentProductService::class)
+        );
 
         switch ($action) {
             case 'warm':
@@ -183,8 +189,8 @@ class ManageHomepageCache extends Command
         $this->info('Redis Health:');
 
         try {
-            $redisConnected = RedisHelper::exists('test_connection_key');
-            $this->line('Connection: ' . ($redisConnected !== null ? '✓ Connected' : '✗ Disconnected'));
+           Redis::connection()->ping();
+            $this->line('Connection: ✓ Connected');
 
             if (isset($health['redis_stats']) && !empty($health['redis_stats'])) {
                 $stats = $health['redis_stats'];

@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Helpers\RedisHelper;
+use App\Services\RedisCacheService;
 use App\Services\CacheWarmupService;
 use Illuminate\Console\Command;
 

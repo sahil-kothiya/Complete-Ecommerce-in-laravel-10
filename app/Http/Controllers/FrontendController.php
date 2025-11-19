@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\ImageHelper;
-use App\Helpers\RedisHelper;
+use App\Services\RedisCacheService;
 use App\Helpers\UrlEncryptor;
 use App\Models\Banner;
 use App\Models\Brand;
@@ -57,7 +57,7 @@ class FrontendController extends Controller
     {
         $this->searchService = $searchService;
         $this->recentProductService = $recentProductService;
-        $this->homepageCacheEnabled = (bool) ((config('app.homepage_cache_enabled')) ?? env('HOMEPAGE_CACHE_ENABLED', false));
+        $this->homepageCacheEnabled = RedisCacheService::isEnabled('homepage');
     }
 
     private function isHomepageCacheEnabled(): bool
@@ -85,46 +85,23 @@ class FrontendController extends Controller
      */
     public function home()
     {
-        Log::info('=== HOME PAGE REQUEST STARTED ===');
         $startTime = microtime(true);
 
         try {
-            Log::info('Step 1: Checking cache configuration');
             $cacheEnabled = $this->isHomepageCacheEnabled();
-            Log::info('Cache enabled status', ['enabled' => $cacheEnabled]);
 
             // Get cache version for versioned cache invalidation when enabled
-            $cacheVersion = $cacheEnabled ? RedisHelper::getVersion('meta:cache:version') : 0;
+            $cacheVersion = $cacheEnabled ? RedisCacheService::getVersion() : 0;
             $fullPageKey = $cacheEnabled ? self::HOMEPAGE_CACHE_PREFIX . "full_page_v{$cacheVersion}" : null;
 
-            Log::info('Step 2: Cache keys generated', [
-                'cache_version' => $cacheVersion,
-                'full_page_key' => $fullPageKey
-            ]);
-
             // TIER 1: Try full page cache first (FASTEST PATH - 1-5ms)
-            $cachedPage = $cacheEnabled ? RedisHelper::get($fullPageKey) : null;
+            $cachedPage = $cacheEnabled ? RedisCacheService::get($fullPageKey) : null;
             if ($cacheEnabled && $cachedPage !== null) {
-                $duration = round((microtime(true) - $startTime) * 1000, 2);
-                Log::info("Homepage: Full cache hit - returning cached page", [
-                    'duration_ms' => $duration,
-                    'cache_age_seconds' => RedisHelper::ttl($fullPageKey),
-                    'version' => $cacheVersion,
-                ]);
-
                 return view('frontend.index', $cachedPage);
             }
 
-            Log::info('Step 3: Full page cache miss or disabled, building page');
-
             // TIER 2: Full page cache miss or cache disabled - build from components
-            Log::info($cacheEnabled
-                ? 'Homepage: Full cache miss, building from components'
-                : 'Homepage cache disabled, building fresh response');
-
-            Log::info('Step 4: Getting TTL configuration');
             $ttl = $this->getTtlConfig();
-            Log::info('TTL config loaded', ['ttl' => $ttl]);
 
             // Define component cache keys
             $cacheKeys = [
@@ -134,92 +111,61 @@ class FrontendController extends Controller
                 'categoryProducts' => $cacheEnabled ? self::HOMEPAGE_CACHE_PREFIX . "category_products_v{$cacheVersion}" : null,
             ];
 
-            Log::info('Step 5: Cache keys defined', ['cache_keys' => $cacheKeys]);
-
             // Batch fetch all components in one Redis call (pipeline optimization)
             $cacheKeyList = $cacheEnabled ? array_values(array_filter($cacheKeys)) : [];
             $cachedComponents = ($cacheEnabled && !empty($cacheKeyList))
-                ? RedisHelper::mget($cacheKeyList)
+                ? RedisCacheService::mget($cacheKeyList)
                 : [];
-
-            Log::info('Step 6: Cached components fetched', [
-                'cache_key_count' => count($cacheKeyList),
-                'cached_count' => count($cachedComponents)
-            ]);
 
             $categoriesFromCache = $cacheEnabled && $cacheKeys['categories'] && isset($cachedComponents[$cacheKeys['categories']]);
             $bannersFromCache = $cacheEnabled && $cacheKeys['banners'] && isset($cachedComponents[$cacheKeys['banners']]);
             $featuredFromCache = $cacheEnabled && $cacheKeys['featured'] && isset($cachedComponents[$cacheKeys['featured']]);
             $categoryProductsFromCache = $cacheEnabled && $cacheKeys['categoryProducts'] && isset($cachedComponents[$cacheKeys['categoryProducts']]);
 
-            Log::info('Step 7: Component cache status', [
-                'categories_from_cache' => $categoriesFromCache,
-                'banners_from_cache' => $bannersFromCache,
-                'featured_from_cache' => $featuredFromCache,
-                'category_products_from_cache' => $categoryProductsFromCache
-            ]);
-
             // Get or build each component
-            Log::info('Step 8: Fetching categories');
             $categories = $categoriesFromCache
                 ? $cachedComponents[$cacheKeys['categories']]
                 : $this->getCategoriesData($cacheKeys['categories'], $ttl['categories'], $cacheEnabled);
-            Log::info('Categories fetched', ['count' => is_countable($categories) ? count($categories) : 0]);
 
-            Log::info('Step 9: Fetching banners');
             $banners = $bannersFromCache
                 ? $cachedComponents[$cacheKeys['banners']]
                 : $this->getBannersData($cacheKeys['banners'], $ttl['banners'], $cacheEnabled);
-            Log::info('Banners fetched', ['count' => is_countable($banners) ? count($banners) : 0]);
 
-            Log::info('Step 10: Fetching featured products');
             $featuredProducts = $featuredFromCache
                 ? $cachedComponents[$cacheKeys['featured']]
                 : $this->getHomepageProductsData($cacheKeys['featured'], $ttl['featured_products'] ?? 3600, $cacheEnabled);
-            Log::info('Featured products fetched', ['count' => is_countable($featuredProducts) ? count($featuredProducts) : 0]);
 
-            Log::info('Step 11: Fetching category products');
             $categoryProducts = $categoryProductsFromCache
                 ? $cachedComponents[$cacheKeys['categoryProducts']]
                 : $this->getHomepageCategoryProducts($cacheKeys['categoryProducts'], $ttl['category_products'] ?? 3600, $cacheEnabled);
-            Log::info('Category products fetched', ['count' => is_countable($categoryProducts) ? count($categoryProducts) : 0]);
 
             // Assemble final data structure
-            Log::info('Step 12: Assembling final data structure');
+            // Filter out any null/empty products from featured products
+            $filteredFeaturedProducts = is_array($featuredProducts)
+                ? array_filter($featuredProducts, function($product) {
+                    return $product !== null &&
+                           (is_object($product) && isset($product->id)) ||
+                           (is_array($product) && isset($product['id']));
+                })
+                : collect($featuredProducts)->filter(function($product) {
+                    return $product !== null &&
+                           (is_object($product) && isset($product->id)) ||
+                           (is_array($product) && isset($product['id']));
+                })->all();
+
             $data = [
                 'version' => $cacheEnabled ? $cacheVersion : null,
                 'generated_at' => now()->toIso8601String(),
                 'categories' => $categories,
                 'banners' => $banners,
-                'product_lists' => is_array($featuredProducts) ? array_slice($featuredProducts, 0, 12) : collect($featuredProducts)->take(12)->all(),
+                'product_lists' => is_array($filteredFeaturedProducts) ? array_slice($filteredFeaturedProducts, 0, 12) : array_slice($filteredFeaturedProducts, 0, 12),
                 'dynamicCategoryProducts' => $categoryProducts,
             ];
 
-            Log::info('Data structure assembled', [
-                'categories_count' => is_countable($data['categories']) ? count($data['categories']) : 0,
-                'banners_count' => is_countable($data['banners']) ? count($data['banners']) : 0,
-                'product_lists_count' => is_countable($data['product_lists']) ? count($data['product_lists']) : 0,
-                'category_products_count' => is_countable($data['dynamicCategoryProducts']) ? count($data['dynamicCategoryProducts']) : 0
-            ]);
-
             // Cache complete page for ultra-fast subsequent requests (30 min TTL)
             if ($cacheEnabled) {
-                Log::info('Step 13: Caching complete page');
-                RedisHelper::put($fullPageKey, $data, 1800);
+                RedisCacheService::put($fullPageKey, $data, RedisCacheService::getTtl('homepage_full'));
             }
-
-            $duration = round((microtime(true) - $startTime) * 1000, 2);
-            Log::info("=== Homepage: Response built successfully ===", [
-                'duration_ms' => $duration,
-                'cache_version' => $cacheEnabled ? $cacheVersion : null,
-                'cache_enabled' => $cacheEnabled,
-                'components_from_cache' => [
-                    'categories' => $categoriesFromCache,
-                    'banners' => $bannersFromCache,
-                    'featured' => $featuredFromCache,
-                    'category_products' => $categoryProductsFromCache,
-                ],
-            ]);
 
             return view('frontend.index', $data);
         } catch (\Exception $e) {
@@ -257,7 +203,7 @@ class FrontendController extends Controller
             ->get();
 
         if ($useCache && $key) {
-            RedisHelper::put($key, $featuredCategories, $ttl);
+            RedisCacheService::put($key, $featuredCategories, $ttl);
         }
         return $featuredCategories;
     }
@@ -277,8 +223,7 @@ class FrontendController extends Controller
         ];
 
         try {
-            RedisHelper::forgetMany($keys);
-            Log::info('Homepage cache cleared successfully');
+            RedisCacheService::forgetMany($keys);
             return true;
         } catch (\Exception $e) {
             Log::error('Failed to clear homepage cache: ' . $e->getMessage());
@@ -309,8 +254,6 @@ class FrontendController extends Controller
      */
     private function getCategoriesData(?string $key, int $ttl, bool $useCache = true)
     {
-        Log::info('getCategoriesData: Starting', ['cache_key' => $key, 'use_cache' => $useCache]);
-
         // Query only active parent categories with minimal fields
         $categories = Category::select(['id', 'title', 'slug', 'photo'])
             ->whereNull('parent_id') // Only root categories for homepage
@@ -319,11 +262,8 @@ class FrontendController extends Controller
             ->limit(10) // Limit to 10 categories for homepage
             ->get();
 
-        Log::info('getCategoriesData: Query executed', ['count' => $categories->count()]);
-
         if ($useCache && $key) {
-            RedisHelper::put($key, $categories, $ttl);
-            Log::info('getCategoriesData: Cached', ['cache_key' => $key]);
+            RedisCacheService::put($key, $categories, $ttl);
         }
 
         return $categories;
@@ -339,8 +279,6 @@ class FrontendController extends Controller
      */
     private function getBannersData(?string $key, int $ttl, bool $useCache = true)
     {
-        Log::info('getBannersData: Starting', ['cache_key' => $key, 'use_cache' => $useCache]);
-
         $banners = Banner::select(['id', 'title', 'slug', 'photo', 'description', 'status', 'link_type', 'link'])
             ->with(['discounts' => fn($q) => $q->select(['discounts.id', 'discounts.title', 'discounts.type', 'discounts.value'])
                 ->with(['categories' => fn($q2) => $q2->select(['categories.id', 'categories.title', 'categories.slug'])])
@@ -350,11 +288,8 @@ class FrontendController extends Controller
             ->limit(5) // Limit to 5 banners for carousel
             ->get();
 
-        Log::info('getBannersData: Query executed', ['count' => $banners->count()]);
-
         if ($useCache && $key) {
-            RedisHelper::put($key, $banners, $ttl);
-            Log::info('getBannersData: Cached', ['cache_key' => $key]);
+            RedisCacheService::put($key, $banners, $ttl);
         }
 
         return $banners;
@@ -367,7 +302,6 @@ class FrontendController extends Controller
     private function getHomepageCategoryProducts(?string $key, int $ttl, bool $useCache = true)
     {
         $startTime = microtime(true);
-        Log::info('getHomepageCategoryProducts: Starting', ['cache_key' => $key, 'use_cache' => $useCache]);
 
         // Get active featured categories (small query - fast)
         $categories = Category::select(['id', 'title', 'slug', 'sort_order'])
@@ -378,12 +312,9 @@ class FrontendController extends Controller
             ->limit(4) // Top 4 categories for homepage
             ->get();
 
-        Log::info('getHomepageCategoryProducts: Featured categories loaded', ['count' => $categories->count()]);
-
         if ($categories->isEmpty()) {
-            Log::warning('getHomepageCategoryProducts: No featured categories found');
             if ($useCache && $key) {
-                RedisHelper::put($key, [], $ttl);
+                RedisCacheService::put($key, [], $ttl);
             }
             return [];
         }
@@ -448,7 +379,7 @@ class FrontendController extends Controller
                     $product->setRelation('images', $imageCollections->get($product->id, collect()));
                     $card = $this->transformProductForDisplay($product);
                     if ($useCache) {
-                        RedisHelper::put("product:card:{$product->id}", $card, 7200);
+                        RedisCacheService::put("product:card:{$product->id}", $card, 7200);
                     }
                     $productCards[$product->id] = $card;
                 }
@@ -470,16 +401,8 @@ class FrontendController extends Controller
 
         // Cache the complete component
         if ($useCache && $key) {
-            RedisHelper::put($key, $categoryProducts, $ttl);
+            RedisCacheService::put($key, $categoryProducts, $ttl);
         }
-
-        $duration = round((microtime(true) - $startTime) * 1000, 2);
-        Log::debug("Category products component built in {$duration}ms", [
-            'categories_count' => count($categoryProducts),
-            'total_products' => array_sum(array_map(fn($cat) => count($cat['products']), $categoryProducts)),
-            'cache_hits' => $totalCacheHits,
-            'cache_misses' => $totalCacheMisses,
-        ]);
 
         return $categoryProducts;
     }
@@ -491,7 +414,6 @@ class FrontendController extends Controller
     private function getHomepageProductsData(?string $key, int $ttl, bool $useCache = true)
     {
         $startTime = microtime(true);
-        Log::info('getHomepageProductsData: Starting', ['cache_key' => $key, 'use_cache' => $useCache]);
 
         // STEP 1: Get featured product IDs only (fast indexed query - O(log n))
         $productIds = DB::table('products')
@@ -503,12 +425,9 @@ class FrontendController extends Controller
             ->pluck('id')
             ->toArray();
 
-        Log::info('getHomepageProductsData: Product IDs fetched', ['count' => count($productIds)]);
-
         if (empty($productIds)) {
-            Log::warning('getHomepageProductsData: No featured products found');
             if ($useCache && $key) {
-                RedisHelper::put($key, [], $ttl);
+                RedisCacheService::put($key, [], $ttl);
             }
             return [];
         }
@@ -550,33 +469,28 @@ class FrontendController extends Controller
                 $product->setRelation('images', $imageCollections->get($product->id, collect()));
                 $card = $this->transformProductForDisplay($product);
                 if ($useCache) {
-                    RedisHelper::put("product:card:{$product->id}", $card, 7200); // 2 hour TTL
+                    RedisCacheService::put("product:card:{$product->id}", $card, 7200); // 2 hour TTL
                 }
                 $productCards[$product->id] = $card;
             }
-
-            Log::debug("Featured products: DB query for " . count($missingIds) . " cache misses");
         }
 
-        // STEP 4: Reassemble in correct order
+        // STEP 4: Reassemble in correct order and filter out nulls
         $orderedProducts = [];
         foreach ($productIds as $id) {
             if (isset($productCards[$id])) {
-                $orderedProducts[] = $productCards[$id];
+                $product = $productCards[$id];
+                // Verify product has valid ID before adding
+                if ($product && (is_object($product) && isset($product->id)) || (is_array($product) && isset($product['id']))) {
+                    $orderedProducts[] = $product;
+                }
             }
         }
 
         // Cache the complete component
         if ($useCache && $key) {
-            RedisHelper::put($key, $orderedProducts, $ttl);
+            RedisCacheService::put($key, $orderedProducts, $ttl);
         }
-
-        $duration = round((microtime(true) - $startTime) * 1000, 2);
-        Log::debug("Featured products component built in {$duration}ms", [
-            'total_products' => count($orderedProducts),
-            'cache_hits' => count($productIds) - count($missingIds),
-            'cache_misses' => count($missingIds),
-        ]);
 
         return $orderedProducts;
     }
@@ -592,7 +506,7 @@ class FrontendController extends Controller
         }
 
         $keys = array_map(fn($id) => "product:card:{$id}", $productIds);
-        $cachedData = RedisHelper::mget($keys);
+        $cachedData = RedisCacheService::mget($keys);
 
         $products = [];
         foreach ($productIds as $index => $id) {
@@ -611,8 +525,6 @@ class FrontendController extends Controller
      */
     private function transformProductForDisplay($product)
     {
-        Log::debug('transformProductForDisplay: Starting', ['product_id' => $product->id, 'has_variants' => $product->has_variants]);
-
         // Build images array
         $images = [];
         $variantsData = [];
@@ -620,7 +532,6 @@ class FrontendController extends Controller
         $variantMaxDiscount = 0;
 
         if ($product->has_variants && $product->variants->count() > 0) {
-            Log::debug('transformProductForDisplay: Processing variants', ['variant_count' => $product->variants->count()]);
 
             foreach ($product->variants as $variant) {
                 // Gather images (limit 3) for this variant
@@ -736,7 +647,7 @@ class FrontendController extends Controller
     private function getHomepageProductsDataOLD(string $key, int $ttl)
     {
         // Check Redis cache first
-        // $redisData = RedisHelper::get($key);
+        // $redisData = RedisCacheService::get($key);
         // if ($redisData) {
         //     return $redisData;
         // }
@@ -824,7 +735,7 @@ class FrontendController extends Controller
         });
 
         // Cache the transformed data
-        // RedisHelper::put($key, $products, $ttl);
+        // RedisCacheService::put($key, $products, $ttl);
 
         return $products;
     }
@@ -843,13 +754,13 @@ class FrontendController extends Controller
             return collect();
         }
 
-        $redisData = RedisHelper::get($key);
+        $redisData = RedisCacheService::get($key);
         if ($redisData) {
             return $redisData;
         }
 
         $categoryBanners = $categories->filter(fn($cat) => !empty($cat->photo));
-        RedisHelper::put($key, $categoryBanners, $ttl);
+        RedisCacheService::put($key, $categoryBanners, $ttl);
         return $categoryBanners;
     }
 
@@ -865,20 +776,18 @@ class FrontendController extends Controller
         $ttl = $this->getTtlConfig();
         $cacheKey = $this->generateOptimizedCacheKey($request);
 
-        $cachedData = RedisHelper::get($cacheKey);
+        $cachedData = RedisCacheService::get($cacheKey);
         if ($cachedData) {
             if (isset($cachedData['products_data'])) {
                 $cachedData['products'] = $this->restorePaginatorFromCache($cachedData['products_data'], $request);
                 unset($cachedData['products_data']);
             }
             $cachedData = $this->hydrateRelationshipsFromCache($cachedData);
-            Log::info("Product grids served from cache in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
             return view('frontend.pages.product-grids', $cachedData);
         }
 
         $data = $this->fetchOptimizedProductGridsData($request, $ttl);
         $this->cacheCompletePageData($cacheKey, $data, $ttl['category_products'] ?? 3600);
-        Log::info("Product grids served fresh in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
         return view('frontend.pages.product-grids', $data);
     }
 
@@ -1349,7 +1258,7 @@ class FrontendController extends Controller
             'sortBy' => $data['sortBy'],
             'price' => $data['price'],
         ];
-        RedisHelper::put($cacheKey, $cacheData, $ttl);
+        RedisCacheService::put($cacheKey, $cacheData, $ttl);
     }
 
     public function productFilter(Request $request)
@@ -1397,11 +1306,10 @@ class FrontendController extends Controller
         $tempRequest = new Request($queryParams);
         $cacheKey = $this->generateOptimizedCacheKey($tempRequest);
 
-        if (!RedisHelper::exists($cacheKey)) {
+        if (!RedisCacheService::has($cacheKey)) {
             $this->preWarmFilterCache($tempRequest);
         }
 
-        Log::info("Filter processed in " . round((microtime(true) - $startTime) * 1000, 2) . "ms");
         return redirect()->route('product-grids', $queryParams);
     }
 
@@ -1716,12 +1624,12 @@ class FrontendController extends Controller
             $ttl = $this->getTtlConfig();
             $cacheKey = $this->generateOptimizedCacheKey($request);
 
-            if (!RedisHelper::exists($cacheKey)) {
+            if (!RedisCacheService::has($cacheKey)) {
                 $data = $this->fetchOptimizedProductGridsData($request, $ttl);
                 $this->cacheCompletePageData($cacheKey, $data, $ttl['category_products'] ?? 3600);
             }
         } catch (\Exception $e) {
-            Log::warning("Failed to pre-warm filter cache: " . $e->getMessage());
+            // Silently handle cache warming failures
         }
     }
 
@@ -1771,7 +1679,7 @@ class FrontendController extends Controller
                 $request = new Request($params);
                 $cacheKey = $this->generateOptimizedCacheKey($request);
 
-                if (!RedisHelper::exists($cacheKey)) {
+                if (!RedisCacheService::has($cacheKey)) {
                     $data = $this->fetchOptimizedProductGridsData($request, $ttl);
                     $this->cacheCompletePageData($cacheKey, $data, $ttl['category_products'] ?? 3600);
                 }
@@ -1812,14 +1720,13 @@ class FrontendController extends Controller
 
             $clearedKeys = 0;
             foreach ($patterns as $pattern) {
-                $keys = RedisHelper::keys($pattern);
+                $keys = RedisCacheService::keys($pattern);
                 if (!empty($keys)) {
-                    RedisHelper::forgetMany($keys);
+                    RedisCacheService::forgetMany($keys);
                     $clearedKeys += count($keys);
                 }
             }
 
-            Log::info("Optimized cache cleared. Keys: {$clearedKeys}");
             return true;
         } catch (\Exception $e) {
             Log::error('Failed to clear optimized cache: ' . $e->getMessage());
@@ -1901,7 +1808,6 @@ class FrontendController extends Controller
                 ]
             );
             $products->appends($request->except('page'));
-            Log::info("Search performed using: " . $searchResult['source']);
         } catch (\Exception $e) {
             Log::error('Search error: ' . $e->getMessage());
             $products = Product::where('title', 'ILIKE', "%{$query}%")
@@ -2029,7 +1935,7 @@ class FrontendController extends Controller
         ];
 
         foreach ($homepageKeys as $name => $key) {
-            $exists = RedisHelper::exists($key);
+            $exists = RedisCacheService::has($key);
             $health['homepage'][$name] = [
                 'cached' => $exists,
                 'key' => $key
@@ -2037,14 +1943,14 @@ class FrontendController extends Controller
         }
 
         foreach ($productGridsKeys as $name => $key) {
-            $exists = RedisHelper::exists($key);
+            $exists = RedisCacheService::has($key);
             $health['product_grids'][$name] = [
                 'cached' => $exists,
                 'key' => $key
             ];
         }
 
-        $health['redis_stats'] = RedisHelper::getCacheStats();
+        $health['redis_stats'] = RedisCacheService::getStats();
         return $health;
     }
 
@@ -2714,11 +2620,11 @@ class FrontendController extends Controller
             // Removed deprecated setPath call (encrypted path)
             $products->appends($request->except(['page', '_token']));
 
-            $totalProducts = RedisHelper::remember($cacheKey, self::CACHE_TTL, function () use ($productQuery) {
+            $totalProducts = RedisCacheService::remember($cacheKey, self::CACHE_TTL, function () use ($productQuery) {
                 return $productQuery->count();
             });
 
-            $maxPrice = RedisHelper::remember($cacheKey . '_max_price', self::CACHE_TTL, function () use ($descendantIds) {
+            $maxPrice = RedisCacheService::remember($cacheKey . '_max_price', self::CACHE_TTL, function () use ($descendantIds) {
                 return Product::where('status', 'active')
                     ->where(function ($query) use ($descendantIds) {
                         $query->whereIn('cat_id', $descendantIds)
@@ -2775,17 +2681,6 @@ class FrontendController extends Controller
                 'sortBy' => $request->input('sortBy', 'latest'),
                 'show' => $request->input('show', 12),
             ];
-
-            if (config('app.debug')) {
-                Log::debug('productSubCat: Processed request', [
-                    'category_id' => $currentCategory->id,
-                    'descendant_ids' => $descendantIds,
-                    'total_products' => $totalProducts,
-                    'filters' => $appliedFilters,
-                    'sql' => $productQuery->toSql(),
-                    'bindings' => $productQuery->getBindings()
-                ]);
-            }
 
             return view('frontend.pages.product-grids', [
                 'products' => $products,
@@ -2859,18 +2754,18 @@ class FrontendController extends Controller
             $this->applyFiltersToQuery($productQuery, $request);
 
             $perPage = $request->input('show', 12);
-            $products = RedisHelper::remember($cacheKey . '_results_' . $request->input('page', 1), self::CACHE_TTL, function () use ($productQuery, $perPage, $request, $encryptedPath) {
+            $products = RedisCacheService::remember($cacheKey . '_results_' . $request->input('page', 1), self::CACHE_TTL, function () use ($productQuery, $perPage, $request, $encryptedPath) {
                 $products = $productQuery->paginate($perPage);
                 // Removed deprecated setPath call (encrypted path nested)
                 $products->appends($request->except(['page', '_token']));
                 return $products;
             });
 
-            $totalProducts = RedisHelper::remember($cacheKey, self::CACHE_TTL, function () use ($productQuery) {
+            $totalProducts = RedisCacheService::remember($cacheKey, self::CACHE_TTL, function () use ($productQuery) {
                 return $productQuery->count();
             });
 
-            $maxPrice = RedisHelper::remember($cacheKey . '_max_price', self::CACHE_TTL, function () use ($descendantIds) {
+            $maxPrice = RedisCacheService::remember($cacheKey . '_max_price', self::CACHE_TTL, function () use ($descendantIds) {
                 return Product::where('status', 'active')
                     ->where(function ($query) use ($descendantIds) {
                         $query->whereIn('cat_id', $descendantIds)
@@ -2927,17 +2822,6 @@ class FrontendController extends Controller
                 'sortBy' => $request->input('sortBy', 'latest'),
                 'show' => $request->input('show', 12),
             ];
-
-            if (config('app.debug')) {
-                Log::debug('productSubCat: Processed request', [
-                    'category_id' => $currentCategory->id,
-                    'descendant_ids' => $descendantIds,
-                    'total_products' => $totalProducts,
-                    'filters' => $appliedFilters,
-                    'sql' => $productQuery->toSql(),
-                    'bindings' => $productQuery->getBindings()
-                ]);
-            }
 
             return view('frontend.pages.product-grids', [
                 'products' => $products,
@@ -3104,7 +2988,7 @@ class FrontendController extends Controller
                 return $product;
             });
 
-            if (!RedisHelper::put($key, $recentProducts, $ttl)) {
+            if (!RedisCacheService::put($key, $recentProducts, $ttl)) {
                 Log::warning("Failed to store recent products in Redis for key: {$key}");
             }
 
@@ -3164,7 +3048,7 @@ class FrontendController extends Controller
                 return $product;
             });
 
-            if (!RedisHelper::put($key, $recentProducts, $ttl)) {
+            if (!RedisCacheService::put($key, $recentProducts, $ttl)) {
                 Log::warning("Failed to store recent products in Redis for key: {$key}");
             }
 

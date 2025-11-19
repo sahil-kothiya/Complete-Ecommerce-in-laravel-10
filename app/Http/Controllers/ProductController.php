@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Helpers\RedisHelper;
+use App\Services\RedisCacheService;
 use Illuminate\Http\Request;
 use App\Models\{Product, Category, Brand, ProductImage, ProductVariant, VariantImage, ProductVariantOption, ProductVariantTypeSelection};
 use Illuminate\Support\Facades\{DB, Log, Redis, Storage};
@@ -479,7 +479,7 @@ class ProductController extends Controller
         }
 
         if (class_exists('App\Helpers\RedisHelper')) {
-            RedisHelper::put("product_variants:{$product->id}", null, 0);
+            RedisCacheService::put("product_variants:{$product->id}", null, 0);
         }
     }
 
@@ -1391,7 +1391,7 @@ class ProductController extends Controller
         }
 
         if (class_exists('App\Helpers\RedisHelper')) {
-            RedisHelper::put("product_variants:{$variant->product_id}", null, 0);
+            RedisCacheService::put("product_variants:{$variant->product_id}", null, 0);
             Log::info('Redis cache invalidated', ['cache_key' => "product_variants:{$variant->product_id}"]);
         }
 

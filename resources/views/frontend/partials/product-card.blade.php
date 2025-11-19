@@ -3,56 +3,59 @@
     // Normalize product data (handles both fresh models and cached plain objects/arrays)
     $productData = is_array($product) ? (object) $product : $product;
 
-    $normalizeToArray = function ($value) {
-        if ($value instanceof \Illuminate\Support\Collection) {
-            return $value->all();
+    // Skip rendering if product has no valid ID
+    if (!isset($productData->id) || $productData->id === null || empty($productData->id)) {
+        return; // Don't render anything for invalid products
+}
+
+$normalizeToArray = function ($value) {
+    if ($value instanceof \Illuminate\Support\Collection) {
+        return $value->all();
+    }
+
+    if (is_object($value)) {
+        if ($value instanceof \Traversable) {
+            return iterator_to_array($value);
         }
 
-        if (is_object($value)) {
-            if ($value instanceof \Traversable) {
-                return iterator_to_array($value);
-            }
-
-            if (property_exists($value, 'items') && is_array($value->items)) {
-                return $value->items;
-            }
+        if (property_exists($value, 'items') && is_array($value->items)) {
+            return $value->items;
         }
+    }
 
-        if (is_array($value)) {
-            return $value;
-        }
+    if (is_array($value)) {
+        return $value;
+    }
 
-        return [];
-    };
+    return [];
+};
 
-    // Ensure collections are properly handled
-    $variants = collect($normalizeToArray($productData->variants ?? []));
-    $images = collect($normalizeToArray($productData->images ?? []));
+// Ensure collections are properly handled
+$variants = collect($normalizeToArray($productData->variants ?? []));
+$images = collect($normalizeToArray($productData->images ?? []));
 
-    // Precompute lightweight variant meta for frontend pricing logic
-    $variantMeta = [];
-    if (($productData->has_variants ?? false) && $variants->count()) {
-        $variantMeta = $variants
-            ->map(
-                fn($v) => [
-                    'p' => (float) (is_object($v) ? $v->price ?? 0 : $v['price'] ?? 0),
-                    'd' => (float) (is_object($v) ? $v->discount ?? 0 : $v['discount'] ?? 0),
-                    's' => (int) (is_object($v) ? $v->stock ?? 0 : $v['stock'] ?? 0),
+// Precompute lightweight variant meta for frontend pricing logic
+$variantMeta = [];
+if (($productData->has_variants ?? false) && $variants->count()) {
+    $variantMeta = $variants
+        ->map(
+            fn($v) => [
+                'p' => (float) (is_object($v) ? $v->price ?? 0 : $v['price'] ?? 0),
+                'd' => (float) (is_object($v) ? $v->discount ?? 0 : $v['discount'] ?? 0),
+                's' => (int) (is_object($v) ? $v->stock ?? 0 : $v['stock'] ?? 0),
                 ],
             )
             ->values();
     }
 
-    $totalStock =
-        $productData->has_variants ?? false
-            ? $variants->sum(fn($v) => is_object($v) ? $v->stock ?? 0 : $v['stock'] ?? 0)
-            : $productData->base_stock ?? ($productData->stock ?? 0);
-    $baseDiscount = (float) ($productData->base_discount ?? 0);
+    // Use backend-calculated stock (already computed in transformProductForDisplay)
+    $totalStock = (int) ($productData->stock ?? 0);
+    $maxDiscount = (float) ($productData->max_discount ?? 0);
 @endphp
 <div class="product-card-container mb-4 isotope-item category-{{ $productData->cat_id ?? '' }} px-3"
-    data-product-id="{{ $productData->id }}"
+    @isset($tabindex) tabindex="{{ $tabindex }}" @endisset data-product-id="{{ $productData->id }}"
     data-product-brand="{{ is_object($productData->brand ?? null) ? $productData->brand->slug ?? '' : '' }}"
-    data-product-base-price="{{ $productData->base_price ?? 0 }}" data-product-base-discount="{{ $baseDiscount }}"
+    data-product-base-price="{{ $productData->base_price ?? 0 }}" data-product-max-discount="{{ $maxDiscount }}"
     data-product-has-variants="{{ $productData->has_variants ?? false ? '1' : '0' }}"
     data-product-variants='@json($variantMeta)' data-product-stock-total="{{ $totalStock }}"
     data-product-rating="{{ $productData->rating_average ?? 0 }}">
@@ -93,12 +96,12 @@
                 </div>
             </div>
 
-            @if (isset($productData->max_discount) && $productData->max_discount > 0)
-                <span class="badge badge-primary badge-status">{{ $productData->max_discount }}% Off</span>
-            @elseif(($productData->condition ?? '') === 'new')
-                <span class="badge badge-success badge-status">New</span>
+            @if ($maxDiscount > 0)
+                <span class="badge badge-primary badge-status">{{ number_format($maxDiscount, 0) }}% Off</span>
             @elseif($totalStock <= 0)
                 <span class="badge badge-danger badge-status">Sold Out</span>
+            @elseif(($productData->condition ?? '') === 'new')
+                <span class="badge badge-success badge-status">New</span>
             @endif
         </div>
 
@@ -464,12 +467,14 @@
             };
 
             const renderCards = () => {
-                document.querySelectorAll('.product-card-container').forEach(card => {
+                document.querySelectorAll('.product-card-container[data-product-id]').forEach(card => {
+                    const productId = card.getAttribute('data-product-id');
                     const hasVariants = card.getAttribute('data-product-has-variants') === '1';
                     const basePrice = parseFloat(card.getAttribute('data-product-base-price') || '0');
-                    const baseDiscount = parseFloat(card.getAttribute('data-product-base-discount') || '0');
+                    const maxDiscount = parseFloat(card.getAttribute('data-product-max-discount') || '0');
                     const variantsJson = card.getAttribute('data-product-variants');
                     const totalStock = parseInt(card.getAttribute('data-product-stock-total') || '0', 10);
+
                     let variants = [];
                     try {
                         variants = variantsJson ? JSON.parse(variantsJson) : [];
@@ -481,34 +486,44 @@
                     let originalPrice = null;
                     let effectiveDiscountPct = 0;
 
-                    if (hasVariants && variants.length) {
-                        // Consider only in-stock variants
-                        const inStock = variants.filter(v => v.s > 0);
-                        const targetList = inStock.length ? inStock :
-                            variants; // fallback to all if none in stock
-                        // Compute discounted prices for each
-                        const priced = targetList.map(v => {
-                            const discounted = computeDiscounted(v.p, v.d);
-                            return {
-                                discounted,
-                                original: v.p,
-                                d: v.d
-                            };
+                    const logSoldOutBadge = () => {
+                        console.warn('Sold out badge applied', {
+                            productId,
+                            hasVariants,
+                            basePrice,
+                            maxDiscount,
+                            totalStock,
+                            effectiveDiscountPct,
+                            variantsSample: variants.slice(0, 3)
                         });
-                        // Pick cheapest discounted
-                        priced.sort((a, b) => a.discounted - b.discounted);
-                        const cheapest = priced[0];
-                        if (cheapest) {
-                            displayPrice = cheapest.discounted;
-                            originalPrice = cheapest.d > 0 ? cheapest.original : null;
-                            effectiveDiscountPct = cheapest.d > 0 ? cheapest.d : 0;
+                    };
+
+                    if (hasVariants && variants.length) {
+                        // For products with variants, use the backend-calculated maxDiscount
+                        // and find the cheapest price among in-stock variants
+                        const inStock = variants.filter(v => v.s > 0);
+                        const targetList = inStock.length ? inStock : variants;
+
+                        if (targetList.length) {
+                            // Find cheapest base price (before discount)
+                            const prices = targetList.map(v => v.p).filter(p => p > 0);
+
+                            if (prices.length) {
+                                const cheapestPrice = Math.min(...prices);
+
+                                if (Number.isFinite(cheapestPrice) && cheapestPrice > 0 && totalStock > 0) {
+                                    displayPrice = computeDiscounted(cheapestPrice, maxDiscount);
+                                    originalPrice = maxDiscount > 0 ? cheapestPrice : null;
+                                    effectiveDiscountPct = maxDiscount > 0 ? maxDiscount : 0;
+                                }
+                            }
                         }
                     } else {
                         // Simple product
                         if (totalStock > 0) {
-                            displayPrice = computeDiscounted(basePrice, baseDiscount);
-                            originalPrice = baseDiscount > 0 ? basePrice : null;
-                            effectiveDiscountPct = baseDiscount > 0 ? baseDiscount : 0;
+                            displayPrice = computeDiscounted(basePrice, maxDiscount);
+                            originalPrice = maxDiscount > 0 ? basePrice : null;
+                            effectiveDiscountPct = maxDiscount > 0 ? maxDiscount : 0;
                         }
                     }
 
@@ -530,30 +545,39 @@
                         if (originalEl) originalEl.classList.add('d-none');
                     }
 
-                    // Badge adjustments (optional, only if discount or stock state changed)
+                    // Badge adjustments - prioritize discount over stock status
                     const badge = card.querySelector('.badge-status');
                     if (badge) {
+                        // Priority: Discount → Sold Out → New
                         if (effectiveDiscountPct > 0) {
-                            badge.textContent = effectiveDiscountPct + '% Off';
-                            badge.classList.remove('badge-danger');
+                            badge.textContent = Math.round(effectiveDiscountPct) + '% Off';
+                            badge.classList.remove('badge-danger', 'badge-success');
                             badge.classList.add('badge-primary');
                         } else if (totalStock <= 0) {
                             badge.textContent = 'Sold Out';
                             badge.classList.remove('badge-primary', 'badge-success');
                             badge.classList.add('badge-danger');
-                        } else if (!hasVariants && effectiveDiscountPct === 0 && badge.textContent
-                            .toLowerCase().includes('off')) {
-                            // Remove discount badge if no discount remains
-                            badge.remove();
+                            logSoldOutBadge();
                         }
+                        // Keep 'New' badge as-is if no discount and stock available
                     } else if (effectiveDiscountPct > 0) {
                         // Create a badge if none exists and discount applies
                         const imgWrapper = card.querySelector('.position-relative');
                         if (imgWrapper) {
                             const span = document.createElement('span');
                             span.className = 'badge badge-primary badge-status';
-                            span.textContent = effectiveDiscountPct + '% Off';
+                            span.textContent = Math.round(effectiveDiscountPct) + '% Off';
                             imgWrapper.appendChild(span);
+                        }
+                    } else if (totalStock <= 0) {
+                        // Create sold out badge if no badge exists
+                        const imgWrapper = card.querySelector('.position-relative');
+                        if (imgWrapper) {
+                            const span = document.createElement('span');
+                            span.className = 'badge badge-danger badge-status';
+                            span.textContent = 'Sold Out';
+                            imgWrapper.appendChild(span);
+                            logSoldOutBadge();
                         }
                     }
                 });

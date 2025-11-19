@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 
-use App\Helpers\RedisHelper;
+use App\Services\RedisCacheService;
 
 use App\Models\{
     Settings,
@@ -180,7 +180,7 @@ class AppServiceProvider extends ServiceProvider
     private function getCachedSettings(string $key, int $ttl): ?Settings
     {
         // Try Redis first (fastest)
-        $settings = RedisHelper::get($key);
+        $settings = RedisCacheService::get($key);
 
         if ($settings !== null) {
             return $settings;
@@ -191,7 +191,7 @@ class AppServiceProvider extends ServiceProvider
 
         if ($settings !== null) {
             // Store in Redis for next time
-            RedisHelper::put($key, $settings, $ttl);
+            RedisCacheService::put($key, $settings, $ttl);
             return $settings;
         }
 
@@ -208,7 +208,7 @@ class AppServiceProvider extends ServiceProvider
 
         if ($settings) {
             // Store in both caches
-            RedisHelper::put($key, $settings, $ttl);
+            RedisCacheService::put($key, $settings, $ttl);
             Cache::put($key, $settings, $ttl);
         }
 
@@ -247,7 +247,7 @@ class AppServiceProvider extends ServiceProvider
         $cartKey = "user:{$userId}:cart:count";
 
         // Try to get both counts from Redis in one operation
-        $cachedCounts = RedisHelper::mget([$wishlistKey, $cartKey]);
+        $cachedCounts = RedisCacheService::mget([$wishlistKey, $cartKey]);
 
         $result = [];
 
@@ -264,7 +264,7 @@ class AppServiceProvider extends ServiceProvider
                         ->count();
 
                     // Store in Redis too
-                    RedisHelper::put($cartKey, $count, $ttl['cart']);
+                    RedisCacheService::put($cartKey, $count, $ttl['cart']);
                     return $count;
                 }
             );
@@ -286,7 +286,7 @@ class AppServiceProvider extends ServiceProvider
 
         // Check if already initialized (avoid warming on every request)
         $initKey = 'meta:cache:initialized';
-        if (RedisHelper::has($initKey)) {
+        if (RedisCacheService::has($initKey)) {
             return;
         }
 
@@ -295,7 +295,7 @@ class AppServiceProvider extends ServiceProvider
             $this->warmUpCriticalCaches();
 
             // Mark as initialized (expires in 1 hour, will re-warm if Redis is flushed)
-            RedisHelper::put($initKey, true, 3600);
+            RedisCacheService::put($initKey, true, 3600);
         } catch (\Throwable $e) {
             Log::warning('Cache initialization failed: ' . $e->getMessage());
         }
@@ -329,7 +329,7 @@ class AppServiceProvider extends ServiceProvider
                     ->orderBy('title', 'ASC')
                     ->get();
 
-                RedisHelper::put('component:categories', $categories, $ttl['categories'] ?? 43200);
+                RedisCacheService::put('component:categories', $categories, $ttl['categories'] ?? 43200);
                 Log::info('Cache warmed: categories', ['count' => $categories->count()]);
             } catch (\Throwable $e) {
                 Log::warning('Failed to warm categories cache: ' . $e->getMessage());
@@ -345,7 +345,7 @@ class AppServiceProvider extends ServiceProvider
                     ->limit(20)
                     ->get();
 
-                RedisHelper::put('component:featured', $featured, $ttl['featured_products'] ?? 3600);
+                RedisCacheService::put('component:featured', $featured, $ttl['featured_products'] ?? 3600);
                 Log::info('Cache warmed: featured products', ['count' => $featured->count()]);
             } catch (\Throwable $e) {
                 Log::warning('Failed to warm featured products cache: ' . $e->getMessage());
