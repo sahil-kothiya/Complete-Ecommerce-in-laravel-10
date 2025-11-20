@@ -308,6 +308,19 @@ class HighPerformanceFilterController extends Controller
 
     private function buildProductQuery($category)
     {
+        $variantImagesSub = DB::table('product_variants as pv')
+            ->select([
+                'pv.product_id',
+                DB::raw("ARRAY_AGG(CONCAT(vi.sort_order, ':', vi.image_path) ORDER BY vi.sort_order ASC) as variant_imgs")
+            ])
+            ->join('variant_images as vi', function ($join) {
+                $join->on('vi.product_variant_id', '=', 'pv.id')
+                    ->whereNotNull('vi.image_path')
+                    ->where('vi.sort_order', '<=', 2);
+            })
+            ->where('pv.status', 'active')
+            ->groupBy('pv.product_id');
+
         $query = DB::table('products as p')
             ->select([
                 'p.id', 'p.title', 'p.slug', 'p.base_price', 'p.base_discount',
@@ -315,6 +328,7 @@ class HighPerformanceFilterController extends Controller
                 'b.title as bt', 'b.slug as bs',
                 'prc.average_rating as ar', 'prc.total_reviews as tr',
                 DB::raw('ARRAY_AGG(DISTINCT CONCAT(pi.sort_order, \':\', pi.image_path)) FILTER (WHERE pi.image_path IS NOT NULL) as imgs'),
+                DB::raw('variant_image_data.variant_imgs as variant_imgs'),
                 // ✅ FIXED: Use LATERAL join to get cheapest in-stock variant
                 DB::raw('
                     COALESCE(
@@ -360,6 +374,9 @@ class HighPerformanceFilterController extends Controller
                 '=',
                 'p.id'
             )
+            ->leftJoinSub($variantImagesSub, 'variant_image_data', function ($join) {
+                $join->on('variant_image_data.product_id', '=', 'p.id');
+            })
             ->leftJoin('product_images as pi', function($join) {
                 $join->on('p.id', '=', 'pi.product_id')
                     ->whereRaw('pi.sort_order <= 2');
@@ -369,7 +386,8 @@ class HighPerformanceFilterController extends Controller
                 'p.id', 'p.title', 'p.slug', 'p.base_price', 'p.base_discount',
                 'p.base_stock', 'p.condition', 'p.has_variants',
                 'b.title', 'b.slug', 'prc.average_rating', 'prc.total_reviews',
-                'cheapest_v.price', 'cheapest_v.discount', 'cheapest_v.stock', 'cheapest_v.min_disc_price'
+                'cheapest_v.price', 'cheapest_v.discount', 'cheapest_v.stock', 'cheapest_v.min_disc_price',
+                'variant_image_data.variant_imgs'
             ]);
 
         if ($category) {
@@ -508,27 +526,12 @@ class HighPerformanceFilterController extends Controller
             $isInStock = (bool) $p->is_in_stock;
             $stock = $isInStock ? ($p->has_variants ? 999 : (int) $p->base_stock) : 0;
 
-            $images = [];
-            if (!empty($p->imgs)) {
-                $imgArr = is_string($p->imgs) ? explode(',', trim($p->imgs, '{}')) : (array) $p->imgs;
-
-                $imageData = [];
-                foreach ($imgArr as $img) {
-                    if (empty($img)) continue;
-                    $parts = explode(':', $img, 2);
-                    if (count($parts) === 2) {
-                        $imageData[] = [
-                            'so' => (int) $parts[0],
-                            'p' => trim($parts[1])
-                        ];
-                    }
-                }
-
-                if (!empty($imageData)) {
-                    usort($imageData, fn($a, $b) => $a['so'] <=> $b['so']);
-                    $images = array_column($imageData, 'p');
-                }
-            }
+            $variantImages = $this->normalizeImageAggregate($p->variant_imgs ?? null);
+            $productImages = $this->normalizeImageAggregate($p->imgs ?? null);
+            $rawImages = $p->has_variants
+                ? (!empty($variantImages) ? $variantImages : $productImages)
+                : (!empty($productImages) ? $productImages : $variantImages);
+            $images = $this->formatFrontendImagePaths($rawImages, (bool) $p->has_variants);
 
             return [
                 'id' => $p->id,
@@ -549,6 +552,87 @@ class HighPerformanceFilterController extends Controller
                 ]
             ];
         })->toArray();
+    }
+
+    private function normalizeImageAggregate($rawImages): array
+    {
+        if (empty($rawImages)) {
+            return [];
+        }
+
+        $values = is_string($rawImages)
+            ? array_filter(explode(',', trim($rawImages, '{}')))
+            : (array) $rawImages;
+
+        $imageData = [];
+        foreach ($values as $value) {
+            $value = trim($value, " \"'");
+            if ($value === '') {
+                continue;
+            }
+
+            $parts = explode(':', $value, 2);
+            if (count($parts) !== 2) {
+                continue;
+            }
+
+            $imageData[] = [
+                'so' => (int) $parts[0],
+                'p' => trim($parts[1], " \"'")
+            ];
+        }
+
+        if (empty($imageData)) {
+            return [];
+        }
+
+        usort($imageData, fn($a, $b) => $a['so'] <=> $b['so']);
+
+        return array_column($imageData, 'p');
+    }
+
+    private function formatFrontendImagePaths(array $filenames, bool $hasVariants): array
+    {
+        if (empty($filenames)) {
+            return [];
+        }
+
+        $baseDir = $hasVariants ? 'products/variants/' : 'products/';
+
+        return array_values(array_filter(array_map(function ($path) use ($baseDir) {
+            if (empty($path)) {
+                return null;
+            }
+
+            $normalized = ltrim($path, '/');
+
+            if (Str::startsWith($normalized, ['http://', 'https://'])) {
+                $parsedPath = parse_url($normalized, PHP_URL_PATH) ?: '';
+                $normalized = ltrim($parsedPath, '/');
+            }
+
+            if (Str::startsWith($normalized, 'storage/')) {
+                $normalized = substr($normalized, strlen('storage/'));
+            }
+
+            if (
+                Str::startsWith($normalized, 'products/') ||
+                Str::startsWith($normalized, 'photos/') ||
+                Str::startsWith($normalized, 'backend/')
+            ) {
+                return $normalized;
+            }
+
+            if (Str::startsWith($normalized, 'variant_')) {
+                return 'products/variants/' . $normalized;
+            }
+
+            if (Str::startsWith($normalized, 'product_')) {
+                return 'products/' . $normalized;
+            }
+
+            return $baseDir . $normalized;
+        }, $filenames)));
     }
 
     private function getCountEstimate($category, array $filters): int

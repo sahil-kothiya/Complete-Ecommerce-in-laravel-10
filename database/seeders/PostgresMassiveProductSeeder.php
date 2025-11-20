@@ -17,11 +17,11 @@ class PostgresMassiveProductSeeder extends Seeder
      */
 
     // Product generation settings
-    protected int $totalProducts = 10_000_000;                    // Total number of products to generate
-    protected ?int $variantProductTarget = 9_500_000;            // Target number of products with variants (null = use ratio)
+    protected int $totalProducts = 100;                      // Total number of products to generate
+    protected ?int $variantProductTarget = 95;               // Target number of products with variants (null = use ratio)
     protected float $variantProductRatio = 0.95;             // Ratio of variant products if target not set (0.95 = 95%)
-    protected int $startProductIdIfEmpty = 10_000_000;          // Starting product ID when table is empty (set to 1 for fresh start)
-    protected ?int $maxProductIdLimit = null;                   // Maximum product ID limit (null = no limit)
+    protected int $startProductIdIfEmpty = 1;                // Starting product ID when table is empty (set to 1 for fresh start)
+    protected ?int $maxProductIdLimit = null;                // Maximum product ID limit (null = no limit)
 
     // Variant configuration per product
     protected int $minVariantsPerProduct = 3;                // Minimum variants per product
