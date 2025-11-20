@@ -695,13 +695,13 @@ class OptimizedVariantMasterSeederNew extends Seeder
     {
         $variantCategories = ['smartphones', 'laptops', 'audio', 'shoes', 'women', 'kids', 'furniture', 'makeup'];
         $variantCats = array_intersect_key($categories, array_flip($variantCategories));
-        
+
         $targetVariantProducts = min($this->variantProducts, $this->targetProducts - $this->totalProductsSeeded);
         $perCategory = (int)ceil($targetVariantProducts / count($variantCats));
 
         foreach ($variantCats as $slug => $catData) {
             if ($this->totalProductsSeeded >= $this->targetProducts) break;
-            
+
             $targetCount = min($perCategory, $this->targetProducts - $this->totalProductsSeeded);
             $this->seedCategoryProducts($slug, $catData, $targetCount, $brands, true);
 
@@ -1007,7 +1007,6 @@ class OptimizedVariantMasterSeederNew extends Seeder
         return [
             'product_id' => $productId,
             'image_path' => 'products/' . $imageName,
-            'thumbnail_path' => null,
             'is_primary' => $index === 0,
             'sort_order' => $index,
             'created_at' => $now,
@@ -1027,7 +1026,6 @@ class OptimizedVariantMasterSeederNew extends Seeder
         return [
             'product_variant_id' => $variantId,
             'image_path' => 'products/variants/' . $imageName,
-            'thumbnail_path' => null,
             'is_primary' => $index === 0,
             'sort_order' => $index,
             'created_at' => $now,
@@ -1199,11 +1197,11 @@ class OptimizedVariantMasterSeederNew extends Seeder
         string $category
     ): string {
         $base = strtoupper(substr(preg_replace('/[^a-zA-Z0-9]/', '', $productName), 0, 3));
-        $comboStr = empty($combo) 
-            ? 'STD' 
+        $comboStr = empty($combo)
+            ? 'STD'
             : implode('-', array_map(fn($v) => strtoupper(substr($v, 0, 2)), $combo));
         $categoryCode = strtoupper(substr($category, 0, 3));
-        
+
         return "{$base}-{$categoryCode}-{$comboStr}-{$id}";
     }
 

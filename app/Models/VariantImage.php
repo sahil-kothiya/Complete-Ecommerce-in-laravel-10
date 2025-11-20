@@ -15,7 +15,6 @@ class VariantImage extends Model
     protected $fillable = [
         'product_variant_id',
         'image_path',
-        'thumbnail_path',
         'is_primary',
         'sort_order'
     ];
@@ -25,7 +24,7 @@ class VariantImage extends Model
         'sort_order' => 'integer',
     ];
 
-    protected $appends = ['url', 'thumbnail_url'];
+    protected $appends = ['url'];
 
     /**
      * Relationships
@@ -44,17 +43,6 @@ class VariantImage extends Model
             return ImageHelper::defaultVariantImage();
         }
         return ImageHelper::variantImageUrl($this->image_path);
-    }
-
-    /**
-     * Get full URL for the thumbnail (filename-only storage optimization)
-     */
-    public function getThumbnailUrlAttribute()
-    {
-        if (empty($this->thumbnail_path)) {
-            return null;
-        }
-        return ImageHelper::variantImageUrl($this->thumbnail_path, true);
     }
 
     /**

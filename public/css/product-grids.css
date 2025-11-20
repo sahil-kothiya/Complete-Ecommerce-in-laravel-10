@@ -73,13 +73,13 @@
     }
 }
 
-.slider-image[loaded] {
+.slider-image {
     opacity: 1;
     transition: opacity 0.3s ease;
 }
 
 .slider-image:not([loaded]) {
-    opacity: 0;
+    opacity: 1;
 }
 
 .product-grid-container {

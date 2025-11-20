@@ -955,7 +955,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
         return [
             'product_id' => $productId,
             'image_path' => 'photos/1/Products/' . $imageName,
-            'thumbnail_path' => null,
+            
             'is_primary' => $index === 0,
             'sort_order' => $index,
             'created_at' => $now,
@@ -975,7 +975,7 @@ class OptimizedVariantMasterSeederNew extends Seeder
         return [
             'product_variant_id' => $variantId,
             'image_path' => 'photos/1/Products/' . $imageName,
-            'thumbnail_path' => null,
+            
             'is_primary' => $index === 0,
             'sort_order' => $index,
             'created_at' => $now,

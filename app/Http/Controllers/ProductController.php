@@ -471,7 +471,7 @@ class ProductController extends Controller
                 VariantImage::create([
                     'product_variant_id' => $variant->id,
                     'image_path' => $path,
-                    'thumbnail_path' => null,
+                    
                     'is_primary' => $imgIndex === 0,
                     'sort_order' => $imgIndex + 1,
                 ]);
@@ -1377,7 +1377,7 @@ class ProductController extends Controller
             $created = VariantImage::create([
                 'product_variant_id' => $variant->id,
                 'image_path' => $imageData['path'],
-                'thumbnail_path' => null,
+                
                 'is_primary' => $imageData['is_primary'],
                 'sort_order' => $imageData['sort_order'],
             ]);

@@ -171,7 +171,7 @@ class Helper
                         $q->select('id', 'title', 'slug', 'summary', 'base_price', 'base_discount', 'has_variants', 'status')
                         ->with([
                             'images' => function ($query) {
-                                $query->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                                $query->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order'])
                                         ->orderByDesc('is_primary')
                                         ->orderBy('sort_order');
                             }
@@ -188,7 +188,7 @@ class Helper
                                 $query->select('id', 'name', 'display_name', 'sort_order');
                             },
                             'images' => function ($query) {
-                                $query->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                                $query->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
                                         ->orderByDesc('is_primary')
                                         ->orderBy('sort_order');
                             }
@@ -233,9 +233,9 @@ class Helper
             $user_id = $user_id ?: Auth::user()->id;
 
             return Cart::with([
-                'product.images' => fn($query) => $query->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
+                'product.images' => fn($query) => $query->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order']),
                 'variant.variantOptions.variantType' => fn($query) => $query->select(['id', 'name', 'display_name', 'sort_order']),
-                'variant.images' => fn($query) => $query->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                'variant.images' => fn($query) => $query->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
             ])
                 ->where('user_id', $user_id)
                 ->where('order_id', null) // Only fetch cart items not yet ordered
@@ -258,13 +258,13 @@ class Helper
 
                 // Load product and variant relationships
                 $cart->product = Product::with([
-                    'images' => fn($query) => $query->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                    'images' => fn($query) => $query->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order'])
                 ])->find($item['product_id']);
 
                 if ($item['variant_id']) {
                     $cart->variant = ProductVariant::with([
                         'variantOptions.variantType' => fn($query) => $query->select(['id', 'name', 'display_name', 'sort_order']),
-                        'images' => fn($query) => $query->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
+                        'images' => fn($query) => $query->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
                     ])->find($item['variant_id']);
                 }
 

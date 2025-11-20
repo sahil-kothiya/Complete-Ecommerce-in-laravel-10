@@ -89,11 +89,8 @@
                                             </div>
                                         @else
                                             @foreach ($allImages as $index => $image)
-                                                @php
-                                                    $thumbUrl = $image->thumbnail_url ?? $image->url;
-                                                @endphp
                                                 <div class="thumbnail-item mx-1" style="flex:0 0 auto;">
-                                                    <img src="{{ $thumbUrl }}" alt="Thumbnail {{ $index + 1 }}"
+                                                    <img src="{{ $image->url }}" alt="Thumbnail {{ $index + 1 }}"
                                                         class="img-fluid thumbnail-image {{ $index == 0 ? 'active' : '' }}"
                                                         style="width:80px;height:80px;object-fit:cover;border-radius:5px;cursor:pointer;border:2px solid {{ $index == 0 ? '#2874f0' : '#eee' }};"
                                                         data-index="{{ $index }}" data-full="{{ $image->url }}">
@@ -210,9 +207,7 @@
                                                                                 $colorVariant &&
                                                                                 $colorVariant->images->isNotEmpty()
                                                                                     ? $colorVariant->images->first()
-                                                                                            ->thumbnail_path ??
-                                                                                        $colorVariant->images->first()
-                                                                                            ->image_path
+                                                                                        ->image_path
                                                                                     : null;
                                                                             $thumbImage = $thumbImage
                                                                                 ? variant_image_url($thumbImage)

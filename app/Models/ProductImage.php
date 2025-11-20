@@ -15,11 +15,10 @@ class ProductImage extends Model
         'image_path',
         'is_primary',
         'sort_order',
-        'alt_text',
-        'thumbnail_path'
+        'alt_text'
     ];
 
-    protected $appends = ['url', 'thumbnail_url'];
+    protected $appends = ['url'];
 
     protected $casts = [
         'is_primary' => 'boolean',
@@ -42,14 +41,4 @@ class ProductImage extends Model
         return ImageHelper::productImageUrl($this->image_path);
     }
 
-    /**
-     * Get full URL for the thumbnail (filename-only storage optimization)
-     */
-    public function getThumbnailUrlAttribute()
-    {
-        if (empty($this->thumbnail_path)) {
-            return null;
-        }
-        return ImageHelper::productImageUrl($this->thumbnail_path, true);
-    }
 }

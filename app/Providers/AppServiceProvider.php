@@ -325,7 +325,7 @@ class AppServiceProvider extends ServiceProvider
         if ($config['warming']['warm_items']['categories'] ?? true) {
             try {
                 $categories = Category::where('status', 'active')
-                    ->select('id', 'title', 'slug', 'photo', 'is_parent')
+                    ->select('id', 'title', 'slug', 'photo', 'parent_id')
                     ->orderBy('title', 'ASC')
                     ->get();
 
@@ -341,7 +341,7 @@ class AppServiceProvider extends ServiceProvider
             try {
                 $featured = Product::where('status', 'active')
                     ->where('is_featured', 1)
-                    ->select('id', 'title', 'slug', 'price', 'photo')
+                    ->select('id', 'title', 'slug', 'base_price', 'has_variants')
                     ->limit(20)
                     ->get();
 

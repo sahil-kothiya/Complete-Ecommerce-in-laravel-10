@@ -262,7 +262,7 @@ class ProductVariant extends Model
     public function scopeWithVariantData($query)
     {
         return $query->with([
-            'images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
+            'images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order']),
             'variantOptions.variantType' => fn($q) => $q->select(['id', 'name', 'display_name', 'sort_order'])
         ]);
     }

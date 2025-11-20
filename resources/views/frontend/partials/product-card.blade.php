@@ -70,7 +70,6 @@ if (($productData->has_variants ?? false) && $variants->count()) {
                             $images = collect([
                                 (object) [
                                     'image_path' => asset('images/no-image.png'),
-                                    'thumbnail_path' => asset('images/no-image.png'),
                                     'alt_text' => $productData->title ?? 'Product',
                                 ],
                             ]);
@@ -84,14 +83,14 @@ if (($productData->has_variants ?? false) && $variants->count()) {
                         @php
                             $imgObj = is_array($img) ? (object) $img : $img;
                             $imgSrc = $imgObj->image_path ?? asset('images/no-image.png');
-                            $thumbnailSrc = $imgObj->thumbnail_path ?? $imgSrc;
                             $altText = $imgObj->alt_text ?? ($productData->title ?? 'Product');
                         @endphp
 
-                        <img src="{{ $thumbnailSrc }}" class="slider-image" alt="{{ $altText }}"
+                        <img src="{{ $imgSrc }}" class="slider-image" alt="{{ $altText }}"
                             loading="{{ $index === 0 ? 'eager' : 'lazy' }}" width="235" height="235"
                             decoding="async" fetchpriority="{{ $index === 0 ? 'high' : 'low' }}"
-                            onerror="this.src='{{ asset('images/no-image.png') }}';">
+                            onerror="this.src='{{ asset('images/no-image.png') }}'; console.error('{{ $productData->id }} - Image load failed - src: {{ $imgSrc }}');"
+                            onload="if({{ $index }} === 0) { console.log('{{ $productData->id }} - src: {{ $imgSrc }}'); if('{{ $imgSrc }}'.includes('no-image.png')) { console.warn('{{ $productData->id }} - Using fallback no-image.png - Check product images in DB'); } }">
                     @endforeach
                 </div>
             </div>

@@ -12,6 +12,20 @@ namespace App\Helpers;
 class ImageHelper
 {
     /**
+     * Build asset URL honoring optional CDN but defaulting to relative paths
+     */
+    private static function buildAssetUrl(string $path): string
+    {
+        $cdnUrl = config('app.cdn_url');
+        if (!empty($cdnUrl)) {
+            return rtrim($cdnUrl, '/') . '/' . ltrim($path, '/');
+        }
+
+        // Return relative path so current host (e.g., 127.0.0.1 vs localhost) is preserved
+        return '/' . ltrim($path, '/');
+    }
+
+    /**
      * Get full URL for a product image
      *
      * @param string|null $filename Just the filename from DB (e.g., "product_123.webp")
@@ -29,31 +43,23 @@ class ImageHelper
 
         // If full storage path already present, return directly
         if (strpos($filename, 'storage/') === 0) {
-            return asset($filename);
+            return self::buildAssetUrl($filename);
         }
 
         // Legacy full relative paths without storage prefix
         if (strpos($filename, 'photos/') === 0 || strpos($filename, 'products/') === 0) {
-            return asset('storage/' . $filename);
+            return self::buildAssetUrl('storage/' . $filename);
         }
 
         // Filename-only new optimized storage (just product_*.webp)
         // Ensure products directory always included – previous logic produced /storage/product_xxx.webp (404)
         if (preg_match('/^product_[A-Za-z0-9]/', $filename)) {
-            return asset('storage/products/' . $filename);
+            return self::buildAssetUrl('storage/products/' . $filename);
         }
 
         // New format: just filename, use configured base path
         $basePath = config('app.product_image_path', 'storage/products/');
-        $cdnUrl = config('app.cdn_url');
-
-        if ($cdnUrl) {
-            // CDN mode: https://cdn.example.com/storage/products/product_123.webp
-            return rtrim($cdnUrl, '/') . '/' . trim($basePath, '/') . '/' . $filename;
-        }
-
-        // Local mode: http://localhost/storage/products/product_123.webp
-        return asset(trim($basePath, '/') . '/' . $filename);
+        return self::buildAssetUrl(trim($basePath, '/') . '/' . ltrim($filename, '/'));
     }
 
     /**
@@ -74,12 +80,12 @@ class ImageHelper
 
         // Already has storage prefix – return
         if (strpos($filename, 'storage/') === 0) {
-            return asset($filename);
+            return self::buildAssetUrl($filename);
         }
 
         // Legacy relative paths
         if (strpos($filename, 'photos/') === 0 || strpos($filename, 'products/variants/') === 0 || strpos($filename, 'products/') === 0) {
-            return asset('storage/' . $filename);
+            return self::buildAssetUrl('storage/' . $filename);
         }
 
         // If this is actually a product image (product_ prefix), redirect to product path
@@ -89,20 +95,12 @@ class ImageHelper
 
         // Filename-only optimized variant (variant_*.webp) – ensure variants directory included
         if (preg_match('/^variant_[A-Za-z0-9]/', $filename)) {
-            return asset('storage/products/variants/' . $filename);
+            return self::buildAssetUrl('storage/products/variants/' . $filename);
         }
 
         // New format: just filename, use configured base path
         $basePath = config('app.variant_image_path', 'storage/products/variants/');
-        $cdnUrl = config('app.cdn_url');
-
-        if ($cdnUrl) {
-            // CDN mode: https://cdn.example.com/storage/products/variants/variant_456.webp
-            return rtrim($cdnUrl, '/') . '/' . trim($basePath, '/') . '/' . $filename;
-        }
-
-        // Local mode: http://localhost/storage/products/variants/variant_456.webp
-        return asset(trim($basePath, '/') . '/' . $filename);
+        return self::buildAssetUrl(trim($basePath, '/') . '/' . ltrim($filename, '/'));
     }
 
     /**
@@ -133,7 +131,7 @@ class ImageHelper
     public static function defaultProductImage(): string
     {
         // Fallback to existing backend image if default product image doesn't exist
-        return asset('backend/img/avatar.webp');
+        return self::buildAssetUrl('backend/img/avatar.webp');
     }
 
     /**
@@ -142,7 +140,7 @@ class ImageHelper
     public static function defaultVariantImage(): string
     {
         // Fallback to existing backend image if default variant image doesn't exist
-        return asset('backend/img/avatar.webp');
+        return self::buildAssetUrl('backend/img/avatar.webp');
     }
 
     /**

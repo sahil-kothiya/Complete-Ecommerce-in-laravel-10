@@ -2,6 +2,109 @@
 
 @section('main-content')
 
+    {{-- Cache Information Debug Panel (only visible in development) --}}
+    @if (config('app.debug') && isset($cache_info))
+        <div id="cache-debug-panel"
+            style="position: fixed; bottom: 20px; right: 20px; z-index: 9999; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); font-family: monospace; font-size: 12px; max-width: 350px; cursor: move;"
+            draggable="true">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <strong style="font-size: 14px;">🚀 Cache Debug Info</strong>
+                <button onclick="document.getElementById('cache-debug-panel').style.display='none'"
+                    style="background: rgba(255,255,255,0.2); border: none; color: white; cursor: pointer; padding: 5px 10px; border-radius: 5px; font-size: 11px;">✕</button>
+            </div>
+
+            <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-bottom: 8px;">
+                <div style="margin-bottom: 5px;">
+                    <span style="opacity: 0.8;">Source:</span>
+                    <strong style="color: {{ $cache_info['source'] === 'redis_full_page' ? '#00ff88' : '#ffeb3b' }};">
+                        {{ strtoupper(str_replace('_', ' ', $cache_info['source'])) }}
+                    </strong>
+                </div>
+                <div style="margin-bottom: 5px;">
+                    <span style="opacity: 0.8;">Load Time:</span>
+                    <strong
+                        style="color: {{ $cache_info['load_time_ms'] < 50 ? '#00ff88' : ($cache_info['load_time_ms'] < 200 ? '#ffeb3b' : '#ff6b6b') }};">
+                        {{ $cache_info['load_time_ms'] }}ms
+                    </strong>
+                </div>
+                @if (isset($cache_info['cached_at']))
+                    <div style="opacity: 0.8; font-size: 10px;">
+                        Cached: {{ \Carbon\Carbon::parse($cache_info['cached_at'])->diffForHumans() }}
+                    </div>
+                @endif
+            </div>
+
+            @if (isset($cache_info['cache_sources']))
+                <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px;">
+                    <div style="font-weight: bold; margin-bottom: 8px; font-size: 11px;">Component Sources:</div>
+                    @foreach ($cache_info['cache_sources'] as $component => $source)
+                        <div
+                            style="display: flex; justify-content: space-between; margin-bottom: 4px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <span
+                                style="opacity: 0.8; font-size: 10px;">{{ ucfirst(str_replace('_', ' ', $component)) }}:</span>
+                            <span
+                                style="font-weight: bold; color: {{ $source === 'REDIS' ? '#00ff88' : '#ff6b6b' }}; font-size: 10px;">
+                                {{ $source }}
+                            </span>
+                        </div>
+                    @endforeach
+
+                    @if (isset($cache_info['cache_hit_rate']))
+                        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);">
+                            <span style="opacity: 0.8; font-size: 10px;">Cache Hit Rate:</span>
+                            <strong
+                                style="color: #00ff88;">{{ round((count(array_filter($cache_info['cache_sources'], fn($v) => $v === 'REDIS')) / count($cache_info['cache_sources'])) * 100, 1) }}%</strong>
+                        </div>
+                    @endif
+                </div>
+            @endif
+
+            <div style="margin-top: 10px; opacity: 0.7; font-size: 9px; text-align: center;">
+                Drag to move • Click ✕ to close
+            </div>
+        </div>
+
+        <script>
+            // Make the debug panel draggable
+            (function() {
+                const panel = document.getElementById('cache-debug-panel');
+                let pos1 = 0,
+                    pos2 = 0,
+                    pos3 = 0,
+                    pos4 = 0;
+
+                panel.onmousedown = dragMouseDown;
+
+                function dragMouseDown(e) {
+                    e = e || window.event;
+                    e.preventDefault();
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    document.onmouseup = closeDragElement;
+                    document.onmousemove = elementDrag;
+                }
+
+                function elementDrag(e) {
+                    e = e || window.event;
+                    e.preventDefault();
+                    pos1 = pos3 - e.clientX;
+                    pos2 = pos4 - e.clientY;
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    panel.style.top = (panel.offsetTop - pos2) + "px";
+                    panel.style.left = (panel.offsetLeft - pos1) + "px";
+                    panel.style.bottom = "auto";
+                    panel.style.right = "auto";
+                }
+
+                function closeDragElement() {
+                    document.onmouseup = null;
+                    document.onmousemove = null;
+                }
+            })();
+        </script>
+    @endif
+
     @if ($banners?->count())
         @php
             $firstBanner = $banners->first();
@@ -17,8 +120,9 @@
         <section id="gslider" class="carousel slide" data-ride="carousel" data-interval="3000">
             <ol class="carousel-indicators">
                 @foreach ($banners as $key => $banner)
-                    <li data-target="#gslider" data-slide-to="{{ $key }}" class="{{ $key === 0 ? 'active' : '' }}"
-                        aria-label="Slide {{ $key + 1 }}" tabindex="{{ $tabindex++ }}"></li>
+                    <li data-target="#gslider" data-slide-to="{{ $key }}"
+                        class="{{ $key === 0 ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}"
+                        tabindex="{{ $tabindex++ }}"></li>
                 @endforeach
             </ol>
 
@@ -157,8 +261,9 @@
                     </div>
                     <div class="row">
                         <div class="col-12">
-                            <div class="d-flex flex-wrap justify-content-center gap-4" id="{{ $slug }}ProductsGrid"
-                                role="tabpanel" aria-labelledby="tab-{{ $slug }}">
+                            <div class="d-flex flex-wrap justify-content-center gap-4"
+                                id="{{ $slug }}ProductsGrid" role="tabpanel"
+                                aria-labelledby="tab-{{ $slug }}">
                                 <div class="product-listing-wrapper">
                                     @foreach ($categoryData['products'] as $product)
                                         <div class="product-card-container category-{{ $slug }}"
