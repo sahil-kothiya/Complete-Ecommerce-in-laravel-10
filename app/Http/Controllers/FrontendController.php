@@ -3197,20 +3197,14 @@ class FrontendController extends Controller
                         if ($primaryImage) {
                             $imagePath = $primaryImage->image_path;
 
-
                             // Ensure proper storage path
                             if (strpos($imagePath, 'storage/') !== 0) {
                                 $imagePath = 'storage/' . ltrim($imagePath, '/');
                             }
-                            if (strpos($thumbnailPath, 'storage/') !== 0) {
-
-                            }
 
                             $product->primary_image = [
                                 'image_path' => $imagePath,
-
                                 'url' => asset($imagePath),
-                                'thumbnail_url' => asset($thumbnailPath),
                                 'alt_text' => $product->title
                             ];
                         }
@@ -3229,20 +3223,14 @@ class FrontendController extends Controller
                     if ($primaryImage) {
                         $imagePath = $primaryImage->image_path;
 
-
                         // Ensure proper storage path
                         if (strpos($imagePath, 'storage/') !== 0) {
                             $imagePath = 'storage/' . ltrim($imagePath, '/');
                         }
-                        if (strpos($thumbnailPath, 'storage/') !== 0) {
-
-                        }
 
                         $product->primary_image = [
                             'image_path' => $imagePath,
-
                             'url' => asset($imagePath),
-                            'thumbnail_url' => asset($thumbnailPath),
                             'alt_text' => $product->title
                         ];
                     } else {
