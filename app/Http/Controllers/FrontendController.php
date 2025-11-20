@@ -41,6 +41,9 @@ class FrontendController extends Controller
     private const HOMEPAGE_CACHE_PREFIX = 'cache:homepage:';
     private const PRODUCT_GRIDS_CACHE_PREFIX = 'cache:product_grids:';
     private const CACHE_TTL = 3600; // Default cache TTL in seconds
+    private const HOMEPAGE_CATEGORY_PRODUCT_LIMIT = 60;
+    private const CATEGORY_DISPLAY_STEPS = [12, 8, 4];
+    private const MAX_PRODUCTS_PER_CATEGORY_FETCH = 60; // Fetch up to 60 products per category initially
     private static ?array $ttlConfig = null;
 
     protected $recentProductService;
@@ -135,9 +138,18 @@ class FrontendController extends Controller
                 ? $cachedComponents[$cacheKeys['featured']]
                 : $this->getHomepageProductsData($cacheKeys['featured'], $ttl['featured_products'] ?? 3600, $cacheEnabled);
 
+            // Get product IDs from All Products section to exclude from category sections
+            $allProductIds = [];
+            if (is_array($featuredProducts)) {
+                $allProductIds = array_map(function($product) {
+                    return is_object($product) ? $product->id : ($product['id'] ?? null);
+                }, $featuredProducts);
+            }
+            $allProductIds = array_filter($allProductIds);
+
             $categoryProducts = $categoryProductsFromCache
                 ? $cachedComponents[$cacheKeys['categoryProducts']]
-                : $this->getHomepageCategoryProducts($cacheKeys['categoryProducts'], $ttl['category_products'] ?? 3600, $cacheEnabled);
+                : $this->getHomepageCategoryProducts($cacheKeys['categoryProducts'], $ttl['category_products'] ?? 3600, $cacheEnabled, $allProductIds);
 
             // Assemble final data structure
             // Filter out any null/empty products from featured products
@@ -299,17 +311,18 @@ class FrontendController extends Controller
      * Get homepage category products (pre-grouped and optimized for display)
      * Optimized for 10M+ products using category-indexed queries
      */
-    private function getHomepageCategoryProducts(?string $key, int $ttl, bool $useCache = true)
+    private function getHomepageCategoryProducts(?string $key, int $ttl, bool $useCache = true, array $excludeProductIds = [])
     {
         $startTime = microtime(true);
 
+        // Calculate limit: 60 total - 12 from All Products = 48 for categories
+        $maxDisplayable = self::HOMEPAGE_CATEGORY_PRODUCT_LIMIT - 12;
         // Get active featured categories (small query - fast)
         $categories = Category::select(['id', 'title', 'slug', 'sort_order'])
             ->whereNull('parent_id')
             ->where('status', 'active')
             ->where('is_featured', true)
             ->orderBy('sort_order')
-            ->limit(4) // Top 4 categories for homepage
             ->get();
 
         if ($categories->isEmpty()) {
@@ -319,32 +332,121 @@ class FrontendController extends Controller
             return [];
         }
 
+        $preparedCategories = [];
+        foreach ($categories as $category) {
+            // Get ALL active products from this category (not just featured ones)
+            $query = DB::table('products')
+                ->select('id')
+                ->where('cat_id', $category->id)
+                ->where('status', 'active')
+                ->orderBy('id', 'DESC')
+                ->limit(self::MAX_PRODUCTS_PER_CATEGORY_FETCH);
+
+            // Exclude products already shown in All Products section
+            if (!empty($excludeProductIds)) {
+                $query->whereNotIn('id', $excludeProductIds);
+            }
+
+            $productIds = $query->pluck('id')->toArray();
+
+            if (count($productIds) < 4) {
+                continue; // Skip categories that cannot satisfy the minimum block
+            }
+
+            $preparedCategories[] = [
+                'category' => $category,
+                'product_ids' => $productIds,
+                'available' => count($productIds),
+            ];
+        }
+
+        if (empty($preparedCategories)) {
+            if ($useCache && $key) {
+                RedisCacheService::put($key, [], $ttl);
+            }
+            return [];
+        }
+
+        $totalEligible = count($preparedCategories);
+        $totalPotential = array_sum(array_map(fn($payload) => $payload['available'], $preparedCategories));
+        $totalLimit = min($maxDisplayable, $totalPotential);
+
+        if ($totalLimit === 0) {
+            if ($useCache && $key) {
+                RedisCacheService::put($key, [], $ttl);
+            }
+            return [];
+        }
+
+        $baseQuota = $this->calculateBaseCategoryQuota($totalLimit, $totalEligible);
+        if ($baseQuota === 0) {
+            if ($useCache && $key) {
+                RedisCacheService::put($key, [], $ttl);
+            }
+            return [];
+        }
+
+        $categoryPlans = [];
+        $allocated = 0;
+        foreach ($preparedCategories as $payload) {
+            $quota = min($baseQuota, $payload['available']);
+            if ($quota === 0) {
+                continue;
+            }
+
+            $categoryPlans[] = [
+                'category' => $payload['category'],
+                'product_ids' => $payload['product_ids'],
+                'available' => $payload['available'],
+                'quota' => $quota,
+            ];
+            $allocated += $quota;
+        }
+
+        if (empty($categoryPlans)) {
+            if ($useCache && $key) {
+                RedisCacheService::put($key, [], $ttl);
+            }
+            return [];
+        }
+
+        $remainingSlots = $totalLimit - $allocated;
+        $upgradeTargets = [4, 8, 12, 16, 20, 24, 30, 40, 50, 60];
+
+        foreach ($upgradeTargets as $target) {
+            foreach ($categoryPlans as &$plan) {
+                if ($remainingSlots <= 0) {
+                    break 2;
+                }
+
+                if ($plan['quota'] >= $target || $plan['available'] < $target) {
+                    continue;
+                }
+
+                $needed = $target - $plan['quota'];
+                if ($needed <= 0 || $needed > $remainingSlots) {
+                    continue;
+                }
+
+                $plan['quota'] = $target;
+                $remainingSlots -= $needed;
+            }
+        }
+        unset($plan);
+
         $categoryProducts = [];
         $totalCacheHits = 0;
         $totalCacheMisses = 0;
 
-        foreach ($categories as $category) {
-            // STEP 1: Get product IDs for this category (indexed query - O(log n))
-            $productIds = DB::table('products')
-                ->select('id')
-                ->where('cat_id', $category->id) // Uses cat_id index
-                ->where('status', 'active')
-                ->where('is_featured', 1)
-                ->orderBy('id', 'DESC')
-                ->limit(8) // 8 products per category
-                ->pluck('id')
-                ->toArray();
-
-            if (count($productIds) < 4) {
-                continue; // Skip categories with less than 4 products
-            }
+        foreach ($categoryPlans as $plan) {
+            $selectedProductIds = array_slice($plan['product_ids'], 0, $plan['quota']);
 
             // STEP 2: Try to fetch from product card cache
-            $productCards = $this->batchFetchProductCards($productIds, $useCache);
+            $productCards = $this->batchFetchProductCards($selectedProductIds, $useCache);
             $totalCacheHits += count($productCards);
 
             // STEP 3: Query database for cache misses
-            $missingIds = array_diff($productIds, array_keys($productCards));
+            $missingIds = array_diff($selectedProductIds, array_keys($productCards));
 
             if (!empty($missingIds)) {
                 $totalCacheMisses += count($missingIds);
@@ -387,14 +489,18 @@ class FrontendController extends Controller
 
             // STEP 4: Reassemble in correct order
             $orderedProducts = [];
-            foreach ($productIds as $id) {
+            foreach ($selectedProductIds as $id) {
                 if (isset($productCards[$id])) {
                     $orderedProducts[] = $productCards[$id];
                 }
             }
 
-            $categoryProducts[$category->slug] = [
-                'title' => $category->title,
+            if (empty($orderedProducts)) {
+                continue;
+            }
+
+            $categoryProducts[$plan['category']->slug] = [
+                'title' => $plan['category']->title,
                 'products' => $orderedProducts
             ];
         }
@@ -407,6 +513,32 @@ class FrontendController extends Controller
         return $categoryProducts;
     }
 
+    private function calculateBaseCategoryQuota(int $totalLimit, int $categoryCount): int
+    {
+        if ($categoryCount <= 0 || $totalLimit <= 0) {
+            return 0;
+        }
+
+        $preferredMinimum = 4;
+
+        // If we can give all categories at least 4 products, do so
+        if ($categoryCount * $preferredMinimum <= $totalLimit) {
+            return $preferredMinimum;
+        }
+
+        // If we can't give everyone 4, distribute evenly but ensure at least 4
+        // This means we might show fewer categories to maintain the minimum
+        $perCategory = intdiv($totalLimit, $categoryCount);
+
+        if ($perCategory >= $preferredMinimum) {
+            return $perCategory;
+        }
+
+        // If even distribution gives less than 4 per category,
+        // calculate how many categories we can show with 4 products each
+        return $preferredMinimum;
+    }
+
     /**
      * Get homepage featured products (all products section)
      * Optimized for 10M+ products using indexed queries and entity caching
@@ -415,13 +547,12 @@ class FrontendController extends Controller
     {
         $startTime = microtime(true);
 
-        // STEP 1: Get featured product IDs only (fast indexed query - O(log n))
+        // STEP 1: Get active product IDs (all active products, not just featured)
         $productIds = DB::table('products')
             ->select('id')
             ->where('status', 'active')
-            ->where('is_featured', 1)
             ->orderBy('id', 'DESC')
-            ->limit(20) // Limit to 20 featured products for homepage
+            ->limit(12) // Limit to 12 products for "All Products" section on homepage
             ->pluck('id')
             ->toArray();
 

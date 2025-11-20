@@ -17,8 +17,8 @@ class PostgresMassiveProductSeeder extends Seeder
      */
 
     // Product generation settings
-    protected int $totalProducts = 100;                      // Total number of products to generate
-    protected ?int $variantProductTarget = 95;               // Target number of products with variants (null = use ratio)
+    protected int $totalProducts = 100_000;                      // Total number of products to generate
+    protected ?int $variantProductTarget = 950_000;               // Target number of products with variants (null = use ratio)
     protected float $variantProductRatio = 0.95;             // Ratio of variant products if target not set (0.95 = 95%)
     protected int $startProductIdIfEmpty = 1;                // Starting product ID when table is empty (set to 1 for fresh start)
     protected ?int $maxProductIdLimit = null;                // Maximum product ID limit (null = no limit)
@@ -1842,12 +1842,27 @@ class PostgresMassiveProductSeeder extends Seeder
         try {
             // Drop FKs from carts table that prevent UNLOGGED
             $this->dropConstraintSafely('carts', 'carts_product_id_foreign');
+            $this->dropConstraintSafely('carts', 'carts_variant_id_foreign');
 
             // Drop FKs from wishlists
             $this->dropConstraintSafely('wishlists', 'wishlists_product_id_foreign');
+            $this->dropConstraintSafely('wishlists', 'wishlists_variant_id_foreign');
 
             // Drop FKs from product_reviews (if table exists)
             $this->dropConstraintSafely('product_reviews', 'product_reviews_product_id_foreign');
+
+            // Drop FKs from product_discount table (prevents products from going UNLOGGED)
+            $this->dropConstraintSafely('product_discount', 'product_discount_product_id_foreign');
+
+            // Drop FKs from product_ratings_cache (prevents products from going UNLOGGED)
+            $this->dropConstraintSafely('product_ratings_cache', 'product_ratings_cache_product_id_foreign');
+
+            // Drop FKs from order_items (if exists)
+            $this->dropConstraintSafely('order_items', 'order_items_product_id_foreign');
+            $this->dropConstraintSafely('order_items', 'order_items_product_variant_id_foreign');
+
+            // Drop FKs from post_comments (if exists)
+            $this->dropConstraintSafely('post_comments', 'post_comments_product_id_foreign');
 
             $this->writeOutput('  ✓ Dropped foreign keys');
             $this->writeOutput('  ⚠ IMPORTANT: Foreign keys will be recreated after seeding');
@@ -1869,7 +1884,7 @@ class PostgresMassiveProductSeeder extends Seeder
             $successCount = 0;
             $failedCount = 0;
 
-            // Recreate carts FKs (only product_id exists)
+            // Recreate carts FKs
             try {
                 DB::statement('ALTER TABLE carts ADD CONSTRAINT carts_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
                 $successCount++;
@@ -1877,9 +1892,39 @@ class PostgresMassiveProductSeeder extends Seeder
                 $failedCount++;
             }
 
-            // Recreate wishlists FKs (only product_id exists)
+            try {
+                DB::statement('ALTER TABLE carts ADD CONSTRAINT carts_variant_id_foreign FOREIGN KEY (variant_id) REFERENCES product_variants(id) ON DELETE CASCADE NOT VALID');
+                $successCount++;
+            } catch (\Exception $e) {
+                $failedCount++;
+            }
+
+            // Recreate wishlists FKs
             try {
                 DB::statement('ALTER TABLE wishlists ADD CONSTRAINT wishlists_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
+                $successCount++;
+            } catch (\Exception $e) {
+                $failedCount++;
+            }
+
+            try {
+                DB::statement('ALTER TABLE wishlists ADD CONSTRAINT wishlists_variant_id_foreign FOREIGN KEY (variant_id) REFERENCES product_variants(id) ON DELETE CASCADE NOT VALID');
+                $successCount++;
+            } catch (\Exception $e) {
+                $failedCount++;
+            }
+
+            // Recreate product_discount FKs
+            try {
+                DB::statement('ALTER TABLE product_discount ADD CONSTRAINT product_discount_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
+                $successCount++;
+            } catch (\Exception $e) {
+                $failedCount++;
+            }
+
+            // Recreate product_ratings_cache FKs
+            try {
+                DB::statement('ALTER TABLE product_ratings_cache ADD CONSTRAINT product_ratings_cache_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
                 $successCount++;
             } catch (\Exception $e) {
                 $failedCount++;
@@ -1893,26 +1938,51 @@ class PostgresMassiveProductSeeder extends Seeder
                 $failedCount++;
             }
 
+            // Recreate order_items FKs (if exists)
+            try {
+                DB::statement('ALTER TABLE order_items ADD CONSTRAINT order_items_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL NOT VALID');
+                $successCount++;
+            } catch (\Exception $e) {
+                $failedCount++;
+            }
+
+            try {
+                DB::statement('ALTER TABLE order_items ADD CONSTRAINT order_items_product_variant_id_foreign FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL NOT VALID');
+                $successCount++;
+            } catch (\Exception $e) {
+                $failedCount++;
+            }
+
+            // Recreate post_comments FKs (if exists)
+            try {
+                DB::statement('ALTER TABLE post_comments ADD CONSTRAINT post_comments_product_id_foreign FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE NOT VALID');
+                $successCount++;
+            } catch (\Exception $e) {
+                $failedCount++;
+            }
+
             // Validate constraints asynchronously (doesn't block)
             if ($successCount > 0) {
                 $this->writeOutput('  Validating constraints...');
 
-                try {
-                    DB::statement('ALTER TABLE carts VALIDATE CONSTRAINT carts_product_id_foreign');
-                } catch (\Exception $e) {
-                    // Ignore validation errors
-                }
+                $constraintsToValidate = [
+                    'carts' => ['carts_product_id_foreign', 'carts_variant_id_foreign'],
+                    'wishlists' => ['wishlists_product_id_foreign', 'wishlists_variant_id_foreign'],
+                    'product_discount' => ['product_discount_product_id_foreign'],
+                    'product_ratings_cache' => ['product_ratings_cache_product_id_foreign'],
+                    'product_reviews' => ['product_reviews_product_id_foreign'],
+                    'order_items' => ['order_items_product_id_foreign', 'order_items_product_variant_id_foreign'],
+                    'post_comments' => ['post_comments_product_id_foreign'],
+                ];
 
-                try {
-                    DB::statement('ALTER TABLE wishlists VALIDATE CONSTRAINT wishlists_product_id_foreign');
-                } catch (\Exception $e) {
-                    // Ignore validation errors
-                }
-
-                try {
-                    DB::statement('ALTER TABLE product_reviews VALIDATE CONSTRAINT product_reviews_product_id_foreign');
-                } catch (\Exception $e) {
-                    // Ignore validation errors
+                foreach ($constraintsToValidate as $table => $constraints) {
+                    foreach ($constraints as $constraint) {
+                        try {
+                            DB::statement("ALTER TABLE {$table} VALIDATE CONSTRAINT {$constraint}");
+                        } catch (\Exception $e) {
+                            // Ignore validation errors
+                        }
+                    }
                 }
             }
 

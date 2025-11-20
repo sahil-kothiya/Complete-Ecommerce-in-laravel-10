@@ -251,12 +251,14 @@ class RedisCacheCommand extends Command
      */
     private function flushAll(): int
     {
-        if (!$this->option('confirm')) {
+        if ($this->option('confirm')) {
             $this->error('❌ This will DELETE ALL Redis data!');
             if (!$this->confirm('Are you ABSOLUTELY sure?')) {
                 $this->info('Cancelled.');
                 return 0;
             }
+        } else {
+            $this->warn('⚠️ Auto-confirm enabled: flushing Redis without prompt.');
         }
 
         $this->warn('Flushing entire Redis database...');
