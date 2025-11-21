@@ -184,6 +184,7 @@ return [
         Intervention\Image\ImageServiceProvider::class,
         App\Providers\ElasticsearchServiceProvider::class,
         App\Providers\ViewServiceProvider::class,
+        App\Providers\CacheWarmupServiceProvider::class,
     ],
 
     /*

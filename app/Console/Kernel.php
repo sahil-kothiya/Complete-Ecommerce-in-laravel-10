@@ -21,6 +21,7 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\ReindexProducts::class,
         \App\Console\Commands\MinifyAssets::class,
         \App\Console\Commands\OptimizeImages::class,
+        \App\Console\Commands\CacheWarmupCommand::class,
     ];
 
     /**
