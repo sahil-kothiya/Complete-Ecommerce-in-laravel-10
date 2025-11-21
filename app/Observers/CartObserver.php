@@ -3,7 +3,7 @@
 namespace App\Observers;
 
 use App\Models\Cart;
-use App\Services\RedisCacheManager;
+use App\Services\RedisCacheService;
 
 class CartObserver
 {
@@ -19,6 +19,6 @@ class CartObserver
 
     protected function clearUserCartCache(int|string $userId): void
     {
-        RedisCacheManager::forget('cart:user', $userId);
+        RedisCacheService::forget(RedisCacheService::makeKey('cart', 'user', $userId));
     }
 }

@@ -3,7 +3,7 @@
 namespace App\Observers;
 
 use App\Models\Wishlist;
-use App\Services\RedisCacheManager;
+use App\Services\RedisCacheService;
 
 class WishlistObserver
 {
@@ -29,6 +29,6 @@ class WishlistObserver
 
     protected function clearWishlistCache(int|string $userId): void
     {
-        RedisCacheManager::forget('wishlist:user', $userId);
+        RedisCacheService::forget(RedisCacheService::makeKey('wishlist', 'user', $userId));
     }
 }

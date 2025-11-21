@@ -3,13 +3,13 @@
 namespace App\Observers;
 
 use App\Models\Category;
-use App\Services\RedisCacheManager;
+use App\Services\RedisCacheService;
 
 class CategoryObserver
 {
     public function saved(Category $category): void
     {
-        RedisCacheManager::forget('page', 'home');
+        RedisCacheService::forget(RedisCacheService::makeKey('page', 'home'));
         $this->clearCategoryCache();
     }
 
@@ -30,6 +30,8 @@ class CategoryObserver
 
     protected function clearCategoryCache(): void
     {
-        RedisCacheManager::flushByPrefix(['category', 'categories', 'global']);
+        foreach (['category', 'categories', 'global'] as $prefix) {
+            RedisCacheService::forgetPattern("{$prefix}:*");
+        }
     }
 }

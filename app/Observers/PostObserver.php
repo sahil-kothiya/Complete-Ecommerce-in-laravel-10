@@ -3,14 +3,14 @@
 namespace App\Observers;
 
 use App\Models\Post;
-use App\Services\RedisCacheManager;
+use App\Services\RedisCacheService;
 
 class PostObserver
 {
     public function saved(Post $post): void
     {
-        RedisCacheManager::forget('page', 'home');
-        RedisCacheManager::put('post', $post->id, $post->toArray());
+        RedisCacheService::forget(RedisCacheService::makeKey('page', 'home'));
+        RedisCacheService::put(RedisCacheService::makeKey('post', $post->id), $post->toArray());
     }
 
     public function deleted(Post $post): void
@@ -25,11 +25,11 @@ class PostObserver
 
     public function restored(Post $post): void
     {
-        RedisCacheManager::put('post', $post->id, $post->toArray());
+        RedisCacheService::put(RedisCacheService::makeKey('post', $post->id), $post->toArray());
     }
 
     protected function clearPostCache(int|string $id): void
     {
-        RedisCacheManager::forget('post', $id);
+        RedisCacheService::forget(RedisCacheService::makeKey('post', $id));
     }
 }

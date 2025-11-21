@@ -17,9 +17,9 @@ class PostgresMassiveProductSeeder extends Seeder
      */
 
     // Product generation settings
-    protected int $totalProducts = 100_000;                      // Total number of products to generate
-    protected ?int $variantProductTarget = 950_000;               // Target number of products with variants (null = use ratio)
-    protected float $variantProductRatio = 0.95;             // Ratio of variant products if target not set (0.95 = 95%)
+    protected int $totalProducts = 1_00_000;                      // Total number of products to generate
+    protected ?int $variantProductTarget = 95000;               // Target number of products with variants (null = use ratio)
+    protected float $variantProductRatio = 0.98;             // Ratio of variant products if target not set (0.95 = 95%)
     protected int $startProductIdIfEmpty = 1;                // Starting product ID when table is empty (set to 1 for fresh start)
     protected ?int $maxProductIdLimit = null;                // Maximum product ID limit (null = no limit)
 
@@ -1778,12 +1778,14 @@ class PostgresMassiveProductSeeder extends Seeder
         $this->writeOutput('🔧 Converting tables to UNLOGGED mode...');
 
         // Must convert in order: child tables first, then parent tables
+        // Include recent_products to allow products table to be UNLOGGED
         $tables = [
             'variant_images',
             'product_variant_option_assignments',
             'product_variant_type_selections',
             'product_variants',
             'product_images',
+            'recent_products',  // Must be UNLOGGED before products
             'products',
         ];
 
@@ -1813,6 +1815,7 @@ class PostgresMassiveProductSeeder extends Seeder
         // Must restore in reverse order: parent tables first, then child tables
         $tables = [
             'products',
+            'recent_products',
             'product_images',
             'product_variants',
             'product_variant_type_selections',

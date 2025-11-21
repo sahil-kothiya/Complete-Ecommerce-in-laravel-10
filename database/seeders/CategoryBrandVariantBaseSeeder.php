@@ -1,24 +1,167 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Database\Seeders;
 
+use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
+/**
+ * Category, Brand, and Variant Base Seeder
+ *
+ * Seeds all foundational data for the e-commerce system:
+ * - Filters (price, brand, rating, discount, recently-viewed)
+ * - Categories (with SEO data and codes)
+ * - Brands
+ * - Brand-Category mappings
+ * - Filter-Category mappings
+ * - Variant Types (color, size, storage, RAM)
+ * - Variant Options
+ *
+ * This seeder is idempotent and can be run multiple times safely.
+ *
+ * @package Database\Seeders
+ */
 class CategoryBrandVariantBaseSeeder extends Seeder
 {
+    /**
+     * Tracking unique codes for categories/brands
+     *
+     * @var array<string>
+     */
+    private array $existingCodes = [];
+
+    /**
+     * Run the database seeds.
+     *
+     * @return void
+     * @throws Throwable
+     */
     public function run(): void
     {
-        $this->seedCategories();
-        $this->seedBrands();
-        $this->seedVariantTypes();
-        $this->seedVariantOptions();
+        $this->command->newLine();
+        $this->command->info('╔════════════════════════════════════════════════════════════════╗');
+        $this->command->info('║     CATEGORY, BRAND & VARIANT BASE SEEDER                     ║');
+        $this->command->info('╚════════════════════════════════════════════════════════════════╝');
+        $this->command->newLine();
+
+        DB::beginTransaction();
+
+        try {
+            $this->seedFilters();
+            $this->seedCategories();
+            $this->seedBrands();
+            $this->assignBrandsToCategories();
+            $this->assignFiltersToCategories();
+            $this->seedVariantTypes();
+            $this->seedVariantOptions();
+
+            DB::commit();
+
+            $this->command->newLine();
+            $this->command->info('╔════════════════════════════════════════════════════════════════╗');
+            $this->command->info('║            ✅ ALL BASE DATA SEEDED SUCCESSFULLY                ║');
+            $this->command->info('╚════════════════════════════════════════════════════════════════╝');
+            $this->command->newLine();
+        } catch (Throwable $e) {
+            DB::rollBack();
+
+            $this->command->error('❌ Failed to seed base data: ' . $e->getMessage());
+            Log::error('Base data seeding failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Seed filter records
+     *
+     * Inserts predefined filters used for product filtering:
+     * - Price Range
+     * - Brands
+     * - Customer Ratings
+     * - Discounts
+     * - Recently Viewed
+     *
+     * @return void
+     */
+    protected function seedFilters(): void
+    {
+        DB::statement('TRUNCATE TABLE filters RESTART IDENTITY CASCADE');
+
+        $this->command->info('🔄 Seeding filters...');
+
+        DB::table('filters')->insert([
+            [
+                'id' => 1,
+                'name' => 'price',
+                'title' => 'Price Range',
+                'description' => 'Filter products by price range',
+                'status' => 'active',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 2,
+                'name' => 'brand',
+                'title' => 'Brands',
+                'description' => 'Filter products by brand',
+                'status' => 'active',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 3,
+                'name' => 'rating',
+                'title' => 'Customer Ratings',
+                'description' => 'Filter products by customer ratings',
+                'status' => 'active',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 4,
+                'name' => 'discount',
+                'title' => 'Discounts',
+                'description' => 'Filter products by discount percentage',
+                'status' => 'active',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 5,
+                'name' => 'recently-viewed',
+                'title' => 'Recently Viewed',
+                'description' => 'Recently Viewed',
+                'status' => 'active',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::statement("SELECT setval(pg_get_serial_sequence('filters', 'id'), COALESCE((SELECT MAX(id) FROM filters), 0))");
+
+        $this->command->info('✅ Filters seeded successfully!');
     }
 
     protected function seedCategories(): void
     {
-        DB::table('categories')->insert([
+        // Truncate categories and related pivot tables
+        DB::statement('TRUNCATE TABLE brand_category RESTART IDENTITY CASCADE');
+        DB::statement('TRUNCATE TABLE category_filter RESTART IDENTITY CASCADE');
+        DB::statement('TRUNCATE TABLE categories RESTART IDENTITY CASCADE');
+
+        $this->command->info('🔄 Seeding categories...');
+
+        $categories = [
+            // Parent categories
             [
                 'id' => 1,
                 'title' => "Men's Fashion",
@@ -34,9 +177,8 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => true,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Men's Fashion - Latest Trends & Styles",
+                'seo_description' => "Shop the latest men's fashion trends including shirts, jeans, jackets, and shoes. Quality clothing and accessories for modern men.",
             ],
             [
                 'id' => 2,
@@ -53,9 +195,8 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => true,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Women's Fashion - Trendy Clothing & Accessories",
+                'seo_description' => "Discover stylish women's fashion including dresses, tops, jeans, and shoes. Latest trends and timeless classics for every occasion.",
             ],
             [
                 'id' => 3,
@@ -72,9 +213,8 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Kids Fashion - Comfortable & Stylish Children's Clothing",
+                'seo_description' => "Explore our kids fashion collection with clothing for boys and girls. Comfortable, durable, and stylish options for all ages.",
             ],
             [
                 'id' => 4,
@@ -91,16 +231,15 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => true,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => 'Electronics - Latest Gadgets & Technology',
+                'seo_description' => 'Shop the latest electronics including smartphones, laptops, headphones, and more. Top brands and cutting-edge technology.',
             ],
             // Men's subcategories
             [
                 'id' => 5,
                 'title' => "Men's Shirts",
                 'slug' => 'mens-shirts',
-                'summary' => null,
+                'summary' => "Casual and formal shirts for men",
                 'photo' => null,
                 'parent_id' => 1,
                 'level' => 1,
@@ -111,15 +250,14 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Men's Shirts - Casual & Formal Styles",
+                'seo_description' => "Browse our collection of men's shirts including formal dress shirts, casual button-downs, and trendy styles.",
             ],
             [
                 'id' => 6,
                 'title' => "Men's Jeans",
                 'slug' => 'mens-jeans',
-                'summary' => null,
+                'summary' => "Denim jeans for every style",
                 'photo' => null,
                 'parent_id' => 1,
                 'level' => 1,
@@ -130,15 +268,14 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Men's Jeans - Slim Fit, Straight & Relaxed",
+                'seo_description' => "Shop premium quality men's jeans in various fits and washes. Find the perfect pair for any occasion.",
             ],
             [
                 'id' => 7,
                 'title' => "Men's Jackets",
                 'slug' => 'mens-jackets',
-                'summary' => null,
+                'summary' => "Jackets and outerwear for men",
                 'photo' => null,
                 'parent_id' => 1,
                 'level' => 1,
@@ -149,15 +286,14 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Men's Jackets - Leather, Denim & Winter Coats",
+                'seo_description' => "Stay warm and stylish with our men's jacket collection. From leather to denim and winter coats.",
             ],
             [
                 'id' => 8,
                 'title' => "Men's Shoes",
                 'slug' => 'mens-shoes',
-                'summary' => null,
+                'summary' => "Footwear for every occasion",
                 'photo' => null,
                 'parent_id' => 1,
                 'level' => 1,
@@ -168,16 +304,15 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Men's Shoes - Sneakers, Formal & Casual Footwear",
+                'seo_description' => "Discover comfortable and stylish men's shoes including sneakers, formal dress shoes, and casual footwear.",
             ],
             // Women's subcategories
             [
                 'id' => 9,
                 'title' => "Women's Dresses",
                 'slug' => 'womens-dresses',
-                'summary' => null,
+                'summary' => "Elegant dresses for women",
                 'photo' => null,
                 'parent_id' => 2,
                 'level' => 1,
@@ -188,15 +323,14 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Women's Dresses - Casual, Formal & Party Wear",
+                'seo_description' => "Explore beautiful women's dresses for every occasion. From casual sundresses to elegant evening gowns.",
             ],
             [
                 'id' => 10,
                 'title' => "Women's Tops",
                 'slug' => 'womens-tops',
-                'summary' => null,
+                'summary' => "Tops and blouses for women",
                 'photo' => null,
                 'parent_id' => 2,
                 'level' => 1,
@@ -207,15 +341,14 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Women's Tops - Blouses, T-Shirts & Tank Tops",
+                'seo_description' => "Shop trendy women's tops including blouses, t-shirts, tank tops, and more in various styles and colors.",
             ],
             [
                 'id' => 11,
                 'title' => "Women's Jeans",
                 'slug' => 'womens-jeans',
-                'summary' => null,
+                'summary' => "Stylish denim for women",
                 'photo' => null,
                 'parent_id' => 2,
                 'level' => 1,
@@ -226,15 +359,14 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Women's Jeans - Skinny, Boyfriend & High-Waisted",
+                'seo_description' => "Find the perfect fit with our women's jeans collection. Skinny, boyfriend, high-waisted, and more styles.",
             ],
             [
                 'id' => 12,
                 'title' => "Women's Shoes",
                 'slug' => 'womens-shoes',
-                'summary' => null,
+                'summary' => "Footwear collection for women",
                 'photo' => null,
                 'parent_id' => 2,
                 'level' => 1,
@@ -245,16 +377,15 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Women's Shoes - Heels, Flats, Boots & Sneakers",
+                'seo_description' => "Step out in style with our women's shoe collection. Heels, flats, boots, sneakers, and sandals.",
             ],
             // Kids subcategories
             [
                 'id' => 13,
                 'title' => 'Boys Clothing',
                 'slug' => 'boys-clothing',
-                'summary' => null,
+                'summary' => "Clothing for boys of all ages",
                 'photo' => null,
                 'parent_id' => 3,
                 'level' => 1,
@@ -265,15 +396,14 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Boys Clothing - Shirts, Pants, Shorts & More",
+                'seo_description' => "Shop comfortable and stylish clothing for boys including shirts, pants, shorts, and jackets.",
             ],
             [
                 'id' => 14,
                 'title' => 'Girls Clothing',
                 'slug' => 'girls-clothing',
-                'summary' => null,
+                'summary' => "Clothing for girls of all ages",
                 'photo' => null,
                 'parent_id' => 3,
                 'level' => 1,
@@ -284,15 +414,14 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Girls Clothing - Dresses, Tops, Bottoms & More",
+                'seo_description' => "Discover cute and comfortable girls clothing including dresses, tops, skirts, and pants.",
             ],
             [
                 'id' => 15,
                 'title' => 'Kids Shoes',
                 'slug' => 'kids-shoes',
-                'summary' => null,
+                'summary' => "Comfortable footwear for kids",
                 'photo' => null,
                 'parent_id' => 3,
                 'level' => 1,
@@ -303,15 +432,14 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Kids Shoes - Sneakers, Sandals & School Shoes",
+                'seo_description' => "Quality footwear for kids including sneakers, sandals, school shoes, and boots.",
             ],
             [
                 'id' => 16,
                 'title' => 'Kids Accessories',
                 'slug' => 'kids-accessories',
-                'summary' => null,
+                'summary' => "Accessories for kids",
                 'photo' => null,
                 'parent_id' => 3,
                 'level' => 1,
@@ -322,16 +450,15 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => "Kids Accessories - Bags, Hats, Belts & More",
+                'seo_description' => "Complete your kids outfits with our accessories collection including bags, hats, belts, and more.",
             ],
             // Electronics subcategories
             [
                 'id' => 17,
                 'title' => 'Smartphones',
                 'slug' => 'smartphones',
-                'summary' => null,
+                'summary' => "Latest smartphones and mobile phones",
                 'photo' => null,
                 'parent_id' => 4,
                 'level' => 1,
@@ -342,15 +469,14 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => 'Smartphones - Latest Models & Best Deals',
+                'seo_description' => 'Shop the latest smartphones from top brands including Apple, Samsung, and more.',
             ],
             [
                 'id' => 18,
                 'title' => 'Laptops',
                 'slug' => 'laptops',
-                'summary' => null,
+                'summary' => "Powerful laptops for work and gaming",
                 'photo' => null,
                 'parent_id' => 4,
                 'level' => 1,
@@ -361,15 +487,14 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
-                'added_by' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'seo_title' => 'Laptops - For Work, Gaming & Students',
+                'seo_description' => 'Browse our laptop collection featuring the latest models for work, gaming, and education.',
             ],
             [
                 'id' => 19,
                 'title' => 'Headphones',
                 'slug' => 'headphones',
-                'summary' => null,
+                'summary' => "Headphones and earphones",
                 'photo' => null,
                 'parent_id' => 4,
                 'level' => 1,
@@ -380,17 +505,51 @@ class CategoryBrandVariantBaseSeeder extends Seeder
                 'products_count' => 0,
                 'status' => 'active',
                 'is_featured' => false,
+                'seo_title' => 'Headphones - Wireless, Noise Cancelling & Gaming',
+                'seo_description' => 'High-quality headphones and earphones including wireless, noise-cancelling, and gaming headsets.',
+            ],
+        ];
+
+        foreach ($categories as $category) {
+            $code = $this->generateUniqueCode($category['title']);
+
+            DB::table('categories')->insert([
+                'id' => $category['id'],
+                'title' => $category['title'],
+                'slug' => $category['slug'],
+                'code' => $code,
+                'summary' => $category['summary'],
+                'photo' => $category['photo'],
+                'parent_id' => $category['parent_id'],
+                'level' => $category['level'],
+                'path' => $category['path'],
+                'sort_order' => $category['sort_order'],
+                'has_children' => $category['has_children'],
+                'children_count' => $category['children_count'],
+                'products_count' => $category['products_count'],
+                'status' => $category['status'],
+                'is_featured' => $category['is_featured'],
+                'seo_title' => $category['seo_title'],
+                'seo_description' => $category['seo_description'],
+                'code_generated_at' => Carbon::now(),
+                'code_locked' => false,
                 'added_by' => null,
                 'created_at' => now(),
                 'updated_at' => now(),
-            ],
-        ]);
+            ]);
+        }
 
         DB::statement("SELECT setval(pg_get_serial_sequence('categories', 'id'), COALESCE((SELECT MAX(id) FROM categories), 0))");
+
+        $this->command->info('✅ Categories seeded successfully!');
     }
 
     protected function seedBrands(): void
     {
+        DB::statement('TRUNCATE TABLE brands RESTART IDENTITY CASCADE');
+
+        $this->command->info('🔄 Seeding brands...');
+
         $brands = [
             ['title' => 'Nike', 'slug' => 'nike', 'status' => 'active'],
             ['title' => 'Adidas', 'slug' => 'adidas', 'status' => 'active'],
@@ -415,10 +574,116 @@ class CategoryBrandVariantBaseSeeder extends Seeder
         }
 
         DB::statement("SELECT setval(pg_get_serial_sequence('brands', 'id'), COALESCE((SELECT MAX(id) FROM brands), 0))");
+
+        $this->command->info('✅ Brands seeded successfully!');
+    }
+
+    protected function assignBrandsToCategories(): void
+    {
+        $this->command->info('🔄 Assigning brands to categories...');
+
+        // Get all brands
+        $allBrands = DB::table('brands')->pluck('id')->toArray();
+
+        // Get all parent categories (level = 0)
+        $parentCategories = DB::table('categories')->where('parent_id', null)->pluck('id')->toArray();
+
+        // Get all child categories (level > 0)
+        $childCategories = DB::table('categories')->whereNotNull('parent_id')->get();
+
+        // Assign ALL brands to parent categories
+        foreach ($parentCategories as $parentId) {
+            foreach ($allBrands as $brandId) {
+                DB::table('brand_category')->insert([
+                    'brand_id' => $brandId,
+                    'category_id' => $parentId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
+
+        $this->command->info('✅ All brands assigned to parent categories');
+
+        // Assign random brands to child categories (2-5 brands per child)
+        foreach ($childCategories as $child) {
+            $numBrands = rand(2, 5);
+            $randomBrands = array_rand(array_flip($allBrands), $numBrands);
+
+            if (!is_array($randomBrands)) {
+                $randomBrands = [$randomBrands];
+            }
+
+            foreach ($randomBrands as $brandId) {
+                DB::table('brand_category')->insert([
+                    'brand_id' => $brandId,
+                    'category_id' => $child->id,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
+
+        $this->command->info('✅ Random brands assigned to child categories');
+    }
+
+    protected function assignFiltersToCategories(): void
+    {
+        $this->command->info('🔄 Assigning filters to categories...');
+
+        // Get all filters
+        $allFilters = DB::table('filters')->pluck('id')->toArray();
+
+        // Get all parent categories (level = 0)
+        $parentCategories = DB::table('categories')->where('parent_id', null)->pluck('id')->toArray();
+
+        // Get all child categories (level > 0)
+        $childCategories = DB::table('categories')->whereNotNull('parent_id')->get();
+
+        // Assign ALL filters to parent categories
+        foreach ($parentCategories as $parentId) {
+            foreach ($allFilters as $filterId) {
+                DB::table('category_filter')->insert([
+                    'filter_id' => $filterId,
+                    'category_id' => $parentId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
+
+        $this->command->info('✅ All filters assigned to parent categories');
+
+        // Assign random filters to child categories (2-4 filters per child)
+        foreach ($childCategories as $child) {
+            $numFilters = rand(2, 4);
+            $randomFilters = array_rand(array_flip($allFilters), $numFilters);
+
+            if (!is_array($randomFilters)) {
+                $randomFilters = [$randomFilters];
+            }
+
+            foreach ($randomFilters as $filterId) {
+                DB::table('category_filter')->insert([
+                    'filter_id' => $filterId,
+                    'category_id' => $child->id,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
+
+        $this->command->info('✅ Random filters assigned to child categories');
     }
 
     protected function seedVariantTypes(): void
     {
+        DB::statement('TRUNCATE TABLE product_variant_type_selections RESTART IDENTITY CASCADE');
+        DB::statement('TRUNCATE TABLE product_variant_options RESTART IDENTITY CASCADE');
+        DB::statement('TRUNCATE TABLE product_variant_types RESTART IDENTITY CASCADE');
+
+        $this->command->info('🔄 Seeding variant types...');
+
         DB::table('product_variant_types')->insert([
             [
                 'id' => 1,
@@ -459,10 +724,15 @@ class CategoryBrandVariantBaseSeeder extends Seeder
         ]);
 
         DB::statement("SELECT setval(pg_get_serial_sequence('product_variant_types', 'id'), COALESCE((SELECT MAX(id) FROM product_variant_types), 0))");
+
+        $this->command->info('✅ Variant types seeded successfully!');
     }
 
     protected function seedVariantOptions(): void
     {
+        // Note: product_variant_options already truncated in seedVariantTypes()
+        $this->command->info('🔄 Seeding variant options...');
+
         $options = [
             // Colors (type_id = 1)
             ['variant_type_id' => 1, 'value' => 'red', 'display_value' => 'Red', 'hex_color' => '#FF0000', 'sort_order' => 1, 'status' => 'active'],
@@ -510,5 +780,26 @@ class CategoryBrandVariantBaseSeeder extends Seeder
         }
 
         DB::statement("SELECT setval(pg_get_serial_sequence('product_variant_options', 'id'), COALESCE((SELECT MAX(id) FROM product_variant_options), 0))");
+
+        $this->command->info('✅ Variant options seeded successfully!');
+    }
+
+    protected function generateUniqueCode(string $title): string
+    {
+        $baseCode = strtoupper(preg_replace('/[^a-zA-Z0-9]/', '', substr($title, 0, 3)));
+
+        if (strlen($baseCode) < 3) {
+            $baseCode = str_pad($baseCode, 3, 'X');
+        }
+
+        $code = $baseCode;
+        $counter = 1;
+        while (in_array($code, $this->existingCodes)) {
+            $code = substr($baseCode, 0, 2) . $counter;
+            $counter++;
+        }
+
+        $this->existingCodes[] = $code;
+        return $code;
     }
 }

@@ -3,7 +3,7 @@
 namespace App\Observers;
 
 use App\Models\Settings;
-use App\Services\RedisCacheManager;
+use App\Services\RedisCacheService;
 
 class SettingsObserver
 {
@@ -19,6 +19,8 @@ class SettingsObserver
 
     protected function clearSettingsCache(): void
     {
-        RedisCacheManager::flushByPrefix(['settings', 'homepage']);
+        foreach (['settings', 'homepage'] as $prefix) {
+            RedisCacheService::forgetPattern("{$prefix}:*");
+        }
     }
 }

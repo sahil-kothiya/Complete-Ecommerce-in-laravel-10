@@ -3,37 +3,39 @@
 namespace App\Observers;
 
 use App\Models\Banner;
-use App\Services\RedisCacheManager;
+use App\Services\RedisCacheService;
 
 class BannerObserver
 {
     public function saved(Banner $banner): void
     {
-        RedisCacheManager::put('banner', $banner->id, $banner->toArray());
-        RedisCacheManager::forget('page', 'home');
+        RedisCacheService::put(RedisCacheService::makeKey('banner', $banner->id), $banner->toArray());
+        RedisCacheService::forget(RedisCacheService::makeKey('page', 'home'));
         $this->clearBannerCache();
     }
 
     public function deleted(Banner $banner): void
     {
-        RedisCacheManager::forget('banner', $banner->id);
+        RedisCacheService::forget(RedisCacheService::makeKey('banner', $banner->id));
         $this->clearBannerCache();
     }
 
     public function forceDeleted(Banner $banner): void
     {
-        RedisCacheManager::forget('banner', $banner->id);
+        RedisCacheService::forget(RedisCacheService::makeKey('banner', $banner->id));
         $this->clearBannerCache();
     }
 
     public function restored(Banner $banner): void
     {
-        RedisCacheManager::put('banner', $banner->id, $banner->toArray());
+        RedisCacheService::put(RedisCacheService::makeKey('banner', $banner->id), $banner->toArray());
         $this->clearBannerCache();
     }
 
     protected function clearBannerCache(): void
     {
-        RedisCacheManager::flushByPrefix(['banner', 'global', 'banners']);
+        foreach (['banner', 'global', 'banners'] as $prefix) {
+            RedisCacheService::forgetPattern("{$prefix}:*");
+        }
     }
 }

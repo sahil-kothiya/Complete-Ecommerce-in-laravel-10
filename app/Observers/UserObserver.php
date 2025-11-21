@@ -3,7 +3,7 @@
 namespace App\Observers;
 
 use App\User;
-use App\Services\RedisCacheManager;
+use App\Services\RedisCacheService;
 
 class UserObserver
 {
@@ -29,6 +29,6 @@ class UserObserver
 
     protected function clearUserProfileCache(int|string $userId): void
     {
-        RedisCacheManager::forget('user:profile', $userId);
+        RedisCacheService::forget(RedisCacheService::makeKey('user', 'profile', $userId));
     }
 }

@@ -3,7 +3,7 @@
 namespace App\Observers;
 
 use App\Models\ProductReview;
-use App\Services\RedisCacheManager;
+use App\Services\RedisCacheService;
 
 class ReviewObserver
 {
@@ -29,6 +29,6 @@ class ReviewObserver
 
     protected function clearRatingCache(int|string $productId): void
     {
-        RedisCacheManager::forget('product:ratings', $productId);
+        RedisCacheService::forget(RedisCacheService::makeKey('product', 'ratings', $productId));
     }
 }

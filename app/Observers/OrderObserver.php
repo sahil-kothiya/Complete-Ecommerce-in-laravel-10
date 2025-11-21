@@ -3,7 +3,7 @@
 namespace App\Observers;
 
 use App\Models\Order;
-use App\Services\RedisCacheManager;
+use App\Services\RedisCacheService;
 
 class OrderObserver
 {
@@ -14,6 +14,8 @@ class OrderObserver
 
     protected function clearOrderCache(): void
     {
-        RedisCacheManager::flushByPrefix(['order', 'orders', 'admin']);
+        foreach (['order', 'orders', 'admin'] as $prefix) {
+            RedisCacheService::forgetPattern("{$prefix}:*");
+        }
     }
 }
