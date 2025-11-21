@@ -97,8 +97,10 @@ return [
     | be other applications utilizing the same cache. So, we'll specify a
     | value to get prefixed to all our keys so we can avoid collisions.
     |
+    | Clean structure: ecommerce:v1:{component}:{details}
+    |
     */
 
-    'prefix' => env('CACHE_PREFIX', Str::slug(env('APP_NAME', 'laravel'), '_').'_cache'),
+    'prefix' => env('CACHE_PREFIX', 'ecommerce:v1'),
 
 ];

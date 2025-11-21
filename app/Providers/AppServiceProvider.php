@@ -329,7 +329,8 @@ class AppServiceProvider extends ServiceProvider
                     ->orderBy('title', 'ASC')
                     ->get();
 
-                RedisCacheService::put('component:categories', $categories, $ttl['categories'] ?? 43200);
+                $key = RedisCacheService::makeKey('component', 'categories');
+                RedisCacheService::put($key, $categories, $ttl['categories'] ?? 43200);
                 Log::info('Cache warmed: categories', ['count' => $categories->count()]);
             } catch (\Throwable $e) {
                 Log::warning('Failed to warm categories cache: ' . $e->getMessage());
@@ -345,7 +346,8 @@ class AppServiceProvider extends ServiceProvider
                     ->limit(20)
                     ->get();
 
-                RedisCacheService::put('component:featured', $featured, $ttl['featured_products'] ?? 3600);
+                $key = RedisCacheService::makeKey('component', 'featured');
+                RedisCacheService::put($key, $featured, $ttl['featured_products'] ?? 3600);
                 Log::info('Cache warmed: featured products', ['count' => $featured->count()]);
             } catch (\Throwable $e) {
                 Log::warning('Failed to warm featured products cache: ' . $e->getMessage());

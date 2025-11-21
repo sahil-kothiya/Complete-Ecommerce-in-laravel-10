@@ -96,43 +96,43 @@ return [
     */
     'prefixes' => [
         // Full Pages
-        'homepage' => 'page:home',
-        'category_page' => 'page:category',
-        'product_page' => 'page:product',
+        'homepage' => 'pages:home',
+        'category_page' => 'pages:category',
+        'product_page' => 'pages:product',
 
         // Entities
-        'product' => 'product',
-        'product_card' => 'product:card',
-        'product_light' => 'product:light',
-        'product_variant' => 'variant',
-        'category' => 'category',
-        'banner' => 'banner',
-        'brand' => 'brand',
+        'product' => 'entities:product',
+        'product_card' => 'entities:product:card',
+        'product_light' => 'entities:product:light',
+        'product_variant' => 'entities:variant',
+        'category' => 'entities:category',
+        'banner' => 'entities:banner',
+        'brand' => 'entities:brand',
 
         // Collections
-        'collection' => 'collection',
-        'featured' => 'featured',
-        'latest' => 'latest',
-        'bestseller' => 'bestseller',
+        'collection' => 'collections',
+        'featured' => 'collections:featured',
+        'latest' => 'collections:latest',
+        'bestseller' => 'collections:bestseller',
 
         // Components
-        'component' => 'component',
-        'menu' => 'menu',
-        'footer' => 'footer',
+        'component' => 'components',
+        'menu' => 'components:menu',
+        'footer' => 'components:footer',
 
-        // Search & Filters
+        // Search & Filters (aligned with SmartFilterCacheService)
         'search' => 'search',
-        'filter' => 'filter',
+        'filter' => 'filters',
 
         // User Data
-        'user' => 'user',
-        'wishlist' => 'wishlist',
-        'cart' => 'cart',
+        'user' => 'users',
+        'wishlist' => 'users:wishlist',
+        'cart' => 'users:cart',
 
         // Metadata
         'meta' => 'meta',
-        'lock' => 'lock',
-        'version' => 'version',
+        'lock' => 'locks',
+        'version' => 'meta:version',
 
         // Settings
         'settings' => 'settings',

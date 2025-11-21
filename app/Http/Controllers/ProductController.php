@@ -471,7 +471,7 @@ class ProductController extends Controller
                 VariantImage::create([
                     'product_variant_id' => $variant->id,
                     'image_path' => $path,
-                    
+
                     'is_primary' => $imgIndex === 0,
                     'sort_order' => $imgIndex + 1,
                 ]);
@@ -479,7 +479,8 @@ class ProductController extends Controller
         }
 
         if (class_exists('App\Helpers\RedisHelper')) {
-            RedisCacheService::put("product_variants:{$product->id}", null, 0);
+            $key = RedisCacheService::makeKey('product_variant', $product->id);
+            RedisCacheService::put($key, null, 0);
         }
     }
 
@@ -1377,7 +1378,7 @@ class ProductController extends Controller
             $created = VariantImage::create([
                 'product_variant_id' => $variant->id,
                 'image_path' => $imageData['path'],
-                
+
                 'is_primary' => $imageData['is_primary'],
                 'sort_order' => $imageData['sort_order'],
             ]);
@@ -1391,7 +1392,8 @@ class ProductController extends Controller
         }
 
         if (class_exists('App\Helpers\RedisHelper')) {
-            RedisCacheService::put("product_variants:{$variant->product_id}", null, 0);
+            $key = RedisCacheService::makeKey('product_variant', $variant->product_id);
+            RedisCacheService::put($key, null, 0);
             Log::info('Redis cache invalidated', ['cache_key' => "product_variants:{$variant->product_id}"]);
         }
 

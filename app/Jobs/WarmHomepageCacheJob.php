@@ -91,8 +91,8 @@ class WarmHomepageCacheJob implements ShouldQueue
             }
 
             // 6. Mark cache as warmed
-            RedisCacheService::put('meta:cache:warmed', true, 3600);
-            RedisCacheService::put('meta:cache:warmed_at', now()->toIso8601String(), 3600);
+            RedisCacheService::put(RedisCacheService::makeKey('meta', 'cache:warmed'), true, 3600);
+            RedisCacheService::put(RedisCacheService::makeKey('meta', 'cache:warmed_at'), now()->toIso8601String(), 3600);
 
             $duration = round((microtime(true) - $startTime) * 1000, 2);
 
@@ -277,7 +277,7 @@ class WarmHomepageCacheJob implements ShouldQueue
                 $transformedProducts[] = $transformed;
 
                 // Cache individual product card
-                $cardKey = "product:card:{$product->id}";
+                $cardKey = RedisCacheService::makeKey('product_card', $product->id);
                 RedisCacheService::put($cardKey, $transformed, $ttl['product_card'] ?? 7200);
 
                 // Log the cache PUT operation
@@ -368,7 +368,7 @@ class WarmHomepageCacheJob implements ShouldQueue
 
                     // Cache individual product card
                     RedisCacheService::put(
-                        "product:card:{$product->id}",
+                        RedisCacheService::makeKey('product_card', $product->id),
                         $transformed,
                         $ttl['product_card'] ?? 7200
                     );

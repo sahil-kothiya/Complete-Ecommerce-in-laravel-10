@@ -574,7 +574,8 @@ class FrontendController extends Controller
                     $product->setRelation('images', $imageCollections->get($product->id, collect()));
                     $card = $this->transformProductForDisplay($product);
                     if ($useCache) {
-                        RedisCacheService::put("product:card:{$product->id}", $card, 7200);
+                        $cacheKey = RedisCacheService::makeKey('product_card', $product->id);
+                        RedisCacheService::put($cacheKey, $card, 7200);
                     }
                     $productCards[$product->id] = $card;
                 }
@@ -697,7 +698,8 @@ class FrontendController extends Controller
                 $product->setRelation('images', $imageCollections->get($product->id, collect()));
                 $card = $this->transformProductForDisplay($product);
                 if ($useCache) {
-                    RedisCacheService::put("product:card:{$product->id}", $card, 7200); // 2 hour TTL
+                    $cacheKey = RedisCacheService::makeKey('product_card', $product->id);
+                    RedisCacheService::put($cacheKey, $card, 7200); // 2 hour TTL
                 }
                 $productCards[$product->id] = $card;
             }
@@ -733,7 +735,7 @@ class FrontendController extends Controller
             return [];
         }
 
-        $keys = array_map(fn($id) => "product:card:{$id}", $productIds);
+        $keys = array_map(fn($id) => RedisCacheService::makeKey('product_card', $id), $productIds);
         $cachedData = RedisCacheService::mget($keys);
 
         $products = [];

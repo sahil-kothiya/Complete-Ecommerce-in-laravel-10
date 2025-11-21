@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Log;
 class CacheWarmupService
 {
     private const HOMEPAGE_CACHE_PREFIX = 'cache:homepage:';
-    private const PRODUCT_CARD_PREFIX = 'product:card:';
+    // No longer needed - use RedisCacheService::makeKey('product_card', $id)
 
     /**
      * Warm up all homepage related caches
@@ -185,7 +185,7 @@ class CacheWarmupService
                 $productCards[] = $card;
 
                 // Cache individual product card
-                $cardKey = self::PRODUCT_CARD_PREFIX . $product->id;
+                $cardKey = RedisCacheService::makeKey('product_card', $product->id);
                 RedisCacheService::put($cardKey, $card, 7200);
             }
 
@@ -425,7 +425,7 @@ class CacheWarmupService
 
                     if ($product) {
                         $card = $this->transformToProductCard($product);
-                        $key = self::PRODUCT_CARD_PREFIX . $productId;
+                        $key = RedisCacheService::makeKey('product_card', $productId);
                         RedisCacheService::put($key, $card, 7200);
                         $results['cached_count']++;
                     }

@@ -65,11 +65,13 @@ class RedisCacheService
 
     /**
      * Generate cache key with prefix
+     * Format: ecommerce:v1:{category}:{identifiers}
      */
     public static function makeKey(string $type, ...$identifiers): string
     {
+        $namespace = 'ecommerce:v1';
         $prefix = self::config("prefixes.{$type}", $type);
-        $key = $prefix;
+        $key = "{$namespace}:{$prefix}";
 
         foreach ($identifiers as $id) {
             $key .= ':' . $id;
