@@ -337,7 +337,9 @@ class ElasticsearchService
             $productIds = [];
 
             foreach ($products as $product) {
-                if (!isset($product['id']) || $product['status'] !== 'active') {
+                // Skip if ID is missing or if status is explicitly set to something other than active
+                // If status is missing, we assume the caller has already filtered for active products
+                if (!isset($product['id']) || (isset($product['status']) && $product['status'] !== 'active')) {
                     continue;
                 }
 

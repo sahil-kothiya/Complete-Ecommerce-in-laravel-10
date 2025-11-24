@@ -68,7 +68,15 @@ class ManageProductIndexes extends Command
         $bar = $this->output->createProgressBar(5);
         $bar->start();
 
-        $stats = $this->indexService->buildAllIndexes();
+        // Pass the progress bar and console output to the service
+        $stats = $this->indexService->buildAllIndexes(function($step, $message, $progress = null) use ($bar) {
+            $bar->advance();
+            $this->newLine();
+            $this->line($message);
+            if ($progress !== null) {
+                $this->line("  Progress: {$progress}");
+            }
+        });
 
         $bar->finish();
         $this->newLine(2);

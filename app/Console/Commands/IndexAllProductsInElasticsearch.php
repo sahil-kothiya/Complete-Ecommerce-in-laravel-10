@@ -11,12 +11,12 @@ use Illuminate\Support\Facades\DB;
  * Bulk index products in Elasticsearch for fast searching
  *
  * Usage:
- * php artisan elasticsearch:index-all --chunk=1000
+ * php artisan elasticsearch:index-all --chunk=5000
  */
 class IndexAllProductsInElasticsearch extends Command
 {
     protected $signature = 'elasticsearch:index-all
-                            {--chunk=1000 : Number of products to process at once}
+                            {--chunk=5000 : Number of products to process at once}
                             {--force : Force re-indexing even if index exists}';
 
     protected $description = 'Bulk index all active products in Elasticsearch';
@@ -69,12 +69,12 @@ class IndexAllProductsInElasticsearch extends Command
         $failed = 0;
         $startTime = microtime(true);
 
-        // Process in chunks for memory efficiency
+        // Process in chunks for memory efficiency using chunkById for better performance with large datasets
         Product::where('status', 'active')
             ->select([
                 'id', 'title', 'slug', 'summary', 'description',
                 'cat_id', 'child_cat_id', 'brand_id',
-                'base_price', 'base_discount', 'stock',
+                'base_price', 'base_discount', 'has_variants',
                 'is_featured', 'status', 'created_at'
             ])
             ->with([
@@ -82,10 +82,16 @@ class IndexAllProductsInElasticsearch extends Command
                 'sub_cat_info:id,title',
                 'brand:id,title'
             ])
-            ->chunk($chunkSize, function ($products) use (&$indexed, &$failed, $bar) {
+            ->withSum('variants', 'stock')
+            ->chunkById($chunkSize, function ($products) use (&$indexed, &$failed, $bar) {
                 $batch = [];
 
                 foreach ($products as $product) {
+                    // Calculate total stock from variants_sum_stock or use 0 if no variants
+                    $totalStock = $product->has_variants
+                        ? ($product->variants_sum_stock ?? 0)
+                        : 0;
+
                     $batch[] = [
                         'id' => $product->id,
                         'title' => $product->title,
@@ -99,8 +105,9 @@ class IndexAllProductsInElasticsearch extends Command
                         'brand_id' => $product->brand_id,
                         'price' => (float) $product->base_price,
                         'discount' => (float) $product->base_discount,
-                        'stock' => (int) $product->stock,
+                        'stock' => (int) $totalStock,
                         'is_featured' => (bool) $product->is_featured,
+                        'status' => $product->status,
                         'created_at' => $product->created_at?->toIso8601String(),
                     ];
 
@@ -117,6 +124,10 @@ class IndexAllProductsInElasticsearch extends Command
                         $failed += count($batch);
                     }
                 }
+
+                // Clear memory
+                unset($batch);
+                unset($products);
             });
 
         $bar->finish();

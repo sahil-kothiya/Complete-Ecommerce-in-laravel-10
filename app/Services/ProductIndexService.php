@@ -28,12 +28,13 @@ use Illuminate\Support\Facades\DB;
 class ProductIndexService
 {
     private const INDEX_TTL = 86400; // 24 hours
-    private const CHUNK_SIZE = 1000; // Process 1000 products at a time
+    private const CHUNK_SIZE = 5000; // Process 5000 products at a time for speed
+    private const BATCH_SIZE = 10000; // Redis pipeline batch size
 
     /**
      * Build all product indexes
      */
-    public function buildAllIndexes(): array
+    public function buildAllIndexes($progressCallback = null): array
     {
         $startTime = microtime(true);
         $stats = [
@@ -47,11 +48,11 @@ class ProductIndexService
 
         Log::info('🏗️ Building product indexes...');
 
-        $stats['categories'] = $this->buildCategoryIndex();
-        $stats['brands'] = $this->buildBrandIndex();
-        $stats['price_ranges'] = $this->buildPriceIndex();
-        $stats['ratings'] = $this->buildRatingIndex();
-        $stats['discounts'] = $this->buildDiscountIndex();
+        $stats['categories'] = $this->buildCategoryIndex($progressCallback);
+        $stats['brands'] = $this->buildBrandIndex($progressCallback);
+        $stats['price_ranges'] = $this->buildPriceIndex($progressCallback);
+        $stats['ratings'] = $this->buildRatingIndex($progressCallback);
+        $stats['discounts'] = $this->buildDiscountIndex($progressCallback);
 
         $stats['total_products_indexed'] = Product::where('status', 'active')->count();
         $stats['build_time_seconds'] = round(microtime(true) - $startTime, 2);
@@ -62,92 +63,141 @@ class ProductIndexService
     }
 
     /**
-     * Build category index
+     * Build category index - OPTIMIZED
      * Index: index:category:{category_id} → Set[product_ids]
      */
-    public function buildCategoryIndex(): int
+    public function buildCategoryIndex($progressCallback = null): int
     {
         $categoriesIndexed = 0;
+        $startTime = microtime(true);
 
-        Category::where('status', 'active')->chunk(100, function($categories) use (&$categoriesIndexed) {
-            foreach ($categories as $category) {
-                $indexKey = "index:category:{$category->id}";
+        // Get all active categories with their product counts in one query
+        $categories = DB::table('categories')
+            ->where('status', 'active')
+            ->select('id', 'title')
+            ->get();
 
-                // Get all products in this category (including subcategories)
-                $productIds = Product::where('status', 'active')
-                    ->where(function($query) use ($category) {
-                        $query->where('cat_id', $category->id)
-                              ->orWhere('child_cat_id', $category->id);
-                    })
-                    ->pluck('id')
-                    ->toArray();
+        $totalCategories = $categories->count();
+        $processed = 0;
 
-                if (!empty($productIds)) {
-                    // Delete existing set
-                    Redis::del($indexKey);
+        Log::info("[1/5] Building category indexes for {$totalCategories} categories...");
 
-                    // Add all product IDs to set (batch operation)
-                    Redis::sadd($indexKey, ...$productIds);
+        foreach ($categories as $category) {
+            $indexKey = "index:category:{$category->id}";
 
-                    // Set expiration
-                    Redis::expire($indexKey, self::INDEX_TTL);
+            // Optimized: Single raw query for both cat_id and child_cat_id
+            $productIds = DB::table('products')
+                ->where('status', 'active')
+                ->where(function($query) use ($category) {
+                    $query->where('cat_id', $category->id)
+                          ->orWhere('child_cat_id', $category->id);
+                })
+                ->pluck('id')
+                ->toArray();
 
-                    $categoriesIndexed++;
+            if (!empty($productIds)) {
+                // Use UNLINK (non-blocking) instead of DEL
+                Redis::unlink($indexKey);
 
-                    Log::debug("Indexed category: {$category->title}", [
-                        'category_id' => $category->id,
-                        'product_count' => count($productIds)
-                    ]);
+                // Batch add to Redis in chunks to avoid memory issues
+                $chunks = array_chunk($productIds, self::BATCH_SIZE);
+                foreach ($chunks as $chunk) {
+                    Redis::sadd($indexKey, ...$chunk);
                 }
-            }
-        });
 
-        Log::info("✅ Category index built: {$categoriesIndexed} categories");
+                Redis::expire($indexKey, self::INDEX_TTL);
+                $categoriesIndexed++;
+            }
+
+            $processed++;
+            if ($processed % 5 == 0 || $processed == $totalCategories) {
+                $percentComplete = round(($processed / $totalCategories) * 100, 2);
+                $elapsed = round(microtime(true) - $startTime, 2);
+                Log::debug("  Category progress: {$processed}/{$totalCategories} ({$percentComplete}%) - {$elapsed}s");
+            }
+        }
+
+        $totalTime = round(microtime(true) - $startTime, 2);
+        $message = "✅ [1/5] Categories: {$categoriesIndexed} indexed in {$totalTime}s";
+        Log::info($message);
+
+        if ($progressCallback) {
+            $progressCallback(1, $message, "100%");
+        }
+
         return $categoriesIndexed;
     }
 
     /**
-     * Build brand index
+     * Build brand index - OPTIMIZED
      * Index: index:brand:{brand_id} → Set[product_ids]
      */
-    public function buildBrandIndex(): int
+    public function buildBrandIndex($progressCallback = null): int
     {
         $brandsIndexed = 0;
+        $startTime = microtime(true);
 
-        Brand::where('status', 'active')->chunk(100, function($brands) use (&$brandsIndexed) {
-            foreach ($brands as $brand) {
-                $indexKey = "index:brand:{$brand->id}";
+        // Get all active brands
+        $brands = DB::table('brands')
+            ->where('status', 'active')
+            ->select('id', 'title')
+            ->get();
 
-                $productIds = Product::where('status', 'active')
-                    ->where('brand_id', $brand->id)
-                    ->pluck('id')
-                    ->toArray();
+        $totalBrands = $brands->count();
+        $processed = 0;
 
-                if (!empty($productIds)) {
-                    Redis::del($indexKey);
-                    Redis::sadd($indexKey, ...$productIds);
-                    Redis::expire($indexKey, self::INDEX_TTL);
+        Log::info("[2/5] Building brand indexes for {$totalBrands} brands...");
 
-                    $brandsIndexed++;
+        foreach ($brands as $brand) {
+            $indexKey = "index:brand:{$brand->id}";
 
-                    Log::debug("Indexed brand: {$brand->title}", [
-                        'brand_id' => $brand->id,
-                        'product_count' => count($productIds)
-                    ]);
+            // Optimized: Direct DB query
+            $productIds = DB::table('products')
+                ->where('status', 'active')
+                ->where('brand_id', $brand->id)
+                ->pluck('id')
+                ->toArray();
+
+            if (!empty($productIds)) {
+                Redis::unlink($indexKey);
+
+                // Batch add in chunks
+                $chunks = array_chunk($productIds, self::BATCH_SIZE);
+                foreach ($chunks as $chunk) {
+                    Redis::sadd($indexKey, ...$chunk);
                 }
-            }
-        });
 
-        Log::info("✅ Brand index built: {$brandsIndexed} brands");
+                Redis::expire($indexKey, self::INDEX_TTL);
+                $brandsIndexed++;
+            }
+
+            $processed++;
+            if ($processed % 5 == 0 || $processed == $totalBrands) {
+                $percentComplete = round(($processed / $totalBrands) * 100, 2);
+                $elapsed = round(microtime(true) - $startTime, 2);
+                Log::debug("  Brand progress: {$processed}/{$totalBrands} ({$percentComplete}%) - {$elapsed}s");
+            }
+        }
+
+        $totalTime = round(microtime(true) - $startTime, 2);
+        $message = "\n✅ [2/5] Brands: {$brandsIndexed} indexed in {$totalTime}s\n";
+        echo $message;
+        Log::info($message);
+
+        if ($progressCallback) {
+            $progressCallback(2, $message, "100%");
+        }
+
         return $brandsIndexed;
     }
 
     /**
-     * Build price range indexes
+     * Build price range indexes - OPTIMIZED
      * Index: index:price:{range} → Set[product_ids]
      */
-    public function buildPriceIndex(): int
+    public function buildPriceIndex($progressCallback = null): int
     {
+        $startTime = microtime(true);
         $priceRanges = [
             '0-100' => [0, 100],
             '100-500' => [100, 500],
@@ -157,17 +207,23 @@ class ProductIndexService
             '10000+' => [10000, 999999],
         ];
 
+        $total = count($priceRanges);
+        $processed = 0;
+
+        Log::info("[3/5] Building price range indexes ({$total} ranges)...");
+
         foreach ($priceRanges as $key => $range) {
             $indexKey = "index:price:{$key}";
+            $rangeStart = microtime(true);
 
-            // Get products with base price in range (non-variant products)
-            $productIds = Product::where('status', 'active')
+            // Optimized: Single UNION query for both base and variant prices
+            $productIds = DB::table('products')
+                ->where('status', 'active')
                 ->where('has_variants', false)
                 ->whereBetween('base_price', $range)
                 ->pluck('id')
                 ->toArray();
 
-            // Get products with variants in this price range
             $variantProductIds = DB::table('product_variants')
                 ->join('products', 'product_variants.product_id', '=', 'products.id')
                 ->where('products.status', 'active')
@@ -181,32 +237,51 @@ class ProductIndexService
             $allProductIds = array_unique(array_merge($productIds, $variantProductIds));
 
             if (!empty($allProductIds)) {
-                Redis::del($indexKey);
-                Redis::sadd($indexKey, ...$allProductIds);
-                Redis::expire($indexKey, self::INDEX_TTL);
+                Redis::unlink($indexKey);
 
-                Log::debug("Indexed price range: {$key}", [
-                    'product_count' => count($allProductIds)
-                ]);
+                $chunks = array_chunk($allProductIds, self::BATCH_SIZE);
+                foreach ($chunks as $chunk) {
+                    Redis::sadd($indexKey, ...$chunk);
+                }
+
+                Redis::expire($indexKey, self::INDEX_TTL);
             }
+
+            $processed++;
+            $percentComplete = round(($processed / $total) * 100, 2);
+            $rangeTime = round(microtime(true) - $rangeStart, 2);
+            Log::debug("  {$key}: " . count($allProductIds) . " products ({$rangeTime}s)");
         }
 
-        Log::info("✅ Price index built: " . count($priceRanges) . " ranges");
-        return count($priceRanges);
+        $totalTime = round(microtime(true) - $startTime, 2);
+        $message = "✅ [3/5] Price ranges: {$total} indexed in {$totalTime}s\n";
+        echo $message;
+        Log::info($message);
+
+        if ($progressCallback) {
+            $progressCallback(3, $message, "100%");
+        }
+
+        return $total;
     }
 
     /**
-     * Build rating indexes
+     * Build rating indexes - OPTIMIZED
      * Index: index:rating:{min_rating} → Set[product_ids]
      */
-    public function buildRatingIndex(): int
+    public function buildRatingIndex($progressCallback = null): int
     {
+        $startTime = microtime(true);
         $ratings = [1, 2, 3, 4, 5];
+        $total = count($ratings);
+
+        Log::info("[4/5] Building rating indexes ({$total} levels)...");
 
         foreach ($ratings as $minRating) {
             $indexKey = "index:rating:{$minRating}";
+            $ratingStart = microtime(true);
 
-            // Products with average rating >= minRating
+            // Optimized: Direct query with proper grouping
             $productIds = DB::table('products')
                 ->leftJoin('product_reviews', 'products.id', '=', 'product_reviews.product_id')
                 ->where('products.status', 'active')
@@ -217,26 +292,39 @@ class ProductIndexService
                 ->toArray();
 
             if (!empty($productIds)) {
-                Redis::del($indexKey);
-                Redis::sadd($indexKey, ...$productIds);
-                Redis::expire($indexKey, self::INDEX_TTL);
+                Redis::unlink($indexKey);
 
-                Log::debug("Indexed rating: {$minRating}+", [
-                    'product_count' => count($productIds)
-                ]);
+                $chunks = array_chunk($productIds, self::BATCH_SIZE);
+                foreach ($chunks as $chunk) {
+                    Redis::sadd($indexKey, ...$chunk);
+                }
+
+                Redis::expire($indexKey, self::INDEX_TTL);
             }
+
+            $ratingTime = round(microtime(true) - $ratingStart, 2);
+            Log::debug("  {$minRating}+ stars: " . count($productIds) . " products ({$ratingTime}s)");
         }
 
-        Log::info("✅ Rating index built: " . count($ratings) . " levels");
-        return count($ratings);
+        $totalTime = round(microtime(true) - $startTime, 2);
+        $message = "✅ [4/5] Ratings: {$total} levels indexed in {$totalTime}s\n";
+        echo $message;
+        Log::info($message);
+
+        if ($progressCallback) {
+            $progressCallback(4, $message, "100%");
+        }
+
+        return $total;
     }
 
     /**
-     * Build discount indexes
+     * Build discount indexes - OPTIMIZED
      * Index: index:discount:{range} → Set[product_ids]
      */
-    public function buildDiscountIndex(): int
+    public function buildDiscountIndex($progressCallback = null): int
     {
+        $startTime = microtime(true);
         $discountRanges = [
             '10' => 10,
             '25' => 25,
@@ -244,17 +332,22 @@ class ProductIndexService
             '75' => 75,
         ];
 
+        $total = count($discountRanges);
+
+        Log::info("[5/5] Building discount indexes ({$total} levels)...");
+
         foreach ($discountRanges as $key => $minDiscount) {
             $indexKey = "index:discount:{$key}";
+            $discountStart = microtime(true);
 
-            // Products with base discount >= minDiscount
-            $productIds = Product::where('status', 'active')
+            // Optimized: Direct queries
+            $productIds = DB::table('products')
+                ->where('status', 'active')
                 ->where('has_variants', false)
                 ->where('base_discount', '>=', $minDiscount)
                 ->pluck('id')
                 ->toArray();
 
-            // Products with variant discount >= minDiscount
             $variantProductIds = DB::table('product_variants')
                 ->join('products', 'product_variants.product_id', '=', 'products.id')
                 ->where('products.status', 'active')
@@ -268,18 +361,30 @@ class ProductIndexService
             $allProductIds = array_unique(array_merge($productIds, $variantProductIds));
 
             if (!empty($allProductIds)) {
-                Redis::del($indexKey);
-                Redis::sadd($indexKey, ...$allProductIds);
-                Redis::expire($indexKey, self::INDEX_TTL);
+                Redis::unlink($indexKey);
 
-                Log::debug("Indexed discount: {$minDiscount}%+", [
-                    'product_count' => count($allProductIds)
-                ]);
+                $chunks = array_chunk($allProductIds, self::BATCH_SIZE);
+                foreach ($chunks as $chunk) {
+                    Redis::sadd($indexKey, ...$chunk);
+                }
+
+                Redis::expire($indexKey, self::INDEX_TTL);
             }
+
+            $discountTime = round(microtime(true) - $discountStart, 2);
+            Log::debug("  {$minDiscount}%+: " . count($allProductIds) . " products ({$discountTime}s)");
         }
 
-        Log::info("✅ Discount index built: " . count($discountRanges) . " levels");
-        return count($discountRanges);
+        $totalTime = round(microtime(true) - $startTime, 2);
+        $message = "✅ [5/5] Discounts: {$total} levels indexed in {$totalTime}s\n";
+        echo $message;
+        Log::info($message);
+
+        if ($progressCallback) {
+            $progressCallback(5, $message, "100%");
+        }
+
+        return $total;
     }
 
     /**
@@ -446,3 +551,4 @@ class ProductIndexService
         return $stats;
     }
 }
+

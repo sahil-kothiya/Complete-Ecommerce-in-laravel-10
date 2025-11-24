@@ -28,7 +28,7 @@
 
 ```powershell
 # Navigate to Elasticsearch directory
-cd C:\elasticsearch-9.0.2\bin
+cd D:\elasticsearch-9.0.2\bin
 
 # Start Elasticsearch
 .\elasticsearch.bat
@@ -429,7 +429,7 @@ app(\App\Services\ElasticsearchService::class)->getIndexStats()
 
 ```powershell
 # 1. Start Elasticsearch
-cd C:\elasticsearch-9.0.2\bin; .\elasticsearch.bat
+cd D:\elasticsearch-9.0.2\bin; .\elasticsearch.bat
 
 # 2. Index products (new terminal)
 php artisan elasticsearch:index-all --chunk=2000

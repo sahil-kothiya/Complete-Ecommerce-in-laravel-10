@@ -2845,7 +2845,10 @@ class FrontendController extends Controller
 
     public function productSubCat(Request $request, $encryptedPath)
     {
+        $startTime = microtime(true);
+
         try {
+            // Decode category path
             $slugPath = UrlEncryptor::decodePath($encryptedPath);
             $segments = explode('/', trim($slugPath, '/'));
             $currentCategory = Category::whereNull('parent_id')
@@ -2863,71 +2866,78 @@ class FrontendController extends Controller
             }
 
             $descendantIds = $this->getDescendantIds($currentCategory);
-            $cacheKey = 'product_count_' . md5(serialize([
-                'category' => $currentCategory->id,
-                'descendant_ids' => $descendantIds,
-                'filters' => $request->except(['page', '_token'])
-            ]));
 
-            $productQuery = Product::with([
-                'images' => fn($q) => $q->select(['id','image_path','product_id','is_primary','sort_order'])
-                    ->orderByDesc('is_primary')->orderBy('sort_order')->take(3),
-                'cat_info' => fn($q) => $q->select(['id', 'title']),
-                'sub_cat_info' => fn($q) => $q->select(['id', 'title']),
-                'variants' => fn($q) => $q->where('status', 'active')
-                    ->select(['id', 'product_id', 'price', 'discount', 'stock'])
-                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'product_variant_id', 'is_primary'])->where('is_primary', true)])
-            ])
-                ->where('status', 'active')
-                ->where(function ($query) use ($descendantIds) {
-                    $query->whereIn('cat_id', $descendantIds)
-                        ->orWhereIn('child_cat_id', $descendantIds);
-                });
-
-            $this->applyFiltersToQuery($productQuery, $request);
-
+            // Build filters array for hybrid service
+            $filters = $this->buildFiltersArray($request, $descendantIds);
+            $page = $request->input('page', 1);
             $perPage = $request->input('show', 12);
-            $products = $productQuery->paginate($perPage);
-            // Removed deprecated setPath call (encrypted path)
-            $products->appends($request->except(['page', '_token']));
 
-            $totalProducts = RedisCacheService::remember($cacheKey, self::CACHE_TTL, function () use ($productQuery) {
-                return $productQuery->count();
-            });
+            // Generate cache key
+            $cacheKey = 'filter_page_' . md5(serialize($filters) . "_{$page}_{$perPage}");
 
-            $maxPrice = RedisCacheService::remember($cacheKey . '_max_price', self::CACHE_TTL, function () use ($descendantIds) {
-                return Product::where('status', 'active')
-                    ->where(function ($query) use ($descendantIds) {
-                        $query->whereIn('cat_id', $descendantIds)
-                            ->orWhereIn('child_cat_id', $descendantIds);
-                    })
-                    ->selectRaw('
-                        MAX(
-                            CASE
-                                WHEN has_variants = false THEN
-                                    CASE
-                                        WHEN base_discount > 0 THEN
-                                            base_price - (base_price * base_discount / 100)
-                                        ELSE
-                                            base_price
-                                    END
-                                ELSE
-                                    (SELECT MAX(
-                                        CASE
-                                            WHEN discount > 0 THEN
-                                                price - (price * discount / 100)
-                                            ELSE
-                                                price
-                                        END
-                                    ) FROM product_variants pv WHERE pv.product_id = products.id AND pv.status = \'active\')
-                            END
-                        ) as max_price
-                    ')
-                    ->value('max_price') ?? 1000;
-            });
+            // Try cache first (5-50ms response)
+            $cachedData = RedisCacheService::get($cacheKey);
+            if ($cachedData && isset($cachedData['products'])) {
+                $products = $cachedData['products'];
+                $total = $cachedData['total'];
+                $method = 'cache_hit';
+
+                Log::info('Filter Page: CACHE HIT', [
+                    'time_ms' => round((microtime(true) - $startTime) * 1000, 2),
+                    'filters' => $filters,
+                    'page' => $page
+                ]);
+            } else {
+                // Use Hybrid Filter Service for optimal performance
+                $hybridService = app(\App\Services\HybridFilterService::class);
+                $result = $hybridService->getFilteredProducts($filters, $page, $perPage);
+
+                $products = $result['products'];
+                $total = $result['total'];
+                $method = $result['method'];
+
+                // Convert collection to paginator for compatibility
+                $products = new \Illuminate\Pagination\LengthAwarePaginator(
+                    $products,
+                    $total,
+                    $perPage,
+                    $page,
+                    ['path' => $request->url(), 'query' => $request->query()]
+                );
+
+                // Cache the results
+                RedisCacheService::put($cacheKey, [
+                    'products' => $products,
+                    'total' => $total
+                ], 1800); // 30 min cache
+
+                Log::info('Filter Page: ' . strtoupper(str_replace('_', ' ', $method)), [
+                    'time_ms' => $result['time_ms'],
+                    'filters' => $filters,
+                    'page' => $page,
+                    'total' => $total
+                ]);
+            }
+
+            // Calculate max price (cached)
+            $maxPrice = RedisCacheService::remember(
+                'max_price_cat_' . $currentCategory->id,
+                3600,
+                function () use ($descendantIds) {
+                    return Product::where('status', 'active')
+                        ->where(function ($query) use ($descendantIds) {
+                            $query->whereIn('cat_id', $descendantIds)
+                                ->orWhereIn('child_cat_id', $descendantIds);
+                        })
+                        ->max('base_price') ?? 1000;
+                }
+            );
 
             $recentProducts = $this->recentProductService->getRecentProducts();
 
+            $elapsedTime = round((microtime(true) - $startTime) * 1000, 2);
+
+            // AJAX response
             if ($request->wantsJson()) {
                 $html = view('frontend.pages.product-grid-html', compact('products'))->render();
                 return response()->json([
@@ -2937,9 +2947,10 @@ class FrontendController extends Controller
                     'total' => $products->total(),
                     'current_page' => $products->currentPage(),
                     'last_page' => $products->lastPage(),
-                    'debug_info' => [
-                        'total_before_pagination' => $totalProducts,
-                        'applied_filters' => $request->except(['page', '_token']),
+                    'performance' => [
+                        'time_ms' => $elapsedTime,
+                        'method' => $method,
+                        'from_cache' => isset($cachedData)
                     ]
                 ]);
             }
@@ -2960,6 +2971,8 @@ class FrontendController extends Controller
                 'recent_products' => $recentProducts,
                 'applied_filters' => $appliedFilters,
                 'has_filters' => $this->hasFiltersApplied($request),
+                'performance_time_ms' => $elapsedTime,
+                'filter_method' => $method
             ]);
         } catch (\Exception $e) {
             Log::error('Product category filter error: ' . $e->getMessage(), [
@@ -2977,6 +2990,64 @@ class FrontendController extends Controller
 
             abort(500, 'Error loading category: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Build filters array for HybridFilterService
+     */
+    private function buildFiltersArray(Request $request, array $descendantIds): array
+    {
+        $filters = [
+            'category_ids' => $descendantIds,
+        ];
+
+        // Text search
+        if ($request->filled('search') || $request->filled('query')) {
+            $filters['search'] = $request->input('search') ?? $request->input('query');
+        }
+
+        // Brands
+        $brands = $request->input('brand', []);
+        if (!empty($brands)) {
+            if (is_string($brands)) {
+                $brands = array_filter(explode(',', $brands));
+            }
+            if (!empty($brands)) {
+                $brandIds = Brand::whereIn('slug', $brands)
+                    ->where('status', 'active')
+                    ->pluck('id')
+                    ->toArray();
+                if (!empty($brandIds)) {
+                    $filters['brands'] = $brandIds;
+                }
+            }
+        }
+
+        // Price range
+        if ($request->filled('price_range')) {
+            $filters['price_range'] = $request->input('price_range');
+        }
+
+        // Minimum rating
+        if ($request->filled('min_rating')) {
+            $minRatings = $request->input('min_rating', []);
+            if (is_array($minRatings) && !empty($minRatings)) {
+                $filters['min_rating'] = min(array_map('intval', $minRatings));
+            }
+        }
+
+        // Minimum discount
+        if ($request->filled('min_discount')) {
+            $minDiscounts = $request->input('min_discount', []);
+            if (is_array($minDiscounts) && !empty($minDiscounts)) {
+                $filters['min_discount'] = min(array_map('intval', $minDiscounts));
+            }
+        }
+
+        // Sorting
+        $filters['sortBy'] = $request->input('sortBy', 'latest');
+
+        return $filters;
     }
 
     /**

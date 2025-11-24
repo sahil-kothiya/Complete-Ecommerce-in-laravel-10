@@ -20,7 +20,7 @@
 
 ```powershell
 # Open new PowerShell window
-cd C:\elasticsearch-9.0.2\bin
+cd D:\elasticsearch-9.0.2\bin
 .\elasticsearch.bat
 
 # Keep this window open!
