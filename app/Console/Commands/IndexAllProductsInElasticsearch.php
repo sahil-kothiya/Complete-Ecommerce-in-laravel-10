@@ -75,7 +75,7 @@ class IndexAllProductsInElasticsearch extends Command
                 'id', 'title', 'slug', 'summary', 'description',
                 'cat_id', 'child_cat_id', 'brand_id',
                 'base_price', 'base_discount', 'has_variants',
-                'is_featured', 'status', 'created_at'
+                'is_featured', 'status', 'created_at', 'updated_at', 'condition'
             ])
             ->with([
                 'cat_info:id,title',
@@ -98,17 +98,17 @@ class IndexAllProductsInElasticsearch extends Command
                         'slug' => $product->slug,
                         'summary' => $product->summary ?? '',
                         'description' => strip_tags($product->description ?? ''),
-                        'category' => $product->cat_info->title ?? '',
-                        'category_id' => $product->cat_id,
-                        'sub_category' => $product->sub_cat_info->title ?? '',
-                        'brand' => $product->brand->title ?? '',
+                        'cat_id' => $product->cat_id,
+                        'child_cat_id' => $product->child_cat_id,
                         'brand_id' => $product->brand_id,
                         'price' => (float) $product->base_price,
                         'discount' => (float) $product->base_discount,
                         'stock' => (int) $totalStock,
                         'is_featured' => (bool) $product->is_featured,
                         'status' => $product->status,
-                        'created_at' => $product->created_at?->toIso8601String(),
+                        'condition' => $product->condition,
+                        'created_at' => $product->created_at?->format('Y-m-d H:i:s'),
+                        'updated_at' => $product->updated_at?->format('Y-m-d H:i:s'),
                     ];
 
                     $bar->advance();

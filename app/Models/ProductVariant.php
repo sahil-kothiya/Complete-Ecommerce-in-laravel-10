@@ -12,6 +12,9 @@ class ProductVariant extends Model
 
     protected $table = 'product_variants';
 
+    // Ensure parent product is updated when variant changes (triggers ProductObserver)
+    protected $touches = ['product'];
+
     protected $fillable = [
         'product_id',
         'sku',

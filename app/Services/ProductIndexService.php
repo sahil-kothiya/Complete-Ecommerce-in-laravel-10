@@ -85,26 +85,28 @@ class ProductIndexService
         foreach ($categories as $category) {
             $indexKey = "index:category:{$category->id}";
 
-            // Optimized: Single raw query for both cat_id and child_cat_id
-            $productIds = DB::table('products')
+            // Use UNLINK (non-blocking) instead of DEL
+            Redis::unlink($indexKey);
+            $hasProducts = false;
+
+            // Optimized: Chunked query to avoid memory issues
+            DB::table('products')
                 ->where('status', 'active')
                 ->where(function($query) use ($category) {
                     $query->where('cat_id', $category->id)
                           ->orWhere('child_cat_id', $category->id);
                 })
-                ->pluck('id')
-                ->toArray();
+                ->select('id')
+                ->orderBy('id')
+                ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$hasProducts) {
+                    $ids = $products->pluck('id')->toArray();
+                    if (!empty($ids)) {
+                        Redis::sadd($indexKey, ...$ids);
+                        $hasProducts = true;
+                    }
+                });
 
-            if (!empty($productIds)) {
-                // Use UNLINK (non-blocking) instead of DEL
-                Redis::unlink($indexKey);
-
-                // Batch add to Redis in chunks to avoid memory issues
-                $chunks = array_chunk($productIds, self::BATCH_SIZE);
-                foreach ($chunks as $chunk) {
-                    Redis::sadd($indexKey, ...$chunk);
-                }
-
+            if ($hasProducts) {
                 Redis::expire($indexKey, self::INDEX_TTL);
                 $categoriesIndexed++;
             }
@@ -151,22 +153,24 @@ class ProductIndexService
         foreach ($brands as $brand) {
             $indexKey = "index:brand:{$brand->id}";
 
-            // Optimized: Direct DB query
-            $productIds = DB::table('products')
+            Redis::unlink($indexKey);
+            $hasProducts = false;
+
+            // Optimized: Chunked query
+            DB::table('products')
                 ->where('status', 'active')
                 ->where('brand_id', $brand->id)
-                ->pluck('id')
-                ->toArray();
+                ->select('id')
+                ->orderBy('id')
+                ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$hasProducts) {
+                    $ids = $products->pluck('id')->toArray();
+                    if (!empty($ids)) {
+                        Redis::sadd($indexKey, ...$ids);
+                        $hasProducts = true;
+                    }
+                });
 
-            if (!empty($productIds)) {
-                Redis::unlink($indexKey);
-
-                // Batch add in chunks
-                $chunks = array_chunk($productIds, self::BATCH_SIZE);
-                foreach ($chunks as $chunk) {
-                    Redis::sadd($indexKey, ...$chunk);
-                }
-
+            if ($hasProducts) {
                 Redis::expire($indexKey, self::INDEX_TTL);
                 $brandsIndexed++;
             }
@@ -216,41 +220,50 @@ class ProductIndexService
             $indexKey = "index:price:{$key}";
             $rangeStart = microtime(true);
 
-            // Optimized: Single UNION query for both base and variant prices
-            $productIds = DB::table('products')
+            Redis::unlink($indexKey);
+            $count = 0;
+
+            // Optimized: Chunked query for base products
+            DB::table('products')
                 ->where('status', 'active')
                 ->where('has_variants', false)
                 ->whereBetween('base_price', $range)
-                ->pluck('id')
-                ->toArray();
+                ->select('id')
+                ->orderBy('id')
+                ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$count) {
+                    $ids = $products->pluck('id')->toArray();
+                    if (!empty($ids)) {
+                        Redis::sadd($indexKey, ...$ids);
+                        $count += count($ids);
+                    }
+                });
 
-            $variantProductIds = DB::table('product_variants')
+            // Optimized: Chunked query for variants
+            DB::table('product_variants')
                 ->join('products', 'product_variants.product_id', '=', 'products.id')
                 ->where('products.status', 'active')
                 ->where('products.has_variants', true)
                 ->where('product_variants.status', 'active')
                 ->whereBetween('product_variants.price', $range)
+                ->select('products.id', 'product_variants.id as variant_id')
                 ->distinct()
-                ->pluck('products.id')
-                ->toArray();
+                ->orderBy('product_variants.id')
+                ->chunkById(self::BATCH_SIZE, function ($variants) use ($indexKey, &$count) {
+                    $ids = $variants->pluck('id')->toArray();
+                    if (!empty($ids)) {
+                        Redis::sadd($indexKey, ...$ids);
+                        $count += count($ids);
+                    }
+                }, 'product_variants.id', 'variant_id');
 
-            $allProductIds = array_unique(array_merge($productIds, $variantProductIds));
-
-            if (!empty($allProductIds)) {
-                Redis::unlink($indexKey);
-
-                $chunks = array_chunk($allProductIds, self::BATCH_SIZE);
-                foreach ($chunks as $chunk) {
-                    Redis::sadd($indexKey, ...$chunk);
-                }
-
+            if ($count > 0) {
                 Redis::expire($indexKey, self::INDEX_TTL);
             }
 
             $processed++;
             $percentComplete = round(($processed / $total) * 100, 2);
             $rangeTime = round(microtime(true) - $rangeStart, 2);
-            Log::debug("  {$key}: " . count($allProductIds) . " products ({$rangeTime}s)");
+            Log::debug("  {$key}: " . $count . " products ({$rangeTime}s)");
         }
 
         $totalTime = round(microtime(true) - $startTime, 2);
@@ -281,29 +294,33 @@ class ProductIndexService
             $indexKey = "index:rating:{$minRating}";
             $ratingStart = microtime(true);
 
-            // Optimized: Direct query with proper grouping
-            $productIds = DB::table('products')
+            Redis::unlink($indexKey);
+            $count = 0;
+
+            // Optimized: Chunked query with grouping
+            // Note: chunkById works with groupBy if we order by the grouped column
+            DB::table('products')
                 ->leftJoin('product_reviews', 'products.id', '=', 'product_reviews.product_id')
                 ->where('products.status', 'active')
                 ->where('product_reviews.status', 'active')
                 ->groupBy('products.id')
                 ->havingRaw('AVG(product_reviews.rate) >= ?', [$minRating])
-                ->pluck('products.id')
-                ->toArray();
+                ->select('products.id')
+                // chunkById will add orderBy products.id
+                ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$count) {
+                    $ids = $products->pluck('id')->toArray();
+                    if (!empty($ids)) {
+                        Redis::sadd($indexKey, ...$ids);
+                        $count += count($ids);
+                    }
+                });
 
-            if (!empty($productIds)) {
-                Redis::unlink($indexKey);
-
-                $chunks = array_chunk($productIds, self::BATCH_SIZE);
-                foreach ($chunks as $chunk) {
-                    Redis::sadd($indexKey, ...$chunk);
-                }
-
+            if ($count > 0) {
                 Redis::expire($indexKey, self::INDEX_TTL);
             }
 
             $ratingTime = round(microtime(true) - $ratingStart, 2);
-            Log::debug("  {$minRating}+ stars: " . count($productIds) . " products ({$ratingTime}s)");
+            Log::debug("  {$minRating}+ stars: " . $count . " products ({$ratingTime}s)");
         }
 
         $totalTime = round(microtime(true) - $startTime, 2);
@@ -340,39 +357,48 @@ class ProductIndexService
             $indexKey = "index:discount:{$key}";
             $discountStart = microtime(true);
 
-            // Optimized: Direct queries
-            $productIds = DB::table('products')
+            Redis::unlink($indexKey);
+            $count = 0;
+
+            // Optimized: Chunked query for base products
+            DB::table('products')
                 ->where('status', 'active')
                 ->where('has_variants', false)
                 ->where('base_discount', '>=', $minDiscount)
-                ->pluck('id')
-                ->toArray();
+                ->select('id')
+                ->orderBy('id')
+                ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$count) {
+                    $ids = $products->pluck('id')->toArray();
+                    if (!empty($ids)) {
+                        Redis::sadd($indexKey, ...$ids);
+                        $count += count($ids);
+                    }
+                });
 
-            $variantProductIds = DB::table('product_variants')
+            // Optimized: Chunked query for variants
+            DB::table('product_variants')
                 ->join('products', 'product_variants.product_id', '=', 'products.id')
                 ->where('products.status', 'active')
                 ->where('products.has_variants', true)
                 ->where('product_variants.status', 'active')
                 ->where('product_variants.discount', '>=', $minDiscount)
+                ->select('products.id', 'product_variants.id as variant_id')
                 ->distinct()
-                ->pluck('products.id')
-                ->toArray();
+                ->orderBy('product_variants.id')
+                ->chunkById(self::BATCH_SIZE, function ($variants) use ($indexKey, &$count) {
+                    $ids = $variants->pluck('id')->toArray();
+                    if (!empty($ids)) {
+                        Redis::sadd($indexKey, ...$ids);
+                        $count += count($ids);
+                    }
+                }, 'product_variants.id', 'variant_id');
 
-            $allProductIds = array_unique(array_merge($productIds, $variantProductIds));
-
-            if (!empty($allProductIds)) {
-                Redis::unlink($indexKey);
-
-                $chunks = array_chunk($allProductIds, self::BATCH_SIZE);
-                foreach ($chunks as $chunk) {
-                    Redis::sadd($indexKey, ...$chunk);
-                }
-
+            if ($count > 0) {
                 Redis::expire($indexKey, self::INDEX_TTL);
             }
 
             $discountTime = round(microtime(true) - $discountStart, 2);
-            Log::debug("  {$minDiscount}%+: " . count($allProductIds) . " products ({$discountTime}s)");
+            Log::debug("  {$minDiscount}%+: " . $count . " products ({$discountTime}s)");
         }
 
         $totalTime = round(microtime(true) - $startTime, 2);

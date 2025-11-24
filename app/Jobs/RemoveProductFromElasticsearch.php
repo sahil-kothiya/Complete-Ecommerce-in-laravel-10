@@ -44,26 +44,18 @@ class RemoveProductFromElasticsearch implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(Client $client): void
+    public function handle(ElasticsearchService $elasticsearch): void
     {
         try {
             Log::info("Removing product {$this->productId} from Elasticsearch");
 
-            $response = $client->delete([
-                'index' => config('elasticsearch.index'),
-                'id' => $this->productId
-            ]);
+            $success = $elasticsearch->removeProduct($this->productId);
 
-            if (isset($response['result']) && $response['result'] === 'deleted') {
+            if ($success) {
                 Log::info("Successfully removed product {$this->productId} from Elasticsearch");
-            } elseif (isset($response['result']) && $response['result'] === 'not_found') {
-                Log::info("Product {$this->productId} not found in Elasticsearch (already removed)");
             } else {
-                Log::warning("Unexpected response when removing product {$this->productId} from Elasticsearch", $response);
+                Log::warning("Failed to remove product {$this->productId} from Elasticsearch");
             }
-        } catch (\Elasticsearch\Common\Exceptions\Missing404Exception $e) {
-            // Product not found in index, which is fine
-            Log::info("Product {$this->productId} not found in Elasticsearch index (404)");
         } catch (\Exception $e) {
             Log::error("Error removing product {$this->productId} from Elasticsearch: " . $e->getMessage());
             $this->fail($e);
