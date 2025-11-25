@@ -344,13 +344,17 @@ class FrontendController extends Controller
      */
     private function getBannersData(?string $key, int $ttl, bool $useCache = true)
     {
+        // OPTIMIZATION: Minimal eager loading for faster query
         $banners = Banner::select(['id', 'title', 'slug', 'photo', 'description', 'status', 'link_type', 'link'])
-            ->with(['discounts' => fn($q) => $q->select(['discounts.id', 'discounts.title', 'discounts.type', 'discounts.value'])
-                ->with(['categories' => fn($q2) => $q2->select(['categories.id', 'categories.title', 'categories.slug'])])
-            ])
             ->where('status', 'active')
-            ->latest('id')
-            ->limit(5) // Limit to 5 banners for carousel
+            ->orderBy('id', 'DESC')
+            ->limit(5)
+            ->with(['discounts' => function($q) {
+                $q->select(['discounts.id', 'discounts.title', 'discounts.type', 'discounts.value'])
+                  ->with(['categories' => function($q2) {
+                      $q2->select(['categories.id', 'categories.title', 'categories.slug']);
+                  }]);
+            }])
             ->get();
 
         if ($useCache && $key) {
@@ -421,7 +425,7 @@ class FrontendController extends Controller
     {
         $startTime = microtime(true);
 
-        // Get ALL active categories (not just featured)
+        // Get ALL active categories (not just featured) in one query
         $categories = Category::select(['id', 'title', 'slug', 'sort_order'])
             ->whereNull('parent_id')
             ->where('status', 'active')
@@ -435,40 +439,48 @@ class FrontendController extends Controller
             return [];
         }
 
+        $categoryIds = $categories->pluck('id')->toArray();
+
+        // OPTIMIZATION: Batch fetch all product IDs for all categories in ONE query
+        $allProductsQuery = DB::table('products')
+            ->select('id', 'cat_id')
+            ->whereIn('cat_id', $categoryIds)
+            ->where('status', 'active')
+            ->where('is_featured', 1);
+
+        if (!empty($excludeProductIds)) {
+            $allProductsQuery->whereNotIn('id', $excludeProductIds);
+        }
+
+        $allProducts = $allProductsQuery
+            ->orderBy('cat_id')
+            ->orderBy('id', 'DESC')
+            ->get()
+            ->groupBy('cat_id');
+
+        // OPTIMIZATION: Batch count featured products for all categories in ONE query
+        $featuredCounts = DB::table('products')
+            ->select('cat_id', DB::raw('COUNT(*) as count'))
+            ->whereIn('cat_id', $categoryIds)
+            ->where('status', 'active')
+            ->where('is_featured', 1)
+            ->groupBy('cat_id')
+            ->pluck('count', 'cat_id');
+
         $preparedCategories = [];
         foreach ($categories as $category) {
-            // Get featured active products from this category, excluding already shown products
-            $query = DB::table('products')
-                ->select('id')
-                ->where('cat_id', $category->id)
-                ->where('status', 'active')
-                ->where('is_featured', 1);
-
-            if (!empty($excludeProductIds)) {
-                $query->whereNotIn('id', $excludeProductIds);
-            }
-
-            $productIds = $query->orderBy('id', 'DESC')
-                ->limit(self::MAX_PRODUCTS_PER_CATEGORY_FETCH)
-                ->pluck('id')
-                ->toArray();
+            $categoryProducts = $allProducts->get($category->id, collect());
+            $productIds = $categoryProducts->pluck('id')->take(self::MAX_PRODUCTS_PER_CATEGORY_FETCH)->toArray();
 
             if (count($productIds) < 4) {
                 continue; // Skip categories that cannot satisfy the minimum block
             }
 
-            // Count total featured products in this category
-            $totalFeaturedCount = DB::table('products')
-                ->where('cat_id', $category->id)
-                ->where('status', 'active')
-                ->where('is_featured', 1)
-                ->count();
-
             $preparedCategories[] = [
                 'category' => $category,
                 'product_ids' => $productIds,
                 'available' => count($productIds),
-                'featured_count' => $totalFeaturedCount,
+                'featured_count' => $featuredCounts[$category->id] ?? 0,
             ];
         }
 
@@ -527,65 +539,73 @@ class FrontendController extends Controller
 
         // NO UPGRADES NEEDED - Each section is fixed at exactly 12 products
 
-        $categoryProducts = [];
-        $totalCacheHits = 0;
-        $totalCacheMisses = 0;
+        // OPTIMIZATION: Collect ALL product IDs from all categories FIRST
+        $allSelectedProductIds = [];
+        $categoryProductMapping = [];
 
-        foreach ($categoryPlans as $plan) {
+        foreach ($categoryPlans as $index => $plan) {
             $selectedProductIds = array_slice($plan['product_ids'], 0, $plan['quota']);
+            $allSelectedProductIds = array_merge($allSelectedProductIds, $selectedProductIds);
+            $categoryProductMapping[$index] = $selectedProductIds;
+        }
 
-            // STEP 2: Try to fetch from product card cache
-            $productCards = $this->batchFetchProductCards($selectedProductIds, $useCache);
-            $totalCacheHits += count($productCards);
+        // STEP 2: Batch fetch ALL product cards from cache in ONE operation
+        $allProductCards = $this->batchFetchProductCards($allSelectedProductIds, $useCache);
+        $totalCacheHits = count($allProductCards);
 
-            // STEP 3: Query database for cache misses
-            $missingIds = array_diff($selectedProductIds, array_keys($productCards));
+        // STEP 3: Query database for ALL cache misses in ONE query
+        $missingIds = array_diff($allSelectedProductIds, array_keys($allProductCards));
+        $totalCacheMisses = count($missingIds);
 
-            if (!empty($missingIds)) {
-                $totalCacheMisses += count($missingIds);
-
-                $products = Product::select([
-                    'id', 'title', 'slug', 'base_price', 'base_discount',
-                    'base_stock', 'has_variants', 'cat_id', 'condition'
+        if (!empty($missingIds)) {
+            // OPTIMIZED: Single query for all missing products
+            $products = Product::select([
+                'id', 'title', 'slug', 'base_price', 'base_discount',
+                'base_stock', 'has_variants', 'cat_id', 'condition'
+            ])
+                ->whereIn('id', $missingIds)
+                ->with([
+                    'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                        ->take(3)
+                        ->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order']),
+                    'variants' => fn($q) => $q->where('status', 'active')
+                        ->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
+                        ->with([
+                            'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                                ->take(3)
+                                ->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
+                        ]),
+                    'brand' => fn($q) => $q->select(['id', 'title', 'slug'])
                 ])
-                    ->whereIn('id', $missingIds)
-                    ->with([
-                        'images' => fn($q) => $q->orderBy('sort_order', 'asc')
-                            ->take(3)
-                            ->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order']),
-                        'variants' => fn($q) => $q->where('status', 'active')
-                            ->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
-                            ->with([
-                                'images' => fn($q) => $q->orderBy('sort_order', 'asc')
-                                    ->take(3)
-                                    ->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
-                            ]),
-                        'brand' => fn($q) => $q->select(['id', 'title', 'slug'])
-                    ])
-                    ->get();
+                ->get();
 
-                $imageCollections = ProductImage::whereIn('product_id', $missingIds)
-                    ->orderBy('sort_order', 'asc')
-                    ->get()
-                    ->groupBy('product_id');
+            // OPTIMIZED: Single query for all missing product images
+            $imageCollections = ProductImage::whereIn('product_id', $missingIds)
+                ->orderBy('sort_order', 'asc')
+                ->get()
+                ->groupBy('product_id');
 
-                // Transform and cache
-                foreach ($products as $product) {
-                    $product->setRelation('images', $imageCollections->get($product->id, collect()));
-                    $card = $this->transformProductForDisplay($product);
-                    if ($useCache) {
-                        $cacheKey = RedisCacheService::makeKey('product_card', $product->id);
-                        RedisCacheService::put($cacheKey, $card, 7200);
-                    }
-                    $productCards[$product->id] = $card;
+            // Transform and cache all at once
+            foreach ($products as $product) {
+                $product->setRelation('images', $imageCollections->get($product->id, collect()));
+                $card = $this->transformProductForDisplay($product);
+                if ($useCache) {
+                    $cacheKey = RedisCacheService::makeKey('product_card', $product->id);
+                    RedisCacheService::put($cacheKey, $card, 7200);
                 }
+                $allProductCards[$product->id] = $card;
             }
+        }
 
-            // STEP 4: Reassemble in correct order
+        // STEP 4: Reassemble products for each category
+        $categoryProducts = [];
+        foreach ($categoryPlans as $index => $plan) {
+            $selectedProductIds = $categoryProductMapping[$index];
             $orderedProducts = [];
+
             foreach ($selectedProductIds as $id) {
-                if (isset($productCards[$id])) {
-                    $orderedProducts[] = $productCards[$id];
+                if (isset($allProductCards[$id])) {
+                    $orderedProducts[] = $allProductCards[$id];
                 }
             }
 

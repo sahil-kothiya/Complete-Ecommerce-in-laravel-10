@@ -18,6 +18,7 @@ class FastFilterService
 {
     /**
      * Get filtered product IDs using Redis SET operations
+     * OPTIMIZED: Returns temp key for large result sets to avoid memory issues
      *
      * @param array $filters [
      *   'category_id' => int,
@@ -26,7 +27,7 @@ class FastFilterService
      *   'min_rating' => int,
      *   'min_discount' => int
      * ]
-     * @return array Product IDs matching all filters
+     * @return array ['key' => string|null, 'count' => int] Returns Redis key for large sets
      */
     public function getFilteredProductIds(array $filters): array
     {
@@ -81,47 +82,45 @@ class FastFilterService
         // No filters = return empty (or all products if you prefer)
         if (count($sets) === 0) {
             Log::warning('FastFilter: No valid filter sets found', $filters);
-            return [];
+            return ['key' => null, 'count' => 0];
         }
 
-        // Single filter = just return members
+        // Single filter
         if (count($sets) === 1) {
-            $productIds = Redis::smembers($sets[0]);
-            $productIds = array_map('intval', $productIds);
+            $count = Redis::scard($sets[0]);
 
             $elapsedMs = round((microtime(true) - $startTime) * 1000, 2);
             Log::info('FastFilter: Single set query', [
                 'filter' => $filters,
-                'result_count' => count($productIds),
+                'result_count' => $count,
                 'time_ms' => $elapsedMs
             ]);
 
-            return $productIds;
+            return ['key' => $sets[0], 'count' => $count];
         }
 
         // Multiple filters = intersect all sets
-        $tempKey = "temp:filter:" . md5(implode('|', $sets) . time());
+        $tempKey = "temp:filter:" . md5(implode('|', $sets) . serialize($filters));
 
         try {
-            // SINTERSTORE is atomic and optimized in C
-            Redis::sinterstore($tempKey, ...$sets);
+            // Check if temp key already exists (cached intersection)
+            if (!Redis::exists($tempKey)) {
+                // SINTERSTORE is atomic and optimized in C
+                Redis::sinterstore($tempKey, ...$sets);
+                Redis::expire($tempKey, 300); // 5 minutes
+            }
 
-            // Get results
-            $productIds = Redis::smembers($tempKey);
-            $productIds = array_map('intval', $productIds);
-
-            // Clean up temp key (expires in 5 min anyway)
-            Redis::expire($tempKey, 300);
+            $count = Redis::scard($tempKey);
 
             $elapsedMs = round((microtime(true) - $startTime) * 1000, 2);
             Log::info('FastFilter: Multi-set intersection', [
                 'filters' => $filters,
                 'sets_count' => count($sets),
-                'result_count' => count($productIds),
+                'result_count' => $count,
                 'time_ms' => $elapsedMs
             ]);
 
-            return $productIds;
+            return ['key' => $tempKey, 'count' => $count];
 
         } catch (\Exception $e) {
             Log::error('FastFilter: Intersection failed', [
@@ -132,6 +131,48 @@ class FastFilterService
             // Cleanup temp key
             Redis::del($tempKey);
 
+            return ['key' => null, 'count' => 0];
+        }
+    }
+
+    /**
+     * Get paginated product IDs from a Redis set key
+     *
+     * @param string $redisKey Redis SET key
+     * @param int $offset Starting offset
+     * @param int $limit Number of items
+     * @return array Product IDs
+     */
+    public function getPaginatedIds(string $redisKey, int $offset, int $limit): array
+    {
+        if (!Redis::exists($redisKey)) {
+            return [];
+        }
+
+        // Convert SET to sorted set temporarily for pagination
+        $tempSortedKey = "temp:sorted:" . md5($redisKey . $offset . $limit);
+
+        try {
+            // Get all members and add to sorted set with IDs as scores (for sorting)
+            $members = Redis::sscan($redisKey, 0, ['count' => $offset + $limit]);
+
+            if (empty($members[1])) {
+                return [];
+            }
+
+            // Convert to array of integers
+            $productIds = array_map('intval', array_slice($members[1], $offset, $limit));
+
+            // Sort in descending order (newest first)
+            rsort($productIds);
+
+            return $productIds;
+
+        } catch (\Exception $e) {
+            Log::error('FastFilter: Pagination failed', [
+                'error' => $e->getMessage(),
+                'key' => $redisKey
+            ]);
             return [];
         }
     }

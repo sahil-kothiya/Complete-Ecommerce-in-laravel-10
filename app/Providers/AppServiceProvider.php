@@ -106,7 +106,7 @@ class AppServiceProvider extends ServiceProvider
         }
 
         $this->shareGlobalData();
-        $this->initializeCriticalCaches();
+        // $this->initializeCriticalCaches(); // Temporarily disabled
         // $this->setupUserSpecificData();
 
         View::composer('*', function ($view) {

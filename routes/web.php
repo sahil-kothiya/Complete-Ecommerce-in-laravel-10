@@ -21,6 +21,7 @@ use App\Http\Controllers\{
     FilterController,
     FrontendController,
     HighPerformanceFilterController,
+    UltraFastFilterController,
     HomeController,
     MessageController,
     MollieController,
@@ -94,8 +95,8 @@ Route::get('/product/variant/{variantId}', [FrontendController::class, 'getVaria
 Route::post('/product/{slug}/check-variant', [FrontendController::class, 'checkVariantAvailability'])
     ->name('api.product.variant.check');
 
-// API Route for JSON Filters (high-perf endpoint)
-Route::get('/api/filters/{path?}', [HighPerformanceFilterController::class, 'getFilterData'])
+// API Route for JSON Filters (ultra-fast Redis-based endpoint)
+Route::get('/api/filters/{path?}', [UltraFastFilterController::class, 'getFilterData'])
     ->name('api.filters')
     ->where('path', '.*'); // Allow category paths like /product-cat/slug/subslug
 

@@ -12,7 +12,7 @@ namespace App\Helpers;
 class ImageHelper
 {
     /**
-     * Build asset URL honoring optional CDN but defaulting to relative paths
+     * Build asset URL honoring optional CDN but defaulting to absolute URLs via Laravel asset() helper
      */
     private static function buildAssetUrl(string $path): string
     {
@@ -21,8 +21,8 @@ class ImageHelper
             return rtrim($cdnUrl, '/') . '/' . ltrim($path, '/');
         }
 
-        // Return relative path so current host (e.g., 127.0.0.1 vs localhost) is preserved
-        return '/' . ltrim($path, '/');
+        // Use Laravel's asset() helper to generate proper absolute URLs
+        return asset(ltrim($path, '/'));
     }
 
     /**
