@@ -60,7 +60,9 @@ class UltraFastFilterController extends Controller
                     'cf' => $currentFilters,
                     'ms' => $executionTime,
                     'src' => $result['source'] ?? 'redis',
-                    'ch' => $result['cached'] ?? false
+                        'ch' => $result['cached'] ?? false,
+                        'sim' => $result['similar'] ?? false,
+                        'msg' => $result['message'] ?? null
                 ]
             ], 200, [
                 'Cache-Control' => 'public, max-age=' . self::CACHE_TTL,
@@ -109,43 +111,41 @@ class UltraFastFilterController extends Controller
             }
 
             // Apply price range filter
-            // For variant products, we need to join with variants table to get actual prices
             if (!empty($filters['price_range'])) {
                 $range = explode('-', $filters['price_range']);
                 if (count($range) === 2) {
-                    $minPrice = (float)$range[0];
-                    $maxPrice = (float)$range[1];
+                    $minPrice = (float) $range[0];
+                    $maxPrice = (float) $range[1];
 
-                    // Filter by price considering both base_price and variant prices
-                    $query->where(function($q) use ($minPrice, $maxPrice) {
-                        // Products without variants use base_price
-                        $q->where(function($subQ) use ($minPrice, $maxPrice) {
+                    $query->where(function ($q) use ($minPrice, $maxPrice) {
+                        $q->where(function ($subQ) use ($minPrice, $maxPrice) {
                             $subQ->where('has_variants', false)
                                  ->whereBetween('base_price', [$minPrice, $maxPrice]);
                         })
-                        // Products with variants use variant price
-                        ->orWhere(function($subQ) use ($minPrice, $maxPrice) {
+                        ->orWhere(function ($subQ) use ($minPrice, $maxPrice) {
                             $subQ->where('has_variants', true)
-                                 ->whereExists(function($existsQ) use ($minPrice, $maxPrice) {
+                                 ->whereExists(function ($existsQ) use ($minPrice, $maxPrice) {
                                      $existsQ->from('product_variants')
                                              ->whereColumn('product_variants.product_id', 'products.id')
+                                             ->where('product_variants.status', 'active')
                                              ->whereBetween('product_variants.price', [$minPrice, $maxPrice]);
                                  });
                         });
                     });
                 } elseif (str_contains($filters['price_range'], '+')) {
-                    $minPrice = (float)str_replace('+', '', $filters['price_range']);
+                    $minPrice = (float) str_replace('+', '', $filters['price_range']);
 
-                    $query->where(function($q) use ($minPrice) {
-                        $q->where(function($subQ) use ($minPrice) {
+                    $query->where(function ($q) use ($minPrice) {
+                        $q->where(function ($subQ) use ($minPrice) {
                             $subQ->where('has_variants', false)
                                  ->where('base_price', '>=', $minPrice);
                         })
-                        ->orWhere(function($subQ) use ($minPrice) {
+                        ->orWhere(function ($subQ) use ($minPrice) {
                             $subQ->where('has_variants', true)
-                                 ->whereExists(function($existsQ) use ($minPrice) {
+                                 ->whereExists(function ($existsQ) use ($minPrice) {
                                      $existsQ->from('product_variants')
                                              ->whereColumn('product_variants.product_id', 'products.id')
+                                             ->where('product_variants.status', 'active')
                                              ->where('product_variants.price', '>=', $minPrice);
                                  });
                         });
@@ -153,33 +153,59 @@ class UltraFastFilterController extends Controller
                 }
             }
 
-            // Apply rating filter (needs join)
+            // Apply rating filter
             if (!empty($filters['ratings'])) {
                 $minRating = min(array_map('intval', $filters['ratings']));
-                // Skip rating filter for now - needs proper relationship setup
-                // $query->leftJoin('product_ratings_cache', 'products.id', '=', 'product_ratings_cache.product_id')
-                //       ->where('product_ratings_cache.average_rating', '>=', $minRating);
+                $query->whereExists(function ($existsQ) use ($minRating) {
+                    $existsQ->from('product_ratings_cache')
+                            ->whereColumn('product_ratings_cache.product_id', 'products.id')
+                            ->where('product_ratings_cache.average_rating', '>=', $minRating);
+                });
             }
 
             // Apply discount filter
             if (!empty($filters['discounts'])) {
                 $minDiscount = min(array_map('intval', $filters['discounts']));
-                $query->where('base_discount', '>=', $minDiscount);
+
+                $query->where(function ($q) use ($minDiscount) {
+                    $q->where(function ($subQ) use ($minDiscount) {
+                        $subQ->where('has_variants', false)
+                             ->where('base_discount', '>=', $minDiscount);
+                    })
+                    ->orWhere(function ($subQ) use ($minDiscount) {
+                        $subQ->where('has_variants', true)
+                             ->whereExists(function ($existsQ) use ($minDiscount) {
+                                 $existsQ->from('product_variants')
+                                         ->whereColumn('product_variants.product_id', 'products.id')
+                                         ->where('product_variants.status', 'active')
+                                         ->where('product_variants.discount', '>=', $minDiscount);
+                             });
+                    });
+                });
             }
 
             // Get total count (fast with indexes)
             $total = $query->count('products.id');
 
-            if ($total === 0) {
-                return $this->getEmptyResult();
+                if ($total === 0) {
+                    return $this->buildSimilarProductsResponse($category, $filters, $perPage);
+                }
+
+            // Select base fields - need to adjust if rating_high_low is used
+            if ($sortBy === 'rating_high_low') {
+                // Already have the join and select from the switch statement
+            } else {
+                $query->select([
+                    'products.id', 'products.title', 'products.slug', 'products.base_price',
+                    'products.base_discount', 'products.base_stock', 'products.condition',
+                    'products.has_variants', 'products.brand_id'
+                ]);
             }
 
-            // Apply sorting
-            $query->select([
-                'products.id', 'products.title', 'products.slug', 'products.base_price',
-                'products.base_discount', 'products.base_stock', 'products.condition',
-                'products.has_variants', 'products.brand_id'
-            ]);
+            // Apply sorting - for price sorts, get larger sample and sort in-memory
+            $isPriceSort = in_array($sortBy, ['price_low_high', 'price_high_low']);
+            $fetchSize = $isPriceSort ? $perPage * 3 : $perPage;
+            $fetchOffset = $isPriceSort ? max(0, (($page - 1) * $perPage) - $perPage) : ($page - 1) * $perPage;
 
             switch ($sortBy) {
                 case 'price_low_high':
@@ -189,8 +215,9 @@ class UltraFastFilterController extends Controller
                     $query->orderBy('products.base_price', 'desc');
                     break;
                 case 'rating_high_low':
-                    // Skip rating sort for now - needs proper relationship
-                    $query->orderByDesc('products.id');
+                    $query->leftJoin('product_ratings_cache', 'products.id', '=', 'product_ratings_cache.product_id')
+                          ->orderByDesc('product_ratings_cache.average_rating')
+                          ->select('products.*'); // Ensure we still select only product columns
                     break;
                 case 'name_a_z':
                     $query->orderBy('products.title', 'asc');
@@ -205,8 +232,8 @@ class UltraFastFilterController extends Controller
             }
 
             // Apply pagination
-            $productIds = $query->skip(($page - 1) * $perPage)
-                               ->take($perPage)
+            $productIds = $query->skip($fetchOffset)
+                               ->take($fetchSize)
                                ->pluck('products.id')
                                ->toArray();
 
@@ -217,6 +244,18 @@ class UltraFastFilterController extends Controller
             // Fetch product details
             $products = $this->fetchProductDetails($productIds);
 
+            // Sort by price in-memory for price sorts
+            if ($isPriceSort && !empty($products)) {
+                usort($products, function($a, $b) use ($sortBy) {
+                    $priceA = $a['pr']['f'] ?? $a['pr']['o'] ?? PHP_INT_MAX;
+                    $priceB = $b['pr']['f'] ?? $b['pr']['o'] ?? PHP_INT_MAX;
+                    return ($sortBy === 'price_low_high') ? ($priceA <=> $priceB) : ($priceB <=> $priceA);
+                });
+                // Slice to exact page after sorting
+                $offsetInPage = ($page - 1) * $perPage - $fetchOffset;
+                $products = array_slice($products, max(0, $offsetInPage), $perPage);
+            }
+
             // Build filter data
             $filterData = $this->buildRedisFilterData($category, $filters);
 
@@ -226,7 +265,8 @@ class UltraFastFilterController extends Controller
                 'pagination' => $this->buildPagination($page, $perPage, $total),
                 'total' => $total,
                 'source' => 'database_indexed',
-                'cached' => false
+                    'cached' => false,
+                    'similar' => false
             ];
         });
     }    /**
@@ -361,38 +401,58 @@ class UltraFastFilterController extends Controller
     private function getRedisFilterCounts(string $filterType, ?array $baseProductIds, array $currentFilters): array
     {
         $results = [];
+        $keys = Redis::keys("index:{$filterType}:*");
 
-        // For brand filters, query database directly (more reliable than Redis)
-        if ($filterType === 'brand') {
-            $brandQuery = Brand::query()
-                ->join('products', 'brands.id', '=', 'products.brand_id')
-                ->where('products.status', 'active')
-                ->where('brands.status', 'active')
-                ->select('brands.id', 'brands.title', 'brands.slug', DB::raw('COUNT(DISTINCT products.id) as product_count'))
-                ->groupBy('brands.id', 'brands.title', 'brands.slug')
-                ->havingRaw('COUNT(DISTINCT products.id) > 0');
-
-            $brands = $brandQuery->get();
-
-            foreach ($brands as $brand) {
-                $results[] = [
-                    't' => $brand->title,
-                    's' => $brand->slug,
-                    'cnt' => $brand->product_count,
-                    'sel' => in_array($brand->slug, $currentFilters['brands'] ?? [])
-                ];
+        if (empty($keys)) {
+            if ($filterType === 'brand') {
+                return $this->buildBrandCountsFromDatabase($currentFilters);
             }
-
             return $results;
         }
 
-        // For other filters, use Redis if available
-        $keys = Redis::keys("index:{$filterType}:*");
+        if ($filterType === 'brand') {
+            $slugCounts = [];
+            foreach ($keys as $key) {
+                $slug = str_replace("index:{$filterType}:", '', $key);
+                if ($slug === '') {
+                    continue;
+                }
+                $slugCounts[$slug] = Redis::scard($key);
+            }
+
+            if (empty($slugCounts)) {
+                return $results;
+            }
+
+            $brandLookup = $this->getBrandSlugTitleMap();
+
+            foreach ($slugCounts as $slug => $count) {
+                if ($count <= 0) {
+                    continue;
+                }
+
+                $title = $brandLookup[$slug] ?? Str::of($slug)->replace('-', ' ')->title();
+
+                $results[] = [
+                    't' => $title,
+                    's' => $slug,
+                    'cnt' => $count,
+                    'sel' => in_array($slug, $currentFilters['brands'] ?? [])
+                ];
+            }
+
+            // Keep list manageable and sorted by count desc
+            usort($results, fn($a, $b) => $b['cnt'] <=> $a['cnt']);
+            return array_slice($results, 0, 50);
+        }
 
         foreach ($keys as $key) {
             $keyValue = str_replace("index:{$filterType}:", '', $key);
-            $count = Redis::scard($key);
+            if ($keyValue === '') {
+                continue;
+            }
 
+            $count = Redis::scard($key);
             if ($count > 0) {
                 $results[] = [
                     'v' => $keyValue,
@@ -402,7 +462,7 @@ class UltraFastFilterController extends Controller
             }
         }
 
-        return array_slice($results, 0, 50); // Limit to 50 items
+        return array_slice($results, 0, 50);
     }
 
     /**
@@ -414,12 +474,26 @@ class UltraFastFilterController extends Controller
             return [];
         }
 
+        // Batch fetch all ratings for these products
+        $ratingsMap = DB::table('product_ratings_cache')
+            ->whereIn('product_id', $productIds)
+            ->get(['product_id', 'average_rating', 'total_reviews'])
+            ->keyBy('product_id')
+            ->map(fn($r) => [
+                'a' => round($r->average_rating, 1),
+                't' => (int) $r->total_reviews
+            ])
+            ->toArray();
+
         // Use optimized query similar to the original but for specific IDs
         $products = Product::whereIn('id', $productIds)
             ->with([
                 'brand:id,title,slug',
                 'images' => function($q) {
-                    $q->orderBy('sort_order')->orderBy('id')->limit(2);
+                    // Keep ordering stable, but allow slice later per product
+                    $q->orderByDesc('is_primary')
+                      ->orderBy('sort_order')
+                      ->orderBy('id');
                 }
             ])
             ->select([
@@ -437,7 +511,7 @@ class UltraFastFilterController extends Controller
             }
         }
 
-        return collect($orderedProducts)->map(function($product) {
+        return collect($orderedProducts)->map(function($product) use ($ratingsMap) {
             // For products with variants, get min price from variants
             $basePrice = $product->base_price;
             $baseDiscount = $product->base_discount ?? 0;
@@ -461,56 +535,31 @@ class UltraFastFilterController extends Controller
             $finalPrice = $basePrice * (1 - $baseDiscount / 100);
 
             // Normalize image paths to storage-relative paths expected by frontend slider
-            $images = $product->images->map(function($img) {
-                $rawPath = $img->image_path ?? null;
-                if (empty($rawPath)) {
-                    return null;
+            $images = $product->images
+                ->map(fn($img) => $this->normalizeImagePath($img->image_path ?? null))
+                ->filter()
+                ->values()
+                ->toArray();
+
+            // Variant fallback: if product lacks its own images, try pulling primary variant images
+            if (empty($images) && $product->has_variants) {
+                $variantImages = DB::table('product_variants')
+                    ->join('variant_images', 'variant_images.product_variant_id', '=', 'product_variants.id')
+                    ->where('product_variants.product_id', $product->id)
+                    ->orderByDesc('variant_images.is_primary')
+                    ->orderBy('variant_images.sort_order')
+                    ->orderBy('variant_images.id')
+                    ->limit(2)
+                    ->pluck('variant_images.image_path')
+                    ->map(fn($path) => $this->normalizeImagePath($path))
+                    ->filter()
+                    ->values()
+                    ->toArray();
+
+                if (!empty($variantImages)) {
+                    $images = $variantImages;
                 }
-
-                $rawPath = trim($rawPath);
-
-                // If absolute URL provided, strip everything up to /storage/ so frontend doesn't double-prefix
-                if (Str::startsWith($rawPath, ['http://', 'https://'])) {
-                    $storagePos = stripos($rawPath, '/storage/');
-                    if ($storagePos !== false) {
-                        $rawPath = substr($rawPath, $storagePos + strlen('/storage/'));
-                    } else {
-                        return $rawPath; // Non-storage absolute URLs can be used as-is
-                    }
-                }
-
-                $normalized = ltrim($rawPath, '/');
-
-                if (Str::startsWith($normalized, 'storage/')) {
-                    $normalized = substr($normalized, strlen('storage/'));
-                }
-
-                if (Str::startsWith($normalized, 'products/variants/')) {
-                    return $normalized;
-                }
-
-                if (Str::startsWith($normalized, 'products/')) {
-                    return $normalized;
-                }
-
-                if (Str::startsWith($normalized, 'variant_')) {
-                    return 'products/variants/' . $normalized;
-                }
-
-                if (Str::startsWith($normalized, 'product_')) {
-                    return 'products/' . $normalized;
-                }
-
-                if (Str::startsWith($normalized, 'variants/')) {
-                    return 'products/' . $normalized; // legacy relative paths missing products/ prefix
-                }
-
-                if (Str::startsWith($normalized, 'photos/')) {
-                    return $normalized; // already relative to storage
-                }
-
-                return 'products/' . $normalized;
-            })->filter()->values()->toArray();
+            }
 
             return [
                 'id' => $product->id,
@@ -529,10 +578,7 @@ class UltraFastFilterController extends Controller
                     's' => $product->brand->slug
                 ] : null,
                 'i' => array_slice($images, 0, 2),
-                'r' => [
-                    'a' => 0, // Placeholder - ratings can be added later
-                    't' => 0
-                ]
+                'r' => $ratingsMap[$product->id] ?? ['a' => 0, 't' => 0]
             ];
         })->toArray();
     }
@@ -612,7 +658,39 @@ class UltraFastFilterController extends Controller
             'pagination' => $this->buildPagination(1, 12, 0),
             'total' => 0,
             'source' => $source,
-            'cached' => false
+            'cached' => false,
+            'similar' => false
+        ];
+    }
+
+    private function buildSimilarProductsResponse($category, array $filters, int $perPage): array
+    {
+        $fallbackQuery = Product::where('status', 'active');
+
+        if ($category) {
+            $fallbackQuery->where('cat_id', $category->id);
+        }
+
+        $productIds = $fallbackQuery
+            ->orderByDesc('id')
+            ->limit($perPage)
+            ->pluck('id')
+            ->toArray();
+
+        $products = $this->fetchProductDetails($productIds);
+        $fallbackCount = count($productIds);
+
+        return [
+            'filters' => $this->buildRedisFilterData($category, $filters),
+            'products' => $products,
+            'pagination' => $this->buildPagination(1, $perPage, $fallbackCount),
+            'total' => 0,
+            'source' => 'similar_fallback',
+            'cached' => false,
+            'similar' => true,
+            'message' => $category
+                ? 'No products matched your filters. Showing similar items from this category.'
+                : 'No products matched your filters. Showing other popular products instead.'
         ];
     }
 
@@ -701,7 +779,9 @@ class UltraFastFilterController extends Controller
             'cur' => '$',
             'ranges' => $priceData['ranges']
         ];
-    }    private function getAvailabilityStats(?array $baseProductIds, array $currentFilters): array
+    }
+
+    private function getAvailabilityStats(?array $baseProductIds, array $currentFilters): array
     {
         // Implement availability statistics
         return [
@@ -717,12 +797,10 @@ class UltraFastFilterController extends Controller
     {
         $redisFilters = [];
 
-        // Add category filter
         if ($category) {
             $redisFilters['category_id'] = $category->id;
         }
 
-        // Convert brand slugs to IDs
         if (!empty($filters['brands'])) {
             $brandIds = $this->getBrandIdsBySlug($filters['brands']);
             if (!empty($brandIds)) {
@@ -730,21 +808,108 @@ class UltraFastFilterController extends Controller
             }
         }
 
-        // Add price range
         if (!empty($filters['price_range'])) {
             $redisFilters['price_range'] = $filters['price_range'];
         }
 
-        // Add minimum rating
         if (!empty($filters['ratings'])) {
             $redisFilters['min_rating'] = min(array_map('intval', $filters['ratings']));
         }
 
-        // Add minimum discount
         if (!empty($filters['discounts'])) {
             $redisFilters['min_discount'] = min(array_map('intval', $filters['discounts']));
         }
 
         return $redisFilters;
     }
+
+    private function normalizeImagePath(?string $rawPath): ?string
+    {
+        if (empty($rawPath)) {
+            return null;
+        }
+
+        $rawPath = trim($rawPath);
+
+        if (Str::startsWith($rawPath, ['http://', 'https://'])) {
+            $storagePos = stripos($rawPath, '/storage/');
+            if ($storagePos !== false) {
+                $rawPath = substr($rawPath, $storagePos + strlen('/storage/'));
+            } else {
+                return $rawPath;
+            }
+        }
+
+        $normalized = ltrim($rawPath, '/');
+
+        if (Str::startsWith($normalized, 'storage/')) {
+            $normalized = substr($normalized, strlen('storage/'));
+        }
+
+        if (Str::startsWith($normalized, 'products/variants/')) {
+            return $normalized;
+        }
+
+        if (Str::startsWith($normalized, 'products/')) {
+            return $normalized;
+        }
+
+        if (Str::startsWith($normalized, 'variant_')) {
+            return 'products/variants/' . $normalized;
+        }
+
+        if (Str::startsWith($normalized, 'product_')) {
+            return 'products/' . $normalized;
+        }
+
+        if (Str::startsWith($normalized, 'variants/')) {
+            return 'products/' . $normalized;
+        }
+
+        if (Str::startsWith($normalized, 'photos/')) {
+            return $normalized;
+        }
+
+        return 'products/' . $normalized;
+    }
+
+    private function getBrandSlugTitleMap(): array
+    {
+        return Cache::remember('brand_slug_title_map', 1800, function () {
+            return Brand::where('status', 'active')
+                ->pluck('title', 'slug')
+                ->toArray();
+        });
+    }
+
+    private function buildBrandCountsFromDatabase(array $currentFilters): array
+    {
+        $cacheKey = 'brand_filter_counts_fallback';
+
+        $brands = Cache::remember($cacheKey, 1800, function () {
+            return Brand::query()
+                ->where('status', 'active')
+                ->withCount(['products as product_count' => function ($q) {
+                    $q->where('status', 'active');
+                }])
+                ->orderByDesc('product_count')
+                ->get(['id', 'title', 'slug'])
+                ->map(function ($brand) {
+                    return [
+                        't' => $brand->title,
+                        's' => $brand->slug,
+                        'cnt' => (int) $brand->product_count,
+                    ];
+                })
+                ->filter(fn($brand) => $brand['cnt'] > 0)
+                ->values()
+                ->toArray();
+        });
+
+        return array_map(function ($brand) use ($currentFilters) {
+            $brand['sel'] = in_array($brand['s'], $currentFilters['brands'] ?? []);
+            return $brand;
+        }, $brands);
+    }
+
 }
