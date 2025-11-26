@@ -22,6 +22,8 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\MinifyAssets::class,
         \App\Console\Commands\OptimizeImages::class,
         \App\Console\Commands\CacheWarmupCommand::class,
+        \App\Console\Commands\ManageProductIndexes::class,
+        \App\Console\Commands\CheckIndexHealth::class,
     ];
 
     /**
@@ -36,6 +38,28 @@ class Kernel extends ConsoleKernel
         $schedule->command('discounts:sync-status')->everyMinute()->withoutOverlapping();
         $schedule->command('cache:prune-stale-tags')->daily();
         $schedule->command('ratings:cache')->dailyAt('02:00');
+        
+        // Filter index maintenance (ROBUST SYSTEM)
+        // Full rebuild daily at 2 AM (low traffic time)
+        $schedule->command('indexes:manage build --force')
+                 ->dailyAt('02:00')
+                 ->withoutOverlapping()
+                 ->runInBackground();
+        
+        // Incremental sync every 10 minutes (keeps indexes fresh)
+        $schedule->job(new \App\Jobs\IncrementalIndexSyncJob(15))
+                 ->everyTenMinutes()
+                 ->withoutOverlapping();
+        
+        // Health check and auto-recovery every hour
+        $schedule->command('indexes:health --rebuild')
+                 ->hourly()
+                 ->withoutOverlapping();
+        
+        // Clean up temporary Redis keys daily
+        $schedule->command('indexes:manage clean')
+                 ->daily()
+                 ->runInBackground();
     }
 
     /**
