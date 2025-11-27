@@ -16,18 +16,30 @@ use App\Models\Brand;
 use App\Models\Product;
 
 /**
- * Ultra Fast Filter Controller
+ * Ultra Fast Filter Controller - OPTIMIZED FOR SUB-3 SECOND RESPONSES
  *
- * Leverages Redis Set-based indexes for sub-100ms responses
- * even with 10M+ products. Uses the indexes built by ProductIndexService.
+ * Performance Strategy:
+ * 1. Redis-First: All filtering uses Redis SET operations (50-200ms)
+ * 2. Multi-level caching: Response cache + product detail cache
+ * 3. Pipeline operations: Batch Redis calls to reduce latency
+ * 4. Optimized queries: Minimal DB hits with proper indexes
+ * 5. No health checks on hot path: Async monitoring only
+ *
+ * Performance Targets:
+ * - Redis filtering: < 300ms
+ * - Product fetching: < 500ms
+ * - Filter counts: < 200ms
+ * - Total response: < 1-3 seconds
  */
 class UltraFastFilterController extends Controller
 {
     private FastFilterService $filterService;
     private IndexHealthService $healthService;
 
-    private const CACHE_TTL = 300; // 5 minutes
-    private const MAX_EXECUTION_TIME = 120; // 120 seconds max (increased for safe fallback)
+    private const RESPONSE_CACHE_TTL = 600; // 10 minutes for full response
+    private const PRODUCT_CACHE_TTL = 1800; // 30 minutes for product details
+    private const FILTER_CACHE_TTL = 3600; // 1 hour for filter counts
+    private const MAX_EXECUTION_TIME = 30; // 30 seconds max
 
     public function __construct(FastFilterService $filterService, IndexHealthService $healthService)
     {
@@ -48,36 +60,55 @@ class UltraFastFilterController extends Controller
             $perPage = min((int) $request->input('show', 12), 48);
             $sortBy = $request->input('sortBy', 'latest');
 
-            // Check index health and attempt on-demand rebuild if needed
-            $this->ensureIndexesExist($categoryContext, $currentFilters);
-
-            // Use Redis indexes for all filtering (no Elasticsearch for now)
-            $result = $this->getRedisIndexResults($categoryContext, $currentFilters, $page, $perPage, $sortBy);
+            // OPTIMIZATION: Use full response cache for exact same requests
+            $responseCacheKey = $this->generateResponseCacheKey($categoryContext, $currentFilters, $page, $perPage, $sortBy);
+            
+            $result = Cache::remember($responseCacheKey, self::RESPONSE_CACHE_TTL, function () use ($categoryContext, $currentFilters, $page, $perPage, $sortBy) {
+                // OPTIMIZATION: Redis-first strategy, no health checks on hot path
+                return $this->getRedisIndexResults($categoryContext, $currentFilters, $page, $perPage, $sortBy);
+            });
 
             $executionTime = round((microtime(true) - $startTime) * 1000, 2);
 
+            // Add debug info for console logging
+            $debugInfo = [
+                'total_products' => count($result['products']),
+                'products_with_images' => collect($result['products'])->filter(fn($p) => !str_contains($p['i'][0] ?? '', 'avatar.webp'))->count(),
+                'sample_products' => collect($result['products'])->take(3)->map(fn($p) => [
+                    'id' => $p['id'],
+                    'title' => $p['t'],
+                    'has_variants' => $p['hv'],
+                    'images' => $p['i']
+                ])->toArray()
+            ];
+            
+            Log::info('API Response Summary', $debugInfo);
+            
             return response()->json([
                 'ok' => true,
                 'f' => $result['filters'],
                 'p' => $result['products'],
                 'pg' => $result['pagination'],
+                'products' => $result['products'], // Add this for backward compatibility
+                'pagination' => $result['pagination'], // Add this for backward compatibility
                 'm' => [
                     'tot' => $result['total'],
                     'cf' => $currentFilters,
                     'ms' => $executionTime,
                     'src' => $result['source'] ?? 'redis',
-                        'ch' => $result['cached'] ?? false,
-                        'sim' => $result['similar'] ?? false,
-                        'msg' => $result['message'] ?? null
-                ]
+                    'ch' => $result['cached'] ?? false,
+                    'sim' => $result['similar'] ?? false,
+                    'msg' => $result['message'] ?? null
+                ],
+                'debug' => config('app.debug') ? $debugInfo : null
             ], 200, [
-                'Cache-Control' => 'public, max-age=' . self::CACHE_TTL,
+                'Cache-Control' => 'public, max-age=' . self::RESPONSE_CACHE_TTL,
                 'X-Response-Time' => $executionTime . 'ms'
             ]);
 
         } catch (\Exception $e) {
             Log::error('Ultra Fast Filter Error: ' . $e->getMessage(), [
-                'filters' => $currentFilters,
+                'filters' => $currentFilters ?? [],
                 'category' => $categoryContext?->slug,
                 'trace' => $e->getTraceAsString()
             ]);
@@ -91,254 +122,168 @@ class UltraFastFilterController extends Controller
     }
 
     /**
-     * Ensure required indexes exist before querying
-     */
-    private function ensureIndexesExist($category, array $filters): void
-    {
-        try {
-            // Check if indexes are healthy overall
-            if ($this->healthService->isHealthy()) {
-                return; // All good, proceed normally
-            }
-            
-            // Get list of missing indexes for this specific query
-            $redisFilters = $this->convertFiltersForRedis($filters, $category);
-            $missingIndexes = $this->healthService->getMissingIndexesForFilters($redisFilters);
-            
-            if (!empty($missingIndexes)) {
-                Log::warning('Missing indexes detected, building on-demand', [
-                    'missing_count' => count($missingIndexes),
-                    'indexes' => $missingIndexes
-                ]);
-                
-                // Build missing indexes on-demand (should be quick for specific indexes)
-                $this->healthService->buildMissingIndexes($missingIndexes);
-            }
-            
-            // Trigger background rebuild for full index refresh (non-blocking)
-            $this->healthService->triggerRebuildIfNeeded();
-            
-        } catch (\Exception $e) {
-            Log::error('Index health check failed, proceeding with database fallback', [
-                'error' => $e->getMessage()
-            ]);
-            // Continue execution - will use database fallback
-        }
-    }
-
-    /**
-     * Use Redis Set-based indexes for ultra-fast filtering
-     * OPTIMIZED FOR 10M PRODUCTS: Use database with indexed WHERE clauses
-     * NOW WITH AUTOMATIC FALLBACK: If Redis indexes missing, uses pure database
+     * OPTIMIZED: Redis-first filtering with smart caching and minimal DB queries
+     * Target: < 1-2 seconds total response time
      */
     private function getRedisIndexResults($category, array $filters, int $page, int $perPage, string $sortBy): array
     {
-        $cacheKey = $this->generateCacheKey($category, $filters, $page, $perPage, $sortBy);
+        $filterStartTime = microtime(true);
+        
+        // STEP 1: Get filtered product IDs from Redis (50-200ms)
+        $redisFilters = $this->convertFiltersForRedis($filters, $category);
+        $filterResult = $this->filterService->getFilteredProductIds($redisFilters);
+        
+        if (empty($filterResult['key']) || $filterResult['count'] === 0) {
+            Log::info('No products found, returning similar products', [
+                'filters' => $redisFilters,
+                'category' => $category?->slug
+            ]);
+            return $this->buildSimilarProductsResponse($category, $filters, $perPage);
+        }
+        
+        $totalProducts = $filterResult['count'];
+        $redisKey = $filterResult['key'];
+        
+        Log::debug('Redis filter completed', [
+            'time_ms' => round((microtime(true) - $filterStartTime) * 1000, 2),
+            'total_found' => $totalProducts
+        ]);
+        
+        // STEP 2: Get paginated product IDs with sorting (100-300ms)
+        $paginationStartTime = microtime(true);
+        $productIds = $this->getPaginatedIdsFromRedis($redisKey, $page, $perPage, $sortBy, $totalProducts);
+        
+        if (empty($productIds)) {
+            return $this->getEmptyResult();
+        }
+        
+        Log::debug('Pagination completed', [
+            'time_ms' => round((microtime(true) - $paginationStartTime) * 1000, 2),
+            'ids_count' => count($productIds)
+        ]);
+        
+        // STEP 3: Fetch product details with caching (200-500ms)
+        $fetchStartTime = microtime(true);
+        $products = $this->fetchProductDetailsOptimized($productIds);
+        
+        Log::debug('Product fetch completed', [
+            'time_ms' => round((microtime(true) - $fetchStartTime) * 1000, 2),
+            'products_count' => count($products)
+        ]);
+        
+        // STEP 4: Build filter data with caching (100-200ms)
+        $filterDataStartTime = microtime(true);
+        $filterData = $this->buildRedisFilterDataOptimized($category, $filters);
+        
+        Log::debug('Filter data built', [
+            'time_ms' => round((microtime(true) - $filterDataStartTime) * 1000, 2)
+        ]);
 
-        return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($category, $filters, $page, $perPage, $sortBy) {
+        return [
+            'filters' => $filterData,
+            'products' => $products,
+            'pagination' => $this->buildPagination($page, $perPage, $totalProducts),
+            'total' => $totalProducts,
+            'source' => 'redis_optimized',
+            'cached' => false,
+            'similar' => false
+        ];
+    }
 
-            // Convert filters to database query (robust fallback strategy)
-            $query = Product::where('status', 'active');
-
-            // Apply category filter (indexed column - fast)
-            if ($category) {
-                $query->where('cat_id', $category->id);
-            }
-
-            // Apply brand filter (indexed column - fast)
-            if (!empty($filters['brands'])) {
-                $brandIds = $this->getBrandIdsBySlug($filters['brands']);
-                if (!empty($brandIds)) {
-                    // Optimize: Use IN clause with limit to prevent full scan
-                    $query->whereIn('brand_id', array_slice($brandIds, 0, 50)); // Max 50 brands
-                }
-            }
-
-            // Apply price range filter - OPTIMIZED to prevent timeout
-            if (!empty($filters['price_range'])) {
-                $range = explode('-', $filters['price_range']);
-                if (count($range) === 2) {
-                    $minPrice = (float) $range[0];
-                    $maxPrice = (float) $range[1];
-
-                    // Simplified query: Only check base_price for efficiency
-                    // Variant prices will be checked during product detail fetch
-                    $query->where(function ($q) use ($minPrice, $maxPrice) {
-                        $q->whereBetween('base_price', [$minPrice, $maxPrice])
-                          ->orWhere(function($subQ) use ($minPrice, $maxPrice) {
-                              // For products with variants, be more permissive
-                              $subQ->where('has_variants', true)
-                                   ->where('base_price', '>=', $minPrice * 0.5) // 50% tolerance
-                                   ->where('base_price', '<=', $maxPrice * 1.5); // 50% tolerance
-                          });
-                    });
-                } elseif (str_contains($filters['price_range'], '+')) {
-                    $minPrice = (float) str_replace('+', '', $filters['price_range']);
-
-                    $query->where(function ($q) use ($minPrice) {
-                        $q->where('base_price', '>=', $minPrice)
-                          ->orWhere(function($subQ) use ($minPrice) {
-                              $subQ->where('has_variants', true)
-                                   ->where('base_price', '>=', $minPrice * 0.5);
-                          });
-                    });
-                }
-            }
-
-            // Apply rating filter - OPTIMIZED with LEFT JOIN
-            if (!empty($filters['ratings'])) {
-                $minRating = min(array_map('intval', $filters['ratings']));
-                $query->leftJoin('product_ratings_cache as prc', 'products.id', '=', 'prc.product_id')
-                      ->where('prc.average_rating', '>=', $minRating);
-            }
-
-            // Apply discount filter - OPTIMIZED to prevent timeout
-            if (!empty($filters['discounts'])) {
-                $minDiscount = min(array_map('intval', $filters['discounts']));
-
-                // Simplified: Only check base_discount for speed
-                $query->where(function ($q) use ($minDiscount) {
-                    $q->where('base_discount', '>=', $minDiscount)
-                      ->orWhere(function($subQ) use ($minDiscount) {
-                          // For variant products, be permissive (check later)
-                          $subQ->where('has_variants', true)
-                               ->where('base_discount', '>=', $minDiscount * 0.5);
-                      });
-                });
-            }
-
-            // Get total count (fast with indexes)
-            $total = $query->count('products.id');
-
-                if ($total === 0) {
-                    return $this->buildSimilarProductsResponse($category, $filters, $perPage);
-                }
-
-            // Select base fields - need to adjust if rating_high_low is used
-            if ($sortBy === 'rating_high_low') {
-                // Already have the join and select from the switch statement
+    /**
+     * OPTIMIZED: Get paginated IDs from Redis with efficient sorting
+     */
+    private function getPaginatedIdsFromRedis(string $redisKey, int $page, int $perPage, string $sortBy, int $totalCount): array
+    {
+        $offset = ($page - 1) * $perPage;
+        
+        // For small result sets, fetch all and sort in memory
+        if ($totalCount <= 1000) {
+            $allIds = Redis::smembers($redisKey);
+            $productIds = array_map('intval', $allIds);
+            
+            // Sort based on sortBy
+            if ($sortBy === 'latest') {
+                rsort($productIds); // Newest first (highest ID)
             } else {
-                $query->select([
-                    'products.id', 'products.title', 'products.slug', 'products.base_price',
-                    'products.base_discount', 'products.base_stock', 'products.condition',
-                    'products.has_variants', 'products.brand_id'
-                ]);
+                // For price/rating sorts, need to fetch data and sort
+                return $this->sortProductIdsWithData($productIds, $sortBy, $offset, $perPage);
             }
+            
+            return array_slice($productIds, $offset, $perPage);
+        }
+        
+        // For large sets, use database with Redis IDs
+        return $this->sortLargeSetWithDatabase($redisKey, $sortBy, $offset, $perPage, $totalCount);
+    }
 
-            // Apply sorting - for price sorts, get larger sample and sort in-memory
-            $isPriceSort = in_array($sortBy, ['price_low_high', 'price_high_low']);
-            $fetchSize = $isPriceSort ? $perPage * 3 : $perPage;
-            $fetchOffset = $isPriceSort ? max(0, (($page - 1) * $perPage) - $perPage) : ($page - 1) * $perPage;
-
+    /**
+     * OPTIMIZED: Sort small sets in memory with minimal data fetch
+     */
+    private function sortProductIdsWithData(array $productIds, string $sortBy, int $offset, int $perPage): array
+    {
+        // Get sorting data for all IDs in one query
+        $query = Product::whereIn('id', $productIds)
+            ->select('id', 'base_price', 'title');
+        
+        if ($sortBy === 'rating_high_low') {
+            $query->leftJoin('product_ratings_cache', 'products.id', '=', 'product_ratings_cache.product_id')
+                  ->addSelect('product_ratings_cache.average_rating');
+        }
+        
+        $productsData = $query->get()->keyBy('id');
+        
+        // Sort in memory
+        usort($productIds, function($a, $b) use ($sortBy, $productsData) {
+            $prodA = $productsData[$a] ?? null;
+            $prodB = $productsData[$b] ?? null;
+            
+            if (!$prodA || !$prodB) return $b <=> $a; // Default to ID desc
+            
             switch ($sortBy) {
                 case 'price_low_high':
-                    $query->orderBy('products.base_price', 'asc');
-                    break;
+                    return $prodA->base_price <=> $prodB->base_price;
                 case 'price_high_low':
-                    $query->orderBy('products.base_price', 'desc');
-                    break;
+                    return $prodB->base_price <=> $prodA->base_price;
                 case 'rating_high_low':
-                    $query->leftJoin('product_ratings_cache', 'products.id', '=', 'product_ratings_cache.product_id')
-                          ->orderByDesc('product_ratings_cache.average_rating')
-                          ->select('products.*'); // Ensure we still select only product columns
-                    break;
+                    return ($prodB->average_rating ?? 0) <=> ($prodA->average_rating ?? 0);
                 case 'name_a_z':
-                    $query->orderBy('products.title', 'asc');
-                    break;
+                    return $prodA->title <=> $prodB->title;
                 case 'name_z_a':
-                    $query->orderBy('products.title', 'desc');
-                    break;
-                case 'latest':
+                    return $prodB->title <=> $prodA->title;
                 default:
-                    $query->orderByDesc('products.id');
-                    break;
+                    return $b <=> $a;
             }
-
-            // Apply pagination
-            $productIds = $query->skip($fetchOffset)
-                               ->take($fetchSize)
-                               ->pluck('products.id')
-                               ->toArray();
-
-            if (empty($productIds)) {
-                return $this->getEmptyResult();
-            }
-
-            // Fetch product details
-            $products = $this->fetchProductDetails($productIds);
-
-            // Sort by price in-memory for price sorts
-            if ($isPriceSort && !empty($products)) {
-                usort($products, function($a, $b) use ($sortBy) {
-                    $priceA = $a['pr']['f'] ?? $a['pr']['o'] ?? PHP_INT_MAX;
-                    $priceB = $b['pr']['f'] ?? $b['pr']['o'] ?? PHP_INT_MAX;
-                    return ($sortBy === 'price_low_high') ? ($priceA <=> $priceB) : ($priceB <=> $priceA);
-                });
-                // Slice to exact page after sorting
-                $offsetInPage = ($page - 1) * $perPage - $fetchOffset;
-                $products = array_slice($products, max(0, $offsetInPage), $perPage);
-            }
-
-            // Build filter data
-            $filterData = $this->buildRedisFilterData($category, $filters);
-
-            return [
-                'filters' => $filterData,
-                'products' => $products,
-                'pagination' => $this->buildPagination($page, $perPage, $total),
-                'total' => $total,
-                'source' => 'database_indexed',
-                    'cached' => false,
-                    'similar' => false
-            ];
         });
-    }    /**
-     * Get paginated product IDs using database with optimized WHERE IN approach
-     * For 10M products, we can't load all IDs - use DB directly
+        
+        return array_slice($productIds, $offset, $perPage);
+    }
+
+    /**
+     * OPTIMIZED: For large sets, sample and use database sorting
      */
-    private function getPaginatedIdsFromDatabase(?string $redisKey, int $page, int $perPage, string $sortBy): array
+    private function sortLargeSetWithDatabase(string $redisKey, string $sortBy, int $offset, int $perPage, int $totalCount): array
     {
-        if (!$redisKey || !Redis::exists($redisKey)) {
+        // Sample more IDs than needed to account for filtering
+        $sampleSize = min(($offset + $perPage) * 3, 10000);
+        $sampledIds = Redis::srandmember($redisKey, $sampleSize);
+        
+        if (!is_array($sampledIds)) {
+            $sampledIds = $sampledIds ? [$sampledIds] : [];
+        }
+        
+        if (empty($sampledIds)) {
             return [];
         }
-
-        // Strategy: Use database filtering with a reasonable subset from Redis
-        // Get enough IDs to fill several pages (pre-fetch for speed)
-        $prefetchSize = $perPage * 20; // Get 20 pages worth
-        $skipSize = ($page - 1) * $perPage;
-
-        // Sample enough product IDs to cover the page we need
-        $requiredIds = $skipSize + $perPage + 1000; // Extra buffer for filtering
-
-        try {
-            // Use SRANDMEMBER to get a large random sample
-            // This is O(1) for Redis and doesn't load the entire set
-            $sampleSize = min($requiredIds * 2, 50000); // Cap at 50K to avoid memory issues
-            $sampleIds = Redis::srandmember($redisKey, $sampleSize);
-
-            if (!is_array($sampleIds)) {
-                $sampleIds = $sampleIds ? [$sampleIds] : [];
-            }
-
-            if (empty($sampleIds)) {
-                Log::warning('No sample IDs retrieved from Redis', ['key' => $redisKey]);
-                return [];
-            }
-
-            $productIds = array_map('intval', $sampleIds);
-
-        } catch (\Exception $e) {
-            Log::error('Failed to sample IDs from Redis', [
-                'key' => $redisKey,
-                'error' => $e->getMessage()
-            ]);
-            return [];
-        }
-
-        // Now use database to sort and paginate
+        
+        $productIds = array_map('intval', $sampledIds);
+        
+        // Use database to sort and paginate
         $query = Product::whereIn('id', $productIds)
             ->where('status', 'active')
-            ->select('id');        // Apply sorting
+            ->select('id');
+        
+        // Apply sorting
         switch ($sortBy) {
             case 'price_low_high':
                 $query->orderBy('base_price', 'asc');
@@ -361,162 +306,83 @@ class UltraFastFilterController extends Controller
                 $query->orderByDesc('id');
                 break;
         }
-
-        // Apply pagination
-        return $query->skip(($page - 1) * $perPage)
+        
+        return $query->skip($offset)
                      ->take($perPage)
                      ->pluck('id')
                      ->toArray();
     }
 
     /**
-     * Get recent products when no filters applied
+     * OPTIMIZED: Fetch product details with multi-level caching
      */
-    private function getRecentProductsResult(int $page, int $perPage): array
-    {
-        $query = Product::where('status', 'active')
-            ->orderByDesc('id');
-
-        $total = min(10000, $query->count()); // Limit to 10K for performance
-
-        $productIds = $query->skip(($page - 1) * $perPage)
-            ->take($perPage)
-            ->pluck('id')
-            ->toArray();
-
-        $products = $this->fetchProductDetails($productIds);
-
-        return [
-            'filters' => $this->buildRedisFilterData(null, []),
-            'products' => $products,
-            'pagination' => $this->buildPagination($page, $perPage, $total),
-            'total' => $total,
-            'source' => 'database',
-            'cached' => false
-        ];
-    }
-
-    /**
-     * Get filter counts using Redis Set intersections
-     */
-    private function buildRedisFilterData($category, array $currentFilters): array
-    {
-        // Get base product set for the category
-        $baseProductIds = $category ?
-            Redis::smembers("index:category:{$category->id}") :
-            null;
-
-        return [
-            'br' => $this->getRedisFilterCounts('brand', $baseProductIds, $currentFilters),
-            'pr' => $this->getRedisFilterPriceRange($baseProductIds, $currentFilters),
-            'rt' => $this->getRedisFilterCounts('rating', $baseProductIds, $currentFilters),
-            'dc' => $this->getRedisFilterCounts('discount', $baseProductIds, $currentFilters),
-            'av' => $this->getAvailabilityStats($baseProductIds, $currentFilters),
-            'sc' => $this->getSubCategories($category),
-            'so' => $this->getSortOptions(),
-            'af' => array_filter($currentFilters, fn($v) => !empty($v) && $v !== 'latest')
-        ];
-    }
-
-    /**
-     * Get filter counts using Redis Set intersections
-     */
-    private function getRedisFilterCounts(string $filterType, ?array $baseProductIds, array $currentFilters): array
-    {
-        $results = [];
-        $keys = Redis::keys("index:{$filterType}:*");
-
-        if (empty($keys)) {
-            if ($filterType === 'brand') {
-                return $this->buildBrandCountsFromDatabase($currentFilters);
-            }
-            return $results;
-        }
-
-        if ($filterType === 'brand') {
-            $slugCounts = [];
-            foreach ($keys as $key) {
-                $slug = str_replace("index:{$filterType}:", '', $key);
-                if ($slug === '') {
-                    continue;
-                }
-                $slugCounts[$slug] = Redis::scard($key);
-            }
-
-            if (empty($slugCounts)) {
-                return $results;
-            }
-
-            $brandLookup = $this->getBrandSlugTitleMap();
-
-            foreach ($slugCounts as $slug => $count) {
-                if ($count <= 0) {
-                    continue;
-                }
-
-                $title = $brandLookup[$slug] ?? Str::of($slug)->replace('-', ' ')->title();
-
-                $results[] = [
-                    't' => $title,
-                    's' => $slug,
-                    'cnt' => $count,
-                    'sel' => in_array($slug, $currentFilters['brands'] ?? [])
-                ];
-            }
-
-            // Keep list manageable and sorted by count desc
-            usort($results, fn($a, $b) => $b['cnt'] <=> $a['cnt']);
-            return array_slice($results, 0, 50);
-        }
-
-        foreach ($keys as $key) {
-            $keyValue = str_replace("index:{$filterType}:", '', $key);
-            if ($keyValue === '') {
-                continue;
-            }
-
-            $count = Redis::scard($key);
-            if ($count > 0) {
-                $results[] = [
-                    'v' => $keyValue,
-                    'cnt' => $count,
-                    'sel' => in_array($keyValue, $currentFilters[$filterType . 's'] ?? [])
-                ];
-            }
-        }
-
-        return array_slice($results, 0, 50);
-    }
-
-    /**
-     * Fetch optimized product details for display
-     */
-    private function fetchProductDetails(array $productIds): array
+    private function fetchProductDetailsOptimized(array $productIds): array
     {
         if (empty($productIds)) {
             return [];
         }
+        
+        $products = [];
+        $uncachedIds = [];
+        
+        // STEP 1: Check cache for each product (fast)
+        foreach ($productIds as $productId) {
+            $cacheKey = "product_detail_{$productId}";
+            $cached = Cache::get($cacheKey);
+            
+            if ($cached !== null) {
+                $products[$productId] = $cached;
+            } else {
+                $uncachedIds[] = $productId;
+            }
+        }
+        
+        // STEP 2: Fetch uncached products in one optimized query
+        if (!empty($uncachedIds)) {
+            $fetchedProducts = $this->fetchProductsBatch($uncachedIds);
+            
+            // Cache each product and add to results
+            foreach ($fetchedProducts as $product) {
+                $cacheKey = "product_detail_{$product['id']}";
+                Cache::put($cacheKey, $product, self::PRODUCT_CACHE_TTL);
+                $products[$product['id']] = $product;
+            }
+        }
+        
+        // STEP 3: Maintain original order
+        $orderedProducts = [];
+        foreach ($productIds as $id) {
+            if (isset($products[$id])) {
+                $orderedProducts[] = $products[$id];
+            }
+        }
+        
+        return $orderedProducts;
+    }
 
-        // Batch fetch all ratings for these products
-        $ratingsMap = DB::table('product_ratings_cache')
-            ->whereIn('product_id', $productIds)
-            ->get(['product_id', 'average_rating', 'total_reviews'])
-            ->keyBy('product_id')
-            ->map(fn($r) => [
-                'a' => round($r->average_rating, 1),
-                't' => (int) $r->total_reviews
-            ])
-            ->toArray();
-
-        // Use optimized query similar to the original but for specific IDs
+    /**
+     * OPTIMIZED: Batch fetch products with all relations in single query
+     */
+    private function fetchProductsBatch(array $productIds): array
+    {
+        // Single query with eager loading (including variant images for fallback)
         $products = Product::whereIn('id', $productIds)
             ->with([
                 'brand:id,title,slug',
                 'images' => function($q) {
-                    // Keep ordering stable, but allow slice later per product
                     $q->orderByDesc('is_primary')
                       ->orderBy('sort_order')
-                      ->orderBy('id');
+                      ->limit(2); // Only first 2 images per product
+                },
+                'variants' => function($q) {
+                    $q->where('status', 'active')
+                      ->orderBy('price', 'asc')
+                      ->limit(1) // Only first variant needed for image fallback
+                      ->with(['images' => function($iq) {
+                          $iq->orderByDesc('is_primary')
+                             ->orderBy('sort_order')
+                             ->limit(2);
+                      }]);
                 }
             ])
             ->select([
@@ -524,66 +390,130 @@ class UltraFastFilterController extends Controller
                 'base_stock', 'condition', 'has_variants', 'brand_id'
             ])
             ->get();
-
-        // Maintain order of input IDs
-        $orderedProducts = [];
-        foreach ($productIds as $id) {
-            $product = $products->firstWhere('id', $id);
-            if ($product) {
-                $orderedProducts[] = $product;
+        
+        // Batch fetch ratings for all products
+        $ratingsMap = DB::table('product_ratings_cache')
+            ->whereIn('product_id', $productIds)
+            ->get(['product_id', 'average_rating', 'total_reviews'])
+            ->keyBy('product_id');
+        
+        // Batch fetch variant data for products with variants
+        $variantProductIds = $products->where('has_variants', true)->pluck('id')->toArray();
+        $variantDataMap = [];
+        
+        if (!empty($variantProductIds)) {
+            $variantData = DB::table('product_variants')
+                ->whereIn('product_id', $variantProductIds)
+                ->where('status', 'active')
+                ->select('product_id', 'price', 'discount', 'stock')
+                ->orderBy('price', 'asc')
+                ->get()
+                ->groupBy('product_id');
+            
+            foreach ($variantData as $productId => $variants) {
+                $cheapest = $variants->first();
+                $variantDataMap[$productId] = [
+                    'price' => $cheapest->price,
+                    'discount' => $cheapest->discount ?? 0,
+                    'stock' => $variants->sum('stock')
+                ];
             }
         }
-
-        return collect($orderedProducts)->map(function($product) use ($ratingsMap) {
-            // For products with variants, get min price from variants
+        
+        // Transform to optimized format
+        return $products->map(function($product) use ($ratingsMap, $variantDataMap) {
             $basePrice = $product->base_price;
             $baseDiscount = $product->base_discount ?? 0;
             $stock = $product->base_stock ?? 0;
-
-            if ($product->has_variants && ($basePrice === null || $basePrice == 0)) {
-                // Get cheapest variant
-                $cheapestVariant = DB::table('product_variants')
-                    ->where('product_id', $product->id)
-                    ->where('status', 'active')
-                    ->orderBy('price', 'asc')
-                    ->first(['price', 'discount', 'stock']);
-
-                if ($cheapestVariant) {
-                    $basePrice = $cheapestVariant->price;
-                    $baseDiscount = $cheapestVariant->discount ?? 0;
-                    $stock = $cheapestVariant->stock ?? 0;
-                }
+            
+            // Use variant data if available and product has variants
+            if ($product->has_variants && isset($variantDataMap[$product->id])) {
+                $variantData = $variantDataMap[$product->id];
+                $basePrice = $variantData['price'];
+                $baseDiscount = $variantData['discount'];
+                $stock = $variantData['stock'];
             }
-
+            
             $finalPrice = $basePrice * (1 - $baseDiscount / 100);
-
-            // Normalize image paths to storage-relative paths expected by frontend slider
+            
+            // Process images - Use model's url accessor (ImageHelper) instead of custom normalization
+            Log::info('Processing product images', [
+                'product_id' => $product->id,
+                'title' => $product->title,
+                'has_variants' => $product->has_variants,
+                'images_relation_loaded' => $product->relationLoaded('images'),
+                'images_count' => $product->images->count(),
+                'raw_images' => $product->images->map(fn($img) => [
+                    'id' => $img->id,
+                    'path' => $img->image_path,
+                    'is_primary' => $img->is_primary
+                ])->toArray()
+            ]);
+            
             $images = $product->images
-                ->map(fn($img) => $this->normalizeImagePath($img->image_path ?? null))
+                ->map(function($img) use ($product) {
+                    $url = $img->url ?? null;
+                    Log::info('Product image URL generated', [
+                        'product_id' => $product->id,
+                        'image_id' => $img->id,
+                        'raw_path' => $img->image_path,
+                        'generated_url' => $url
+                    ]);
+                    return $url;
+                })
                 ->filter()
                 ->values()
                 ->toArray();
-
-            // Variant fallback: if product lacks its own images, try pulling primary variant images
-            if (empty($images) && $product->has_variants) {
-                $variantImages = DB::table('product_variants')
-                    ->join('variant_images', 'variant_images.product_variant_id', '=', 'product_variants.id')
-                    ->where('product_variants.product_id', $product->id)
-                    ->orderByDesc('variant_images.is_primary')
-                    ->orderBy('variant_images.sort_order')
-                    ->orderBy('variant_images.id')
-                    ->limit(2)
-                    ->pluck('variant_images.image_path')
-                    ->map(fn($path) => $this->normalizeImagePath($path))
-                    ->filter()
-                    ->values()
-                    ->toArray();
-
-                if (!empty($variantImages)) {
-                    $images = $variantImages;
+            
+            // Fallback: If product has no images but has variants, try to get variant images
+            if (empty($images) && $product->has_variants && $product->relationLoaded('variants')) {
+                Log::info('Trying variant images fallback', [
+                    'product_id' => $product->id,
+                    'variants_count' => $product->variants->count()
+                ]);
+                
+                foreach ($product->variants as $variant) {
+                    Log::info('Checking variant', [
+                        'product_id' => $product->id,
+                        'variant_id' => $variant->id,
+                        'has_images' => $variant->relationLoaded('images'),
+                        'images_count' => $variant->relationLoaded('images') ? $variant->images->count() : 0,
+                        'raw_images' => $variant->relationLoaded('images') ? $variant->images->map(fn($img) => [
+                            'id' => $img->id,
+                            'path' => $img->image_path
+                        ])->toArray() : []
+                    ]);
+                    
+                    if ($variant->relationLoaded('images') && $variant->images->isNotEmpty()) {
+                        $images = $variant->images
+                            ->map(function($img) use ($product, $variant) {
+                                $url = $img->url ?? null;
+                                Log::info('Variant image URL generated', [
+                                    'product_id' => $product->id,
+                                    'variant_id' => $variant->id,
+                                    'image_id' => $img->id,
+                                    'raw_path' => $img->image_path,
+                                    'generated_url' => $url
+                                ]);
+                                return $url;
+                            })
+                            ->filter()
+                            ->values()
+                            ->take(2)
+                            ->toArray();
+                        break;
+                    }
                 }
             }
-
+            
+            // Ensure we always have at least one image (fallback to default)
+            if (empty($images)) {
+                $images = [\App\Helpers\ImageHelper::defaultProductImage()];
+            }
+            
+            // Rating data
+            $ratingData = $ratingsMap[$product->id] ?? null;
+            
             return [
                 'id' => $product->id,
                 't' => Str::limit($product->title, 60),
@@ -601,16 +531,206 @@ class UltraFastFilterController extends Controller
                     's' => $product->brand->slug
                 ] : null,
                 'i' => array_slice($images, 0, 2),
-                'r' => $ratingsMap[$product->id] ?? ['a' => 0, 't' => 0]
+                'r' => $ratingData ? [
+                    'a' => round($ratingData->average_rating, 1),
+                    't' => (int) $ratingData->total_reviews
+                ] : ['a' => 0, 't' => 0]
             ];
         })->toArray();
     }
 
-    // Helper methods (keeping existing logic but optimized)
-    private function generateCacheKey($category, array $filters, int $page, int $perPage, string $sortBy): string
+    /**
+     * OPTIMIZED: Build filter data with Redis-based counts (fast)
+     */
+    private function buildRedisFilterDataOptimized($category, array $currentFilters): array
+    {
+        $filterCacheKey = 'filter_data_' . ($category ? $category->id : 'all') . '_' . md5(serialize($currentFilters));
+        
+        return Cache::remember($filterCacheKey, self::FILTER_CACHE_TTL, function () use ($category, $currentFilters) {
+            return [
+                'br' => $this->getBrandFilterData($category, $currentFilters),
+                'pr' => $this->getPriceRangeFilterData($currentFilters),
+                'rt' => $this->getRatingFilterData($currentFilters),
+                'dc' => $this->getDiscountFilterData($currentFilters),
+                'av' => $this->getAvailabilityStats(null, $currentFilters),
+                'sc' => $this->getSubCategories($category),
+                'so' => $this->getSortOptions(),
+                'af' => array_filter($currentFilters, fn($v) => !empty($v) && $v !== 'latest')
+            ];
+        });
+    }
+
+    /**
+     * OPTIMIZED: Get brand filter data using Redis counts
+     */
+    private function getBrandFilterData($category, array $currentFilters): array
+    {
+        $brandKeys = Redis::keys("index:brand:*");
+        
+        if (empty($brandKeys)) {
+            return $this->buildBrandCountsFromDatabase($currentFilters);
+        }
+        
+        // Use pipeline to get all counts at once (single network round trip)
+        $counts = Redis::pipeline(function ($pipe) use ($brandKeys) {
+            foreach ($brandKeys as $key) {
+                $pipe->scard($key);
+            }
+        });
+        
+        // Map brand IDs to counts
+        $brandCounts = [];
+        foreach ($brandKeys as $index => $key) {
+            $brandId = (int) str_replace('index:brand:', '', $key);
+            if ($counts[$index] > 0) {
+                $brandCounts[$brandId] = $counts[$index];
+            }
+        }
+        
+        if (empty($brandCounts)) {
+            return [];
+        }
+        
+        // Batch fetch brand details
+        $brands = Brand::whereIn('id', array_keys($brandCounts))
+            ->where('status', 'active')
+            ->select('id', 'slug', 'title')
+            ->get()
+            ->keyBy('id');
+        
+        $results = [];
+        foreach ($brandCounts as $brandId => $count) {
+            $brand = $brands[$brandId] ?? null;
+            if (!$brand) continue;
+            
+            $results[] = [
+                't' => $brand->title,
+                's' => $brand->slug,
+                'cnt' => $count,
+                'sel' => in_array($brand->slug, $currentFilters['brands'] ?? [])
+            ];
+        }
+        
+        // Sort by count desc
+        usort($results, fn($a, $b) => $b['cnt'] <=> $a['cnt']);
+        
+        return array_slice($results, 0, 50);
+    }
+
+    /**
+     * OPTIMIZED: Get price range filter data using Redis counts
+     */
+    private function getPriceRangeFilterData(array $currentFilters): array
+    {
+        $ranges = [
+            ['r' => '0-100', 'l' => 'Under $100'],
+            ['r' => '100-500', 'l' => '$100 - $500'],
+            ['r' => '500-1000', 'l' => '$500 - $1,000'],
+            ['r' => '1000-5000', 'l' => '$1,000 - $5,000'],
+            ['r' => '5000-10000', 'l' => '$5,000 - $10,000'],
+            ['r' => '10000+', 'l' => '$10,000 & Above']
+        ];
+        
+        // Use pipeline to get all counts
+        $rangeKeys = array_map(function($range) {
+            return "index:price:{$range['r']}";
+        }, $ranges);
+        
+        $counts = Redis::pipeline(function ($pipe) use ($rangeKeys) {
+            foreach ($rangeKeys as $key) {
+                $pipe->scard($key);
+            }
+        });
+        
+        // Add counts to ranges
+        foreach ($ranges as $index => &$range) {
+            $range['cnt'] = $counts[$index] ?? 0;
+        }
+        
+        $current = $currentFilters['price_range'] ?? '';
+        $currentMin = 0;
+        $currentMax = 999999;
+        
+        if (!empty($current) && str_contains($current, '-')) {
+            [$currentMin, $currentMax] = explode('-', $current);
+        } elseif (!empty($current) && str_contains($current, '+')) {
+            $currentMin = (int) str_replace('+', '', $current);
+        }
+        
+        return [
+            'mn' => 0,
+            'mx' => 999999,
+            'cmn' => (int) $currentMin,
+            'cmx' => (int) $currentMax,
+            'cur' => '$',
+            'ranges' => $ranges
+        ];
+    }
+
+    /**
+     * OPTIMIZED: Get rating filter data using Redis counts
+     */
+    private function getRatingFilterData(array $currentFilters): array
+    {
+        $ratings = [1, 2, 3, 4, 5];
+        $results = [];
+        
+        // Use pipeline
+        $counts = Redis::pipeline(function ($pipe) use ($ratings) {
+            foreach ($ratings as $rating) {
+                $pipe->scard("index:rating:{$rating}");
+            }
+        });
+        
+        foreach ($ratings as $index => $rating) {
+            $count = $counts[$index] ?? 0;
+            if ($count > 0) {
+                $results[] = [
+                    'v' => (string) $rating,
+                    'cnt' => $count,
+                    'sel' => in_array((string) $rating, $currentFilters['ratings'] ?? [])
+                ];
+            }
+        }
+        
+        return $results;
+    }
+
+    /**
+     * OPTIMIZED: Get discount filter data using Redis counts
+     */
+    private function getDiscountFilterData(array $currentFilters): array
+    {
+        $discounts = ['10', '25', '50', '75'];
+        $results = [];
+        
+        // Use pipeline
+        $counts = Redis::pipeline(function ($pipe) use ($discounts) {
+            foreach ($discounts as $discount) {
+                $pipe->scard("index:discount:{$discount}");
+            }
+        });
+        
+        foreach ($discounts as $index => $discount) {
+            $count = $counts[$index] ?? 0;
+            if ($count > 0) {
+                $results[] = [
+                    'v' => $discount,
+                    'cnt' => $count,
+                    'sel' => in_array($discount, $currentFilters['discounts'] ?? [])
+                ];
+            }
+        }
+        
+        return $results;
+    }
+
+    // ==================== HELPER METHODS ====================
+
+    private function generateResponseCacheKey($category, array $filters, int $page, int $perPage, string $sortBy): string
     {
         $categoryKey = $category ? $category->slug : 'all';
-        return 'uf_' . md5($categoryKey . serialize($filters) . "{$page}_{$perPage}_{$sortBy}");
+        return 'uf_response_' . md5($categoryKey . serialize($filters) . "{$page}_{$perPage}_{$sortBy}");
     }
 
     private function parseCurrentFilters(Request $request): array
@@ -649,16 +769,6 @@ class UltraFastFilterController extends Controller
         } catch (\Exception $e) {
             return null;
         }
-    }
-
-    private function getBrandIdsBySlug(array $slugs): array
-    {
-        return Cache::remember('brand_ids_' . md5(implode(',', $slugs)), 3600, function () use ($slugs) {
-            return Brand::whereIn('slug', $slugs)
-                ->where('status', 'active')
-                ->pluck('id')
-                ->toArray();
-        });
     }
 
     private function buildPagination(int $page, int $perPage, int $total): array
@@ -700,11 +810,11 @@ class UltraFastFilterController extends Controller
             ->pluck('id')
             ->toArray();
 
-        $products = $this->fetchProductDetails($productIds);
+        $products = $this->fetchProductDetailsOptimized($productIds);
         $fallbackCount = count($productIds);
 
         return [
-            'filters' => $this->buildRedisFilterData($category, $filters),
+            'filters' => $this->buildRedisFilterDataOptimized($category, $filters),
             'products' => $products,
             'pagination' => $this->buildPagination(1, $perPage, $fallbackCount),
             'total' => 0,
@@ -729,93 +839,24 @@ class UltraFastFilterController extends Controller
     {
         if (!$category) return [];
 
-        return Category::where('parent_id', $category->id)
-            ->where('status', 'active')
-            ->select(['id', 'slug', 'title'])
-            ->get()
-            ->map(fn($c) => ['id' => $c->id, 's' => $c->slug, 't' => $c->title])
-            ->toArray();
-    }
-
-    private function getRedisFilterPriceRange(?array $baseProductIds, array $currentFilters): array
-    {
-        // Cache the price range calculation as it's expensive
-        $priceData = Cache::remember('price_range_global', 3600, function() {
-            // Calculate actual min/max prices from database
-            // Check both base_price (non-variant products) and variant prices
-
-            $minPriceFromBase = DB::table('products')
+        return Cache::remember("subcats_{$category->id}", 3600, function() use ($category) {
+            return Category::where('parent_id', $category->id)
                 ->where('status', 'active')
-                ->where('has_variants', false)
-                ->whereNotNull('base_price')
-                ->min('base_price');
-
-            $maxPriceFromBase = DB::table('products')
-                ->where('status', 'active')
-                ->where('has_variants', false)
-                ->whereNotNull('base_price')
-                ->max('base_price');
-
-            $minPriceFromVariants = DB::table('product_variants')
-                ->where('status', 'active')
-                ->min('price');
-
-            $maxPriceFromVariants = DB::table('product_variants')
-                ->where('status', 'active')
-                ->max('price');
-
-            $minPrice = (int) min($minPriceFromBase ?? PHP_INT_MAX, $minPriceFromVariants ?? PHP_INT_MAX);
-            $maxPrice = (int) max($maxPriceFromBase ?? 0, $maxPriceFromVariants ?? 0);
-
-            // Generate common price ranges
-            $ranges = [
-                ['r' => '0-100', 'l' => 'Under $100'],
-                ['r' => '100-500', 'l' => '$100 - $500'],
-                ['r' => '500-1000', 'l' => '$500 - $1,000'],
-                ['r' => '1000-2000', 'l' => '$1,000 - $2,000'],
-                ['r' => '2000-5000', 'l' => '$2,000 - $5,000'],
-                ['r' => '5000+', 'l' => '$5,000 & Above']
-            ];
-
-            return [
-                'mn' => $minPrice,
-                'mx' => $maxPrice,
-                'ranges' => $ranges
-            ];
+                ->select(['id', 'slug', 'title'])
+                ->get()
+                ->map(fn($c) => ['id' => $c->id, 's' => $c->slug, 't' => $c->title])
+                ->toArray();
         });
-
-        $current = $currentFilters['price_range'] ?? '';
-        $currentMin = $priceData['mn'];
-        $currentMax = $priceData['mx'];
-
-        if (!empty($current) && str_contains($current, '-')) {
-            [$currentMin, $currentMax] = explode('-', $current);
-        } elseif (!empty($current) && str_contains($current, '+')) {
-            $currentMin = (int) str_replace('+', '', $current);
-        }
-
-        return [
-            'mn' => $priceData['mn'],
-            'mx' => $priceData['mx'],
-            'cmn' => (int)$currentMin,
-            'cmx' => (int)$currentMax,
-            'cur' => '$',
-            'ranges' => $priceData['ranges']
-        ];
     }
 
     private function getAvailabilityStats(?array $baseProductIds, array $currentFilters): array
     {
-        // Implement availability statistics
         return [
             ['cnt' => 1000, 'v' => 'in_stock', 'sel' => in_array('in_stock', $currentFilters['availability'] ?? [])],
             ['cnt' => 100, 'v' => 'out_of_stock', 'sel' => in_array('out_of_stock', $currentFilters['availability'] ?? [])]
         ];
     }
 
-    /**
-     * Convert our filters to FastFilterService format
-     */
     private function convertFiltersForRedis(array $filters, $category): array
     {
         $redisFilters = [];
@@ -825,7 +866,13 @@ class UltraFastFilterController extends Controller
         }
 
         if (!empty($filters['brands'])) {
-            $brandIds = $this->getBrandIdsBySlug($filters['brands']);
+            $brandIds = Cache::remember('brand_slugs_' . md5(implode(',', $filters['brands'])), 3600, function () use ($filters) {
+                return Brand::whereIn('slug', $filters['brands'])
+                    ->where('status', 'active')
+                    ->pluck('id')
+                    ->toArray();
+            });
+            
             if (!empty($brandIds)) {
                 $redisFilters['brands'] = $brandIds;
             }
@@ -846,93 +893,32 @@ class UltraFastFilterController extends Controller
         return $redisFilters;
     }
 
-    private function normalizeImagePath(?string $rawPath): ?string
-    {
-        if (empty($rawPath)) {
-            return null;
-        }
-
-        $rawPath = trim($rawPath);
-
-        if (Str::startsWith($rawPath, ['http://', 'https://'])) {
-            $storagePos = stripos($rawPath, '/storage/');
-            if ($storagePos !== false) {
-                $rawPath = substr($rawPath, $storagePos + strlen('/storage/'));
-            } else {
-                return $rawPath;
-            }
-        }
-
-        $normalized = ltrim($rawPath, '/');
-
-        if (Str::startsWith($normalized, 'storage/')) {
-            $normalized = substr($normalized, strlen('storage/'));
-        }
-
-        if (Str::startsWith($normalized, 'products/variants/')) {
-            return $normalized;
-        }
-
-        if (Str::startsWith($normalized, 'products/')) {
-            return $normalized;
-        }
-
-        if (Str::startsWith($normalized, 'variant_')) {
-            return 'products/variants/' . $normalized;
-        }
-
-        if (Str::startsWith($normalized, 'product_')) {
-            return 'products/' . $normalized;
-        }
-
-        if (Str::startsWith($normalized, 'variants/')) {
-            return 'products/' . $normalized;
-        }
-
-        if (Str::startsWith($normalized, 'photos/')) {
-            return $normalized;
-        }
-
-        return 'products/' . $normalized;
-    }
-
-    private function getBrandSlugTitleMap(): array
-    {
-        return Cache::remember('brand_slug_title_map', 1800, function () {
-            return Brand::where('status', 'active')
-                ->pluck('title', 'slug')
-                ->toArray();
-        });
-    }
+    // REMOVED: normalizeImagePath() - Now using ImageHelper via model accessors for consistency
+    // All image URL generation is handled by:
+    // - ProductImage::getUrlAttribute() → ImageHelper::productImageUrl()
+    // - VariantImage::getUrlAttribute() → ImageHelper::variantImageUrl()
 
     private function buildBrandCountsFromDatabase(array $currentFilters): array
     {
-        $cacheKey = 'brand_filter_counts_fallback';
-
-        $brands = Cache::remember($cacheKey, 1800, function () {
+        return Cache::remember('brand_filter_counts_fallback', 1800, function () use ($currentFilters) {
             return Brand::query()
                 ->where('status', 'active')
                 ->withCount(['products as product_count' => function ($q) {
                     $q->where('status', 'active');
                 }])
+                ->having('product_count', '>', 0)
                 ->orderByDesc('product_count')
+                ->limit(50)
                 ->get(['id', 'title', 'slug'])
-                ->map(function ($brand) {
+                ->map(function ($brand) use ($currentFilters) {
                     return [
                         't' => $brand->title,
                         's' => $brand->slug,
                         'cnt' => (int) $brand->product_count,
+                        'sel' => in_array($brand->slug, $currentFilters['brands'] ?? [])
                     ];
                 })
-                ->filter(fn($brand) => $brand['cnt'] > 0)
-                ->values()
                 ->toArray();
         });
-
-        return array_map(function ($brand) use ($currentFilters) {
-            $brand['sel'] = in_array($brand['s'], $currentFilters['brands'] ?? []);
-            return $brand;
-        }, $brands);
     }
-
 }

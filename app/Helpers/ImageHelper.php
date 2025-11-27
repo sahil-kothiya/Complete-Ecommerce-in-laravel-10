@@ -2,6 +2,8 @@
 
 namespace App\Helpers;
 
+use Illuminate\Support\Facades\Log;
+
 /**
  * Image Helper - Ultra High-Volume Optimization
  *
@@ -35,11 +37,23 @@ class ImageHelper
     public static function productImageUrl(?string $filename, bool $thumbnail = false): string
     {
         if (empty($filename) || !is_string($filename)) {
+            Log::warning('ProductImage: Empty or invalid filename', ['filename' => $filename]);
             return self::defaultProductImage();
         }
 
         // Strip any leading path separators that might have been stored
         $filename = ltrim($filename, '/\\');
+        
+        // Check if file actually exists in storage
+        $filePath = storage_path('app/public/products/' . $filename);
+        $fileExists = file_exists($filePath);
+        
+        Log::info('ProductImage URL Generation', [
+            'filename' => $filename,
+            'expected_path' => $filePath,
+            'file_exists' => $fileExists,
+            'file_size' => $fileExists ? filesize($filePath) : 0
+        ]);
 
         // If full storage path already present, return directly
         if (strpos($filename, 'storage/') === 0) {
@@ -52,7 +66,7 @@ class ImageHelper
         }
 
         // Filename-only new optimized storage (just product_*.webp)
-        // Ensure products directory always included – previous logic produced /storage/product_xxx.webp (404)
+        // Ensure products directory always included
         if (preg_match('/^product_[A-Za-z0-9]/', $filename)) {
             return self::buildAssetUrl('storage/products/' . $filename);
         }
@@ -72,11 +86,23 @@ class ImageHelper
     public static function variantImageUrl(?string $filename, bool $thumbnail = false): string
     {
         if (empty($filename) || !is_string($filename)) {
+            Log::warning('VariantImage: Empty or invalid filename', ['filename' => $filename]);
             return self::defaultVariantImage();
         }
 
         // Strip any leading path separators that might have been stored
         $filename = ltrim($filename, '/\\');
+        
+        // Check if file actually exists in storage
+        $filePath = storage_path('app/public/products/variants/' . $filename);
+        $fileExists = file_exists($filePath);
+        
+        Log::info('VariantImage URL Generation', [
+            'filename' => $filename,
+            'expected_path' => $filePath,
+            'file_exists' => $fileExists,
+            'file_size' => $fileExists ? filesize($filePath) : 0
+        ]);
 
         // Already has storage prefix – return
         if (strpos($filename, 'storage/') === 0) {
@@ -130,7 +156,16 @@ class ImageHelper
      */
     public static function defaultProductImage(): string
     {
-        // Fallback to existing backend image if default product image doesn't exist
+        // Use a proper "no image" placeholder
+        if (file_exists(public_path('images/no-product-image.svg'))) {
+            return self::buildAssetUrl('images/no-product-image.svg');
+        }
+        
+        if (file_exists(public_path('images/no-product-image.png'))) {
+            return self::buildAssetUrl('images/no-product-image.png');
+        }
+        
+        // Fallback to avatar if placeholder doesn't exist
         return self::buildAssetUrl('backend/img/avatar.webp');
     }
 
