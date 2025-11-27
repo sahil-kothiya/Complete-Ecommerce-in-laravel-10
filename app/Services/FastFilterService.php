@@ -145,33 +145,29 @@ class FastFilterService
      */
     public function getPaginatedIds(string $redisKey, int $offset, int $limit): array
     {
-        if (!Redis::exists($redisKey)) {
+        if ($limit <= 0 || !Redis::exists($redisKey)) {
             return [];
         }
 
-        // Convert SET to sorted set temporarily for pagination
-        $tempSortedKey = "temp:sorted:" . md5($redisKey . $offset . $limit);
-
         try {
-            // Get all members and add to sorted set with IDs as scores (for sorting)
-            $members = Redis::sscan($redisKey, 0, ['count' => $offset + $limit]);
+            $ids = Redis::sort($redisKey, [
+                'limit' => [$offset, $limit],
+                'sort' => 'desc',
+                'alpha' => false,
+            ]);
 
-            if (empty($members[1])) {
+            if (empty($ids)) {
                 return [];
             }
 
-            // Convert to array of integers
-            $productIds = array_map('intval', array_slice($members[1], $offset, $limit));
-
-            // Sort in descending order (newest first)
-            rsort($productIds);
-
-            return $productIds;
+            return array_map('intval', $ids);
 
         } catch (\Exception $e) {
             Log::error('FastFilter: Pagination failed', [
                 'error' => $e->getMessage(),
-                'key' => $redisKey
+                'key' => $redisKey,
+                'offset' => $offset,
+                'limit' => $limit,
             ]);
             return [];
         }

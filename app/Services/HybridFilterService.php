@@ -6,6 +6,7 @@ use App\Services\ElasticsearchService;
 use App\Services\FastFilterService;
 use App\Services\RedisCacheService;
 use App\Models\Product;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 
@@ -190,19 +191,66 @@ class HybridFilterService
      */
     private function redisOnly(array $filters, int $page, int $perPage): array
     {
-        // Get product IDs using Redis SET operations
-        $productIds = $this->redisFilter->getFilteredProductIds($filters);
+        $sortBy = $this->normalizeSort($filters['sortBy'] ?? 'latest');
+        $redisResult = $this->redisFilter->getFilteredProductIds($filters);
 
-        $total = count($productIds);
+        // Backwards compatibility: older response returned a flat list of IDs
+        if (is_array($redisResult) && !array_key_exists('key', $redisResult)) {
+            $productIds = array_map('intval', $redisResult);
+            $total = count($productIds);
 
-        // Apply sorting
-        $sortedIds = $this->applySorting($productIds, $filters['sortBy'] ?? 'latest');
+            $sortedIds = $this->applySorting($productIds, $sortBy);
+            $offset = ($page - 1) * $perPage;
+            $paginatedIds = array_slice($sortedIds, $offset, $perPage);
 
-        // Paginate
-        $offset = ($page - 1) * $perPage;
-        $paginatedIds = array_slice($sortedIds, $offset, $perPage);
+            $products = $this->fetchProductsByIds($paginatedIds, false);
 
-        // Fetch products
+            return [
+                'products' => $products,
+                'total' => $total,
+            ];
+        }
+
+        $redisKey = $redisResult['key'] ?? null;
+        $total = (int) ($redisResult['count'] ?? 0);
+
+        if (!$redisKey || $total === 0) {
+            return [
+                'products' => collect([]),
+                'total' => 0,
+            ];
+        }
+
+        $globalOffset = max(0, ($page - 1) * $perPage);
+        $paginatedIds = [];
+
+        if ($sortBy === 'latest') {
+            $paginatedIds = $this->redisFilter->getPaginatedIds($redisKey, $globalOffset, $perPage);
+        } else {
+            $isPriceSort = in_array($sortBy, ['price_asc', 'price_desc']);
+            $buffer = $isPriceSort ? $perPage * 2 : $perPage;
+            $prefetchOffset = $globalOffset > $buffer ? $globalOffset - $buffer : 0;
+            $fetchSize = $perPage + $buffer;
+
+            $candidateIds = $this->redisFilter->getPaginatedIds($redisKey, $prefetchOffset, $fetchSize);
+            $candidateIds = array_map('intval', $candidateIds);
+
+            if (!empty($candidateIds)) {
+                $sortedCandidateIds = $this->applySorting($candidateIds, $sortBy);
+                $sliceStart = max(0, $globalOffset - $prefetchOffset);
+                $paginatedIds = array_slice($sortedCandidateIds, $sliceStart, $perPage);
+            }
+        }
+
+        if (empty($paginatedIds)) {
+            Log::warning('HybridFilter: Redis result empty, falling back to database query', [
+                'filters' => $filters,
+                'page' => $page,
+                'per_page' => $perPage,
+            ]);
+            return $this->databaseFallback($filters, $page, $perPage);
+        }
+
         $products = $this->fetchProductsByIds($paginatedIds, false);
 
         return [
@@ -275,31 +323,143 @@ class HybridFilterService
             return [];
         }
 
-        // For large datasets, use database sorting
         $query = Product::whereIn('id', $productIds)
             ->where('status', 'active')
-            ->select('id');
+            ->select('products.id');
 
+        $query = $this->applyOrderClause($query, $sortBy);
+
+        return $query->select('products.id')->pluck('products.id')->toArray();
+    }
+
+    private function normalizeSort(string $sortBy): string
+    {
+        return match ($sortBy) {
+            'price_low_high' => 'price_asc',
+            'price_high_low' => 'price_desc',
+            'name_a_z' => 'title_asc',
+            'name_z_a' => 'title_desc',
+            'rating_high_low' => 'rating_desc',
+            'price_asc', 'price_desc', 'title_asc', 'title_desc', 'rating_desc', 'latest' => $sortBy,
+            default => 'latest',
+        };
+    }
+
+    private function applyOrderClause(Builder $query, string $sortBy): Builder
+    {
         switch ($sortBy) {
             case 'price_asc':
-                $query->orderBy('base_price', 'asc');
+                $query->orderBy('products.base_price', 'asc');
                 break;
             case 'price_desc':
-                $query->orderBy('base_price', 'desc');
+                $query->orderBy('products.base_price', 'desc');
                 break;
             case 'title_asc':
-                $query->orderBy('title', 'asc');
+                $query->orderBy('products.title', 'asc');
                 break;
             case 'title_desc':
-                $query->orderBy('title', 'desc');
+                $query->orderBy('products.title', 'desc');
+                break;
+            case 'rating_desc':
+                $query->leftJoin('product_ratings_cache as prc', 'products.id', '=', 'prc.product_id')
+                    ->orderByDesc(DB::raw('COALESCE(prc.average_rating, 0)'));
                 break;
             case 'latest':
             default:
-                $query->orderByDesc('id');
+                $query->orderByDesc('products.id');
                 break;
         }
 
-        return $query->pluck('id')->toArray();
+        return $query;
+    }
+
+    private function applyDatabaseFilters(Builder $query, array $filters): void
+    {
+        if (!empty($filters['category_ids']) && is_array($filters['category_ids'])) {
+            $query->whereIn('products.cat_id', $filters['category_ids']);
+        } elseif (!empty($filters['category_id'])) {
+            $query->where('products.cat_id', $filters['category_id']);
+        }
+
+        if (!empty($filters['brands'])) {
+            $query->whereIn('products.brand_id', (array) $filters['brands']);
+        }
+
+        if (!empty($filters['price_range'])) {
+            $this->applyPriceRangeFilter($query, $filters['price_range']);
+        }
+
+        if (!empty($filters['min_rating'])) {
+            $query->leftJoin('product_ratings_cache as prc_filter', 'products.id', '=', 'prc_filter.product_id')
+                ->where('prc_filter.average_rating', '>=', (int) $filters['min_rating']);
+        }
+
+        if (!empty($filters['min_discount'])) {
+            $minDiscount = (int) $filters['min_discount'];
+            $query->where(function ($q) use ($minDiscount) {
+                $q->where('products.base_discount', '>=', $minDiscount)
+                    ->orWhere(function ($variantQ) use ($minDiscount) {
+                        $variantQ->where('products.has_variants', true)
+                            ->where('products.base_discount', '>=', $minDiscount * 0.5);
+                    });
+            });
+        }
+    }
+
+    private function applyPriceRangeFilter(Builder $query, string $priceRange): void
+    {
+        if (str_contains($priceRange, '-')) {
+            $range = array_map('floatval', explode('-', $priceRange));
+            if (count($range) === 2) {
+                [$minPrice, $maxPrice] = $range;
+                $query->where(function ($q) use ($minPrice, $maxPrice) {
+                    $q->whereBetween('products.base_price', [$minPrice, $maxPrice])
+                        ->orWhere(function ($subQ) use ($minPrice, $maxPrice) {
+                            $subQ->where('products.has_variants', true)
+                                ->where('products.base_price', '>=', $minPrice * 0.5)
+                                ->where('products.base_price', '<=', $maxPrice * 1.5);
+                        });
+                });
+            }
+        } elseif (str_contains($priceRange, '+')) {
+            $minPrice = (float) str_replace('+', '', $priceRange);
+            $query->where(function ($q) use ($minPrice) {
+                $q->where('products.base_price', '>=', $minPrice)
+                    ->orWhere(function ($subQ) use ($minPrice) {
+                        $subQ->where('products.has_variants', true)
+                            ->where('products.base_price', '>=', $minPrice * 0.5);
+                    });
+            });
+        }
+    }
+
+    private function databaseFallback(array $filters, int $page, int $perPage): array
+    {
+        $query = Product::query()
+            ->from('products')
+            ->where('products.status', 'active');
+
+        $this->applyDatabaseFilters($query, $filters);
+
+        $countQuery = clone $query;
+        $total = $countQuery->distinct()->count('products.id');
+
+        $sortBy = $this->normalizeSort($filters['sortBy'] ?? 'latest');
+        $orderedQuery = $this->applyOrderClause(clone $query, $sortBy);
+
+        $ids = $orderedQuery->select('products.id')
+            ->distinct()
+            ->skip(($page - 1) * $perPage)
+            ->take($perPage)
+            ->pluck('products.id')
+            ->toArray();
+
+        $products = $this->fetchProductsByIds($ids, false);
+
+        return [
+            'products' => $products,
+            'total' => $total,
+        ];
     }
 
     /**
