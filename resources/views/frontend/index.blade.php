@@ -110,7 +110,6 @@
             $firstBanner = $banners->first();
             $firstPhoto = $firstBanner->photo ?? 'images/placeholder-banner.jpg';
             $firstWebp = preg_replace('/\.(jpg|jpeg|png)$/i', '.webp', $firstPhoto);
-            $tabindex = 13;
         @endphp
 
         <link rel="preload" as="image" href="{{ $firstWebp }}" fetchpriority="high" type="image/webp">
@@ -121,8 +120,9 @@
             <ol class="carousel-indicators">
                 @foreach ($banners as $key => $banner)
                     <li data-target="#gslider" data-slide-to="{{ $key }}"
-                        class="{{ $key === 0 ? 'active' : '' }}" aria-label="Slide {{ $key + 1 }}"
-                        tabindex="{{ $tabindex++ }}"></li>
+                        class="{{ $key === 0 ? 'active' : '' }}" role="button"
+                        aria-label="Go to slide {{ $key + 1 }}" aria-current="{{ $key === 0 ? 'true' : 'false' }}">
+                    </li>
                 @endforeach
             </ol>
 
@@ -177,23 +177,22 @@
                                 alt="{{ $banner->title ?? 'Promotional banner' }}" width="1200" height="550"
                                 loading="{{ $isFirst ? 'eager' : 'lazy' }}"
                                 fetchpriority="{{ $isFirst ? 'high' : 'auto' }}"
-                                decoding="{{ $isFirst ? 'sync' : 'async' }}" tabindex="-1"
+                                decoding="{{ $isFirst ? 'sync' : 'async' }}" tabindex="-1" role="presentation"
                                 onerror="this.onerror=null; this.src='/images/placeholder-banner.jpg';">
                         </picture>
 
                         <div class="carousel-caption d-none d-md-block text-left">
-                            <h1>{{ $banner->title }}</h1> <!-- Removed tabindex -->
-                            <p>{!! $banner->description !!}</p> <!-- Removed tabindex -->
+                            <h1>{{ $banner->title }}</h1>
+                            <p>{!! $banner->description !!}</p>
                             @if ($discount)
                                 <p class="text-warning h5">
                                     {{ $discount->title }} -
                                     {{ $discount->type === 'percentage' ? $discount->value . '%' : '₹' . number_format($discount->value, 2) }}
                                     OFF
-                                </p> <!-- Removed tabindex -->
+                                </p>
                             @endif
                             @if ($ctaUrl !== '#')
                                 <a class="btn btn-lg btn-primary" href="{{ $ctaUrl }}"
-                                    tabindex="{{ $tabindex++ }}"
                                     @if ($banner->link_type === 'url' && !str_starts_with($banner->link, url('/'))) target="_blank" rel="noopener" @endif>
                                     {{ $ctaText }} <i class="fa fa-arrow-right" aria-hidden="true"></i>
                                 </a>
@@ -203,13 +202,13 @@
                 @endforeach
             </div>
 
-            <a class="carousel-control-prev" href="#gslider" role="button" data-slide="prev" aria-label="Previous slide"
-                tabindex="{{ $tabindex++ }}">
+            <a class="carousel-control-prev" href="#gslider" role="button" data-slide="prev" aria-label="Previous slide">
                 <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                <span class="sr-only">Previous</span>
             </a>
-            <a class="carousel-control-next" href="#gslider" role="button" data-slide="next" aria-label="Next slide"
-                tabindex="{{ $tabindex++ }}">
+            <a class="carousel-control-next" href="#gslider" role="button" data-slide="next" aria-label="Next slide">
                 <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                <span class="sr-only">Next</span>
             </a>
         </section>
     @endif
@@ -220,9 +219,9 @@
     @if (!empty($activeDiscounts))
         @foreach ($activeDiscounts as $discount)
             <a href="{{ route('product-cat', $discount['category_slug']) }}" style="text-decoration: none;"
-                tabindex="{{ $tabindex++ }}">
+                aria-label="View {{ $discount['category_name'] ?? 'category' }} discount">
                 <section class="discount-highlight"
-                    style="width: 100%; background: linear-gradient(135deg, #F7941D 0%, #e67e22 100%); color: white; padding: 16px;">
+                    style="width: 100%; background: linear-gradient(135deg, #D97706 0%, #e67e22 100%); color: white; padding: 16px;">
                 </section>
             </a>
         @endforeach
@@ -240,7 +239,7 @@
                             aria-labelledby="tab-all">
                             <div class="product-listing-wrapper">
                                 @foreach ($product_lists as $product)
-                                    <div class="product-card-container" tabindex="{{ $tabindex++ }}">
+                                    <div class="product-card-container">
                                         @include('frontend.partials.product-card', ['product' => $product])
                                     </div>
                                 @endforeach
@@ -257,7 +256,7 @@
             <section class="product-area section" id="{{ $slug }}-products">
                 <div class="container">
                     <div class="section-title text-center">
-                        <h2>{{ $categoryData['title'] }}</h2> <!-- Removed tabindex -->
+                        <h2>{{ $categoryData['title'] }}</h2>
                     </div>
                     <div class="row">
                         <div class="col-12">
@@ -266,8 +265,7 @@
                                 aria-labelledby="tab-{{ $slug }}">
                                 <div class="product-listing-wrapper">
                                     @foreach ($categoryData['products'] as $product)
-                                        <div class="product-card-container category-{{ $slug }}"
-                                            tabindex="{{ $tabindex++ }}">
+                                        <div class="product-card-container category-{{ $slug }}">
                                             @include('frontend.partials.product-card', [
                                                 'product' => $product,
                                             ])
@@ -286,30 +284,30 @@
         <div class="container">
             <div class="row">
                 <div class="col-lg-3 col-md-6 col-12">
-                    <div class="single-service" tabindex="{{ $tabindex++ }}">
+                    <div class="single-service">
                         <i class="ti-rocket" aria-hidden="true"></i>
-                        <h4>Free Shipping</h4>
+                        <h3 class="h4">Free Shipping</h3>
                         <p>Orders over $100</p>
                     </div>
                 </div>
                 <div class="col-lg-3 col-md-6 col-12">
-                    <div class="single-service" tabindex="{{ $tabindex++ }}">
+                    <div class="single-service">
                         <i class="ti-reload" aria-hidden="true"></i>
-                        <h4>Free Return</h4>
+                        <h3 class="h4">Free Return</h3>
                         <p>Within 30 days</p>
                     </div>
                 </div>
                 <div class="col-lg-3 col-md-6 col-12">
-                    <div class="single-service" tabindex="{{ $tabindex++ }}">
+                    <div class="single-service">
                         <i class="ti-lock" aria-hidden="true"></i>
-                        <h4>Secure Payment</h4>
+                        <h3 class="h4">Secure Payment</h3>
                         <p>100% secure</p>
                     </div>
                 </div>
                 <div class="col-lg-3 col-md-6 col-12">
-                    <div class="single-service" tabindex="{{ $tabindex++ }}">
+                    <div class="single-service">
                         <i class="ti-tag" aria-hidden="true"></i>
-                        <h4>Best Price</h4>
+                        <h3 class="h4">Best Price</h3>
                         <p>Guaranteed</p>
                     </div>
                 </div>

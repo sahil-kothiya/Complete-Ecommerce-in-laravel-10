@@ -86,7 +86,10 @@ if (($productData->has_variants ?? false) && $variants->count()) {
                             $altText = $imgObj->alt_text ?? ($productData->title ?? 'Product');
                         @endphp
 
-                        <img src="{{ $imgSrc }}" class="slider-image" alt="{{ $altText }}"
+                        <img src="{{ $imgSrc }}"
+                            srcset="{{ $imgSrc }} 235w, {{ $imgSrc }} 370w, {{ $imgSrc }} 470w"
+                            sizes="(max-width: 576px) 100vw, (max-width: 768px) 50vw, (max-width: 992px) 33vw, 250px"
+                            class="slider-image" alt="{{ $altText }}"
                             loading="{{ $index === 0 ? 'eager' : 'lazy' }}" width="235" height="235"
                             decoding="async" fetchpriority="{{ $index === 0 ? 'high' : 'low' }}"
                             onerror="this.src='{{ asset('images/no-image.png') }}'; console.error('{{ $productData->id }} - Image load failed - src: {{ $imgSrc }}');"
@@ -96,44 +99,47 @@ if (($productData->has_variants ?? false) && $variants->count()) {
             </div>
 
             @if ($maxDiscount > 0)
-                <span class="badge badge-primary badge-status">{{ number_format($maxDiscount, 0) }}% Off</span>
+                <span class="badge badge-primary badge-status" role="status"
+                    aria-label="Discount">{{ number_format($maxDiscount, 0) }}% Off</span>
             @elseif($totalStock <= 0)
-                <span class="badge badge-danger badge-status">Sold Out</span>
+                <span class="badge badge-danger badge-status" role="status" aria-label="Stock status">Sold Out</span>
             @elseif(($productData->condition ?? '') === 'new')
-                <span class="badge badge-success badge-status">New</span>
+                <span class="badge badge-success badge-status" role="status" aria-label="Product condition">New</span>
             @endif
         </div>
 
-        <div class="card-body d-flex flex-column px-3 py-2">
-            <h6 class="text-dark text-truncate mb-1">
-                <a href="{{ route('product-detail', $productData->slug) }}" class="text-dark">
+        <div class="card-body d-flex flex-column px-2 py-2">
+            <h3 class="h6 text-dark text-truncate mb-2" style="font-size: 0.9rem; line-height: 1.3;">
+                <a href="{{ route('product-detail', $productData->slug) }}" class="text-dark"
+                    aria-label="View details for {{ Str::limit($productData->title ?? 'Product', 50) }}">
                     {{ Str::limit($productData->title ?? 'Product', 50) }}
                 </a>
-            </h6>
+            </h3>
 
             <!-- Brand Display -->
             @if (isset($productData->brand) && $productData->brand)
                 @php
                     $brand = is_array($productData->brand) ? (object) $productData->brand : $productData->brand;
                 @endphp
-                <small class="text-muted mb-1">
-                    <i class="fa fa-tag"></i> {{ $brand->title ?? '' }}
+                <small class="text-muted mb-1" style="font-size: 0.75rem;">
+                    <i class="fa fa-tag" aria-hidden="true"></i> {{ $brand->title ?? '' }}
                 </small>
             @endif
 
             <!-- Rating Display -->
             @if (isset($productData->rating_average) && $productData->rating_average > 0)
                 <div class="mb-1">
-                    <small class="text-warning">
+                    <small class="text-warning" style="font-size: 0.75rem;">
                         @for ($i = 1; $i <= 5; $i++)
-                            <i class="fa fa-star{{ $i <= $productData->rating_average ? '' : '-o' }}"></i>
+                            <i class="fa fa-star{{ $i <= $productData->rating_average ? '' : '-o' }}"
+                                aria-hidden="true"></i>
                         @endfor
                         <span class="text-muted">({{ $productData->rating_count ?? 0 }})</span>
                     </small>
                 </div>
             @endif
 
-            <div class="mb-2 price-container">
+            <div class="mb-2 price-container" style="min-height: 24px;">
                 <span class="text-primary font-weight-bold current-price" data-price></span>
                 <small class="text-muted ml-2 original-price d-none" data-original-price><del></del></small>
             </div>
@@ -145,18 +151,22 @@ if (($productData->has_variants ?? false) && $variants->count()) {
 
             <div class="mt-auto">
                 <a href="{{ route('add-to-cart', $productData->slug) }}"
-                    class="btn btn-sm btn-block btn-dark text-uppercase mb-3 text-center {{ $productStock <= 0 ? 'disabled' : '' }}">
-                    <i class="ti-shopping-cart mr-1"></i>
+                    class="btn btn-sm btn-block btn-dark text-uppercase mb-2 text-center {{ $productStock <= 0 ? 'disabled' : '' }}"
+                    style="padding: 0.4rem 0.5rem; font-size: 0.75rem;">
+                    <i class="ti-shopping-cart mr-1" aria-hidden="true"></i>
                     {{ $productStock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
                 </a>
 
-                <div class="d-flex justify-content-between align-items-center small text-muted px-1">
-                    <a href="{{ route('add-to-wishlist', $productData->slug) }}" class="text-decoration-none">
-                        <i class="ti-heart mr-1" style="color: {{ $inWishlist ? 'red' : '#6c757d' }}"></i> Wishlist
+                <div class="d-flex justify-content-between align-items-center px-0" style="font-size: 0.7rem;">
+                    <a href="{{ route('add-to-wishlist', $productData->slug) }}" class="text-decoration-none"
+                        style="color: {{ $inWishlist ? '#dc3545' : '#6c757d' }};">
+                        <i class="ti-heart mr-1" style="color: {{ $inWishlist ? '#dc3545' : '#6c757d' }}"
+                            aria-hidden="true"></i> <span class="d-none d-md-inline">Wishlist</span>
                     </a>
                     <a href="#" class="text-decoration-none text-muted hover-text-dark"
                         onclick="event.preventDefault(); $('#productModal{{ $productData->id }}').modal('show');">
-                        <i class="ti-eye mr-1"></i> Quick View
+                        <i class="ti-eye mr-1" aria-hidden="true"></i> <span class="d-none d-md-inline">Quick
+                            View</span>
                     </a>
                 </div>
             </div>
@@ -186,6 +196,8 @@ if (($productData->has_variants ?? false) && $variants->count()) {
         .product-card-container {
             transition: all 0.3s ease;
             will-change: transform, opacity;
+            max-width: 280px;
+            width: 100%;
         }
 
         .product-card-container.filtering {
@@ -205,13 +217,19 @@ if (($productData->has_variants ?? false) && $variants->count()) {
         /* Enhanced Product Card Hover Effects */
         .product-card {
             transition: all 0.3s ease;
-            border: 1px solid transparent !important;
+            border: 1px solid #e0e0e0 !important;
+            overflow: hidden;
         }
 
         .product-card:hover {
             transform: translateY(-5px);
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15) !important;
-            border-color: #f7941d !important;
+            border-color: #D97706 !important;
+        }
+
+        /* Optimize card body spacing */
+        .card-body {
+            padding: 0.75rem !important;
         }
 
         /* Slider Container */
@@ -287,20 +305,26 @@ if (($productData->has_variants ?? false) && $variants->count()) {
 
         /* Price Display Enhancement */
         .card-body .mb-2 {
-            border-bottom: 1px solid #eee;
             padding-bottom: 0.5rem;
+        }
+
+        .current-price {
+            font-size: 1.1rem !important;
+            font-weight: 700 !important;
         }
 
         /* Button Enhancements */
         .btn-dark {
-            background: #333 !important;
-            border-color: #333 !important;
+            background: #1F2937 !important;
+            border-color: #1F2937 !important;
             transition: all 0.3s ease;
+            font-weight: 600;
+            line-height: 1.2;
         }
 
         .btn-dark:hover:not(.disabled) {
-            background: #f7941d !important;
-            border-color: #f7941d !important;
+            background: #D97706 !important;
+            border-color: #D97706 !important;
             transform: translateY(-1px);
         }
 
@@ -308,17 +332,23 @@ if (($productData->has_variants ?? false) && $variants->count()) {
             background: #6c757d !important;
             border-color: #6c757d !important;
             cursor: not-allowed;
+            opacity: 0.7;
         }
 
         /* Wishlist and Quick View Links */
         .card-body .d-flex a {
             transition: all 0.3s ease;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
+            white-space: nowrap;
         }
 
         .card-body .d-flex a:hover {
-            color: #f7941d !important;
+            color: #D97706 !important;
             transform: translateY(-1px);
+        }
+
+        .hover-text-dark:hover {
+            color: #1F2937 !important;
         }
 
         /* Aspect Ratio Polyfill */

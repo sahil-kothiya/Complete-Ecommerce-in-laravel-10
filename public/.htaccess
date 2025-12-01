@@ -59,26 +59,51 @@
 </IfModule>
 
 # ------------------------------------------------------------------------------
-# COMPRESSION: BROTLI THEN GZIP
+# COMPRESSION: BROTLI THEN GZIP (PRIORITY ORDER)
 # ------------------------------------------------------------------------------
 <IfModule mod_brotli.c>
     AddOutputFilterByType BROTLI_COMPRESS text/html text/plain text/xml text/css
-    AddOutputFilterByType BROTLI_COMPRESS application/json application/javascript
-    AddOutputFilterByType BROTLI_COMPRESS application/xml application/rss+xml image/svg+xml
-    AddOutputFilterByType BROTLI_COMPRESS font/woff2 font/woff font/ttf font/otf
+    AddOutputFilterByType BROTLI_COMPRESS application/json application/javascript application/x-javascript
+    AddOutputFilterByType BROTLI_COMPRESS application/xml application/rss+xml application/atom+xml image/svg+xml
+    AddOutputFilterByType BROTLI_COMPRESS font/woff2 font/woff font/ttf font/otf application/vnd.ms-fontobject
     BrotliCompressionQuality 6
     BrotliCompressionWindow 22
 </IfModule>
 
 <IfModule mod_deflate.c>
-    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css
-    AddOutputFilterByType DEFLATE application/json application/javascript
-    AddOutputFilterByType DEFLATE application/xml application/rss+xml image/svg+xml
-    AddOutputFilterByType DEFLATE font/woff2 font/woff font/ttf font/otf
+    # Force compression for mangled headers
+    <IfModule mod_setenvif.c>
+        <IfModule mod_headers.c>
+            SetEnvIfNoCase ^(Accept-EncodXng|X-cept-Encoding|X{15}|~{15}|-{15})$ ^((gzip|deflate)\s*,?\s*)+|[X~-]{4,13}$ HAVE_Accept-Encoding
+            RequestHeader append Accept-Encoding "gzip,deflate" env=HAVE_Accept-Encoding
+        </IfModule>
+    </IfModule>
+
+    # Compress all output labeled with one of the following MIME-types
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript
+    AddOutputFilterByType DEFLATE application/json application/javascript application/x-javascript
+    AddOutputFilterByType DEFLATE application/xml application/xhtml+xml application/rss+xml application/atom+xml
+    AddOutputFilterByType DEFLATE image/svg+xml image/x-icon
+    AddOutputFilterByType DEFLATE font/woff2 font/woff font/ttf font/otf application/vnd.ms-fontobject
+    AddOutputFilterByType DEFLATE application/pdf
+    
+    # Special cases
+    <FilesMatch "\.(js|css|html|xml|json|txt|htc)$">
+        SetOutputFilter DEFLATE
+    </FilesMatch>
+    
+    # Don't compress images, videos, or already compressed files
+    SetEnvIfNoCase Request_URI \.(?:gif|jpe?g|png|webp|avif|rar|zip|exe|flv|mov|wma|mp3|avi|wmv|gz|bz2|pdf)$ no-gzip dont-vary
+    
+    # Browser compatibility
     BrowserMatch ^Mozilla/4 gzip-only-text/html
     BrowserMatch ^Mozilla/4\.0[678] no-gzip
     BrowserMatch \bMSIE !no-gzip !gzip-only-text/html
-    Header append Vary User-Agent
+    
+    # Make sure proxies don't deliver the wrong content
+    <IfModule mod_headers.c>
+        Header append Vary Accept-Encoding
+    </IfModule>
 </IfModule>
 
 # ------------------------------------------------------------------------------
@@ -207,11 +232,42 @@ FileETag MTime Size
 </IfModule>
 
 # ------------------------------------------------------------------------------
-# OPTIONAL: INCREASE PHP LIMITS FOR UPLOAD
+# PHP PERFORMANCE OPTIMIZATION & UPLOAD LIMITS
 # ------------------------------------------------------------------------------
 <IfModule mod_php.c>
+    # Upload limits
     php_value upload_max_filesize 20M
     php_value post_max_size 20M
     php_value max_execution_time 300
     php_value max_input_time 300
+    
+    # Performance optimizations
+    php_value memory_limit 256M
+    php_value max_input_vars 3000
+    php_flag opcache.enable On
+    php_value opcache.memory_consumption 128
+    php_value opcache.max_accelerated_files 10000
+    php_flag opcache.validate_timestamps Off
+    php_value realpath_cache_size 4096K
+    php_value realpath_cache_ttl 600
+    
+    # Output buffering for better compression
+    php_flag output_buffering On
+    php_value output_buffering 4096
+    php_flag zlib.output_compression On
+    php_value zlib.output_compression_level 6
+</IfModule>
+
+<IfModule mod_php7.c>
+    php_value upload_max_filesize 20M
+    php_value post_max_size 20M
+    php_value max_execution_time 300
+    php_value memory_limit 256M
+</IfModule>
+
+<IfModule mod_php8.c>
+    php_value upload_max_filesize 20M
+    php_value post_max_size 20M
+    php_value max_execution_time 300
+    php_value memory_limit 256M
 </IfModule>

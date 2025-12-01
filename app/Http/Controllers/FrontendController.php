@@ -85,8 +85,9 @@ class FrontendController extends Controller
      * Display the homepage with ultra-fast Redis caching.
      * Optimized for 10M+ products with multi-tier caching strategy.
      * Target: < 15ms response time with cache hit, < 300ms with cache miss
+     * NOW WITH: Full page compression, resource hints, optimal headers
      *
-     * @return \Illuminate\View\View
+     * @return \Illuminate\View\View|\Illuminate\Http\Response
      */
     public function home()
     {

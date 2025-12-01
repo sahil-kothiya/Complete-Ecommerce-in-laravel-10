@@ -1,0 +1,241 @@
+/* ===================================
+   Accessibility & Contrast Improvements
+   =================================== */
+
+/* Fix contrast issues for badges */
+.badge-primary,
+.badge-status {
+    background-color: #D97706 !important;
+    /* Higher contrast orange */
+    color: #FFFFFF !important;
+    font-weight: 600;
+}
+
+/* Fix contrast for price elements */
+.text-primary,
+.current-price {
+    color: #C2410C !important;
+    /* Darker orange for better contrast */
+    font-weight: 700 !important;
+}
+
+.font-weight-bold.current-price {
+    color: #C2410C !important;
+}
+
+
+a.text-decoration-none:hover,
+.card-body a:hover {
+    color: #C2410C !important;
+}
+
+.text-muted.hover-text-dark {
+    color: #4B5563 !important;
+    /* Darker muted for better readability */
+}
+
+.text-muted.hover-text-dark:hover {
+    color: #1F2937 !important;
+}
+
+/* Fix contrast for deleted/strikethrough prices */
+del,
+.original-price del {
+    color: #6B7280 !important;
+    /* Darker gray */
+    opacity: 0.8;
+}
+
+/* Shop services section contrast */
+.shop-services .single-service p {
+    color: #374151 !important;
+    /* Darker text */
+}
+
+.shop-services .single-service h4 {
+    color: #1F2937 !important;
+}
+
+/* Footer links */
+footer.footer li a {
+    color: #D1D5DB !important;
+    /* Light gray on dark background */
+}
+
+footer.footer li a:hover {
+    color: #FFFFFF !important;
+}
+
+/* Ensure all interactive elements have proper focus states */
+a:focus,
+button:focus,
+input:focus,
+select:focus,
+textarea:focus {
+    outline: 3px solid #D97706 !important;
+    outline-offset: 2px !important;
+}
+
+/* Skip to main content link */
+.skip-to-main {
+    position: absolute;
+    left: -9999px;
+    z-index: 999;
+    padding: 1em;
+    background-color: #1F2937;
+    color: white;
+    text-decoration: none;
+}
+
+.skip-to-main:focus {
+    left: 50%;
+    transform: translateX(-50%);
+    top: 0;
+}
+
+/* Improve button contrast */
+.btn-primary {
+    background-color: #D97706 !important;
+    border-color: #D97706 !important;
+    color: #FFFFFF !important;
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+    background-color: #B45309 !important;
+    border-color: #B45309 !important;
+}
+
+/* Improve form input contrast */
+.form-control {
+    border-color: #9CA3AF !important;
+    color: #1F2937 !important;
+}
+
+.form-control:focus {
+    border-color: #D97706 !important;
+    box-shadow: 0 0 0 0.2rem rgba(217, 119, 6, 0.25) !important;
+}
+
+/* Improve card text contrast */
+.card-body h6,
+.card-body .text-dark,
+.card-body h3 {
+    color: #1F2937 !important;
+    font-weight: 600 !important;
+}
+
+/* Improve small text contrast */
+small.text-muted {
+    color: #6B7280 !important;
+}
+
+/* Product card improvements */
+.product-card {
+    background: #FFFFFF !important;
+}
+
+.product-card .card-body {
+    background: #FFFFFF !important;
+}
+
+/* Button contrast improvements */
+.btn-dark {
+    background-color: #1F2937 !important;
+    border-color: #1F2937 !important;
+    color: #FFFFFF !important;
+}
+
+.btn-dark:hover {
+    background-color: #D97706 !important;
+    border-color: #D97706 !important;
+    color: #FFFFFF !important;
+}
+
+/* Rating stars */
+.text-warning i {
+    color: #D97706 !important;
+}
+
+/* Ensure sufficient contrast for all text on light backgrounds */
+.bg-light,
+.card,
+.product-card {
+    background-color: #FFFFFF !important;
+}
+
+/* Product card hover state */
+.product-card:hover {
+    border-color: #D97706 !important;
+}
+
+/* Accessibility improvements for screen readers */
+.sr-only,
+.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+/* Focus visible polyfill */
+.focus-visible:focus {
+    outline: 3px solid #D97706;
+    outline-offset: 2px;
+}
+
+/* High contrast mode improvements */
+@media (prefers-contrast: high) {
+
+    .text-primary,
+    .current-price {
+        color: #000000 !important;
+    }
+
+    .badge-primary {
+        background-color: #000000 !important;
+        border: 2px solid #FFFFFF;
+    }
+
+    a {
+        text-decoration: underline;
+    }
+}
+
+/* Reduced motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+
+    .card,
+    .product-card,
+    .bg-light {
+        background-color: #1F2937 !important;
+        color: #F9FAFB !important;
+    }
+
+    .text-dark,
+    .card-body h6 {
+        color: #F9FAFB !important;
+    }
+
+    .text-muted {
+        color: #9CA3AF !important;
+    }
+}

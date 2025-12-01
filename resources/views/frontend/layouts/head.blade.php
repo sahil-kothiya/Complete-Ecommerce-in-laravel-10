@@ -6,49 +6,122 @@
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <title>@yield('title', 'E-Shop')</title>
 
+<!-- DNS Prefetch & Preconnect for faster resource loading -->
+<link rel="dns-prefetch" href="https://fonts.googleapis.com">
+<link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="dns-prefetch" href="https://stackpath.bootstrapcdn.com">
+<link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+<link rel="dns-prefetch" href="https://code.jquery.com">
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://stackpath.bootstrapcdn.com" crossorigin>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+
 <!-- Favicon -->
 <link rel="icon" type="image/png" href="{{ asset('images/favicon.webp') }}">
 
-<!-- Fonts -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<!-- <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@200;300;400;500;600;700;800;900&display=swap" rel="stylesheet"> -->
+<!-- Preload Critical CSS - Bootstrap & Main Styles -->
+<link rel="preload" href="https://stackpath.bootstrapcdn.com/bootstrap/4.0.0-beta.2/css/bootstrap.min.css"
+    as="style" crossorigin="anonymous">
+<link rel="preload" href="{{ asset('frontend/css/style.min.css') }}" as="style">
 
-<!-- StyleSheet -->
-<link rel="manifest" href="/manifest.json">
-<!-- Bootstrap -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/bootstrap.css')}}"> -->
-<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.0.0-beta.2/css/bootstrap.min.css" crossorigin="anonymous">
+<!-- Critical inline CSS for above-the-fold content -->
+<style>
+    /* Critical CSS - Inline for fastest First Contentful Paint */
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: sans-serif;
+        background: #fff
+    }
 
-<!-- Magnific Popup -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/magnific-popup.min.css')}}"> -->
-<!-- Font Awesome -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/font-awesome.css')}}"> -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    .header {
+        background: #fff;
+        border-bottom: 1px solid #eee
+    }
 
-<!-- Fancybox -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/jquery.fancybox.min.css')}}"> -->
+    .section {
+        padding: 40px 0
+    }
+
+    img {
+        max-width: 100%;
+        height: auto;
+        display: block
+    }
+
+    .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 15px
+    }
+</style>
+
+<!-- Bootstrap - Critical CSS -->
+<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.0.0-beta.2/css/bootstrap.min.css"
+    crossorigin="anonymous">
+
+<!-- Font Awesome - Async load for better performance -->
+<link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css"
+    as="style" onload="this.onload=null;this.rel='stylesheet'">
+<noscript>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+</noscript>
+
 <!-- Themify Icons -->
-<link rel="stylesheet" href="{{asset('frontend/css/themify-icons.css')}}">
-<!-- Nice Select CSS -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/niceselect.css')}}"> -->
-<!-- Animate CSS -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/animate.css')}}"> -->
-<!-- Flex Slider CSS -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/flex-slider.min.css')}}"> -->
+<link rel="stylesheet" href="{{ asset('frontend/css/themify-icons.css') }}">
 
-<!-- Owl Carousel -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/owl-carousel.css')}}"> -->
-<!-- Slicknav -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/slicknav.min.css')}}"> -->
-<!-- Jquery Ui -->
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/jquery-ui.css')}}"> -->
-<link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+<!-- jQuery UI - Async load -->
+<link rel="preload" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css" as="style"
+    onload="this.onload=null;this.rel='stylesheet'">
+<noscript>
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+</noscript>
 
 <!-- Eshop StyleSheet -->
-<link rel="stylesheet" href="{{asset('frontend/css/reset.min.css')}}">
-<link rel="stylesheet" href="{{asset('frontend/css/style.min.css')}}">
-<!-- <link rel="stylesheet" href="{{asset('frontend/css/responsive.css')}}"> -->
-<!-- <script type='text/javascript' src='https://platform-api.sharethis.com/js/sharethis.js#property=5f2e5abf393162001291e431&product=inline-share-buttons' async='async' defer></script> -->
+<link rel="stylesheet" href="{{ asset('frontend/css/reset.min.css') }}">
+<link rel="stylesheet" href="{{ asset('frontend/css/style.min.css') }}">
+
+<!-- Accessibility Improvements -->
+<link rel="stylesheet" href="{{ asset('frontend/css/accessibility-improvements.css') }}">
+
+<!-- Polyfill for async CSS loading -->
+<script>
+    ! function(e) {
+        "use strict";
+        var t = function(t, n, r) {
+            function o(e) {
+                return i.body ? e() : void setTimeout(function() {
+                    o(e)
+                })
+            }
+
+            function a() {
+                d.addEventListener && d.removeEventListener("load", a), d.media = r || "all"
+            }
+            var l, i = e.document,
+                d = i.createElement("link");
+            if (n) l = n;
+            else {
+                var s = (i.body || i.getElementsByTagName("head")[0]).childNodes;
+                l = s[s.length - 1]
+            }
+            var u = i.styleSheets;
+            d.rel = "stylesheet", d.href = t, d.media = "only x", o(function() {
+                l.parentNode.insertBefore(d, n ? l : l.nextSibling)
+            });
+            var f = function(e) {
+                for (var t = d.href, n = u.length; n--;)
+                    if (u[n].href === t) return e();
+                setTimeout(function() {
+                    f(e)
+                })
+            };
+            return d.addEventListener && d.addEventListener("load", a), d.onloadcssdefined = f, f(a), d
+        };
+        "undefined" != typeof exports ? exports.loadCSS = t : e.loadCSS = t
+    }("undefined" != typeof global ? global : this);
+</script>
 <style>
     /* Multilevel dropdown */
     .dropdown-submenu {

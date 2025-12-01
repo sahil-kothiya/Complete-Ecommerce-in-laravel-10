@@ -20,7 +20,10 @@ class Kernel extends HttpKernel
         \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
         \App\Http\Middleware\TrimStrings::class,
         \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
-        // \App\Http\Middleware\GzipMiddleware::class,
+        // Performance optimizations - must be last in global middleware
+        \App\Http\Middleware\OptimizePerformance::class,
+        \App\Http\Middleware\CompressResponse::class,
+        \App\Http\Middleware\PerformanceHeaders::class,
     ];
 
     /**

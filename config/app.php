@@ -185,6 +185,7 @@ return [
         App\Providers\ElasticsearchServiceProvider::class,
         App\Providers\ViewServiceProvider::class,
         App\Providers\CacheWarmupServiceProvider::class,
+        App\Providers\PerformanceServiceProvider::class,
     ],
 
     /*
