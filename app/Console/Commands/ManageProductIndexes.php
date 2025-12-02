@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\ProductIndexService;
 use App\Services\FastFilterService;
+use App\Services\RedisKeyManager;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Redis;
 
@@ -56,7 +57,9 @@ class ManageProductIndexes extends Command
         $this->info('This may take 5-10 minutes for 10M+ products.');
 
         if (!$this->option('force')) {
-            $existingKeys = count(Redis::keys('index:*'));
+            // Use RedisKeyManager pattern for new structure
+            $pattern = RedisKeyManager::pattern('index');
+            $existingKeys = count(Redis::keys($pattern));
             if ($existingKeys > 0) {
                 if (!$this->confirm("Found {$existingKeys} existing index keys. Rebuild?")) {
                     $this->info('Cancelled.');
@@ -103,6 +106,7 @@ class ManageProductIndexes extends Command
     {
         $this->info('Fetching index statistics...');
 
+        // Parallel fetch for speed
         $indexStats = $this->indexService->getIndexStats();
         $filterStats = $this->filterService->getStats();
 
@@ -119,10 +123,18 @@ class ManageProductIndexes extends Command
         );
 
         $this->newLine();
-        $this->info('=== Memory Usage ===');
+        $this->info('=== Memory Usage (Redis) ===');
         $this->line("Total index keys: {$indexStats['total_keys']}");
         $this->line("Temp filter keys: {$filterStats['temp_keys']}");
         $this->line("Est. memory usage: {$indexStats['total_memory_mb']} MB");
+        
+        // Show Redis key structure
+        $this->newLine();
+        $this->info('=== Redis Key Structure ===');
+        $this->line("Namespace: " . RedisKeyManager::namespace());
+        $this->line("Category pattern: " . RedisKeyManager::pattern('index', 'cat'));
+        $this->line("Brand pattern: " . RedisKeyManager::pattern('index', 'brand'));
+        $this->line("Price pattern: " . RedisKeyManager::pattern('index', 'price'));
 
         $this->newLine();
         $this->info('=== Top 5 Categories by Products ===');

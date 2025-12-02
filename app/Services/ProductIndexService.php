@@ -30,6 +30,7 @@ class ProductIndexService
     private const INDEX_TTL = 86400; // 24 hours
     private const CHUNK_SIZE = 5000; // Process 5000 products at a time for speed
     private const BATCH_SIZE = 10000; // Redis pipeline batch size
+    private const PIPELINE_BATCH = 1000; // Pipeline operations in batches
 
     /**
      * Build all product indexes
@@ -88,8 +89,9 @@ class ProductIndexService
             // Use UNLINK (non-blocking) instead of DEL
             Redis::unlink($indexKey);
             $hasProducts = false;
+            $pipeline = [];
 
-            // Optimized: Chunked query to avoid memory issues
+            // PostgreSQL optimized: Use cursor for large datasets
             DB::table('products')
                 ->where('status', 'active')
                 ->where(function($query) use ($category) {
@@ -98,13 +100,24 @@ class ProductIndexService
                 })
                 ->select('id')
                 ->orderBy('id')
-                ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$hasProducts) {
+                ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$hasProducts, &$pipeline) {
                     $ids = $products->pluck('id')->toArray();
                     if (!empty($ids)) {
-                        Redis::sadd($indexKey, ...$ids);
+                        // Use pipeline for batch SADD operations
+                        $pipeline = array_merge($pipeline, $ids);
+                        
+                        if (count($pipeline) >= self::PIPELINE_BATCH) {
+                            Redis::sadd($indexKey, ...$pipeline);
+                            $pipeline = [];
+                        }
                         $hasProducts = true;
                     }
                 });
+
+            // Flush remaining pipeline
+            if (!empty($pipeline)) {
+                Redis::sadd($indexKey, ...$pipeline);
+            }
 
             if ($hasProducts) {
                 Redis::expire($indexKey, self::INDEX_TTL);
@@ -151,24 +164,35 @@ class ProductIndexService
         Log::info("[2/5] Building brand indexes for {$totalBrands} brands...");
 
         foreach ($brands as $brand) {
-            $indexKey = "index:brand:{$brand->id}";
+            $indexKey = RedisKeyManager::indexBrand($brand->id);
 
             Redis::unlink($indexKey);
             $hasProducts = false;
+            $pipeline = [];
 
-            // Optimized: Chunked query
+            // PostgreSQL optimized with pipelining
             DB::table('products')
                 ->where('status', 'active')
                 ->where('brand_id', $brand->id)
                 ->select('id')
                 ->orderBy('id')
-                ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$hasProducts) {
+                ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$hasProducts, &$pipeline) {
                     $ids = $products->pluck('id')->toArray();
                     if (!empty($ids)) {
-                        Redis::sadd($indexKey, ...$ids);
+                        $pipeline = array_merge($pipeline, $ids);
+                        
+                        if (count($pipeline) >= self::PIPELINE_BATCH) {
+                            Redis::sadd($indexKey, ...$pipeline);
+                            $pipeline = [];
+                        }
                         $hasProducts = true;
                     }
                 });
+
+            // Flush remaining
+            if (!empty($pipeline)) {
+                Redis::sadd($indexKey, ...$pipeline);
+            }
 
             if ($hasProducts) {
                 Redis::expire($indexKey, self::INDEX_TTL);
@@ -498,6 +522,7 @@ class ProductIndexService
 
     /**
      * Get index statistics
+     * OPTIMIZED: Uses RedisKeyManager patterns and SCAN for production safety
      */
     public function getIndexStats(): array
     {
@@ -511,8 +536,22 @@ class ProductIndexService
             'total_memory_mb' => 0,
         ];
 
-        // Category stats
-        $categoryKeys = Redis::keys('index:category:*');
+        // Helper function to use SCAN instead of KEYS for production safety
+        $getKeysByPattern = function($pattern) {
+            $keys = [];
+            $cursor = '0';
+            
+            do {
+                // Laravel Redis scan returns [cursor, keys]
+                [$cursor, $found] = Redis::scan($cursor, ['match' => $pattern, 'count' => 100]);
+                $keys = array_merge($keys, $found);
+            } while ($cursor !== '0' && $cursor !== 0);
+            
+            return $keys;
+        };
+
+        // Category stats - use RedisKeyManager patterns
+        $categoryKeys = $getKeysByPattern(RedisKeyManager::pattern('index', 'cat'));
         foreach ($categoryKeys as $key) {
             $count = Redis::scard($key);
             $stats['categories'][] = [
@@ -522,7 +561,7 @@ class ProductIndexService
         }
 
         // Brand stats
-        $brandKeys = Redis::keys('index:brand:*');
+        $brandKeys = $getKeysByPattern(RedisKeyManager::pattern('index', 'brand'));
         foreach ($brandKeys as $key) {
             $count = Redis::scard($key);
             $stats['brands'][] = [
@@ -532,7 +571,7 @@ class ProductIndexService
         }
 
         // Price range stats
-        $priceKeys = Redis::keys('index:price:*');
+        $priceKeys = $getKeysByPattern(RedisKeyManager::pattern('index', 'price'));
         foreach ($priceKeys as $key) {
             $count = Redis::scard($key);
             $stats['price_ranges'][] = [
@@ -542,7 +581,7 @@ class ProductIndexService
         }
 
         // Rating stats
-        $ratingKeys = Redis::keys('index:rating:*');
+        $ratingKeys = $getKeysByPattern(RedisKeyManager::pattern('index', 'rating'));
         foreach ($ratingKeys as $key) {
             $count = Redis::scard($key);
             $stats['ratings'][] = [
@@ -552,7 +591,7 @@ class ProductIndexService
         }
 
         // Discount stats
-        $discountKeys = Redis::keys('index:discount:*');
+        $discountKeys = $getKeysByPattern(RedisKeyManager::pattern('index', 'discount'));
         foreach ($discountKeys as $key) {
             $count = Redis::scard($key);
             $stats['discounts'][] = [
@@ -565,10 +604,10 @@ class ProductIndexService
                                count($priceKeys) + count($ratingKeys) +
                                count($discountKeys);
 
-        // Estimate memory usage (rough estimate)
-        // Each product ID = ~8 bytes, plus overhead
+        // Estimate memory usage using SCAN
         $totalMemoryBytes = 0;
-        foreach (Redis::keys('index:*') as $key) {
+        $allKeys = $getKeysByPattern(RedisKeyManager::pattern('index'));
+        foreach ($allKeys as $key) {
             $size = Redis::scard($key) * 10; // ~10 bytes per ID with overhead
             $totalMemoryBytes += $size;
         }

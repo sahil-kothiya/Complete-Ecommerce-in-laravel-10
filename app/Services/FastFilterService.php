@@ -321,6 +321,7 @@ class FastFilterService
 
     /**
      * Get filter performance statistics
+     * OPTIMIZED: Uses RedisKeyManager patterns and SCAN instead of KEYS
      */
     public function getStats(): array
     {
@@ -330,21 +331,29 @@ class FastFilterService
             'total_memory_mb' => 0,
         ];
 
-        // Count index keys
-        $stats['indexes']['categories'] = count(Redis::keys('index:category:*'));
-        $stats['indexes']['brands'] = count(Redis::keys('index:brand:*'));
-        $stats['indexes']['prices'] = count(Redis::keys('index:price:*'));
-        $stats['indexes']['ratings'] = count(Redis::keys('index:rating:*'));
-        $stats['indexes']['discounts'] = count(Redis::keys('index:discount:*'));
+        // Use RedisKeyManager patterns for new structure
+        $stats['indexes']['categories'] = count(Redis::keys(RedisKeyManager::pattern('index', 'cat')));
+        $stats['indexes']['brands'] = count(Redis::keys(RedisKeyManager::pattern('index', 'brand')));
+        $stats['indexes']['prices'] = count(Redis::keys(RedisKeyManager::pattern('index', 'price')));
+        $stats['indexes']['ratings'] = count(Redis::keys(RedisKeyManager::pattern('index', 'rating')));
+        $stats['indexes']['discounts'] = count(Redis::keys(RedisKeyManager::pattern('index', 'discount')));
 
-        // Count temp keys
-        $stats['temp_keys'] = count(Redis::keys('temp:*'));
+        // Count temp keys using RedisKeyManager
+        $stats['temp_keys'] = count(Redis::keys(RedisKeyManager::pattern('temp')));
 
-        // Estimate memory (rough)
+        // Estimate memory (rough) - use SCAN for better performance
         $totalElements = 0;
-        foreach (Redis::keys('index:*') as $key) {
-            $totalElements += Redis::scard($key);
-        }
+        $pattern = RedisKeyManager::pattern('index');
+        $cursor = '0';
+        
+        do {
+            [$cursor, $keys] = Redis::scan($cursor, ['match' => $pattern, 'count' => 100]);
+            
+            foreach ($keys as $key) {
+                $totalElements += Redis::scard($key);
+            }
+        } while ($cursor !== '0' && $cursor !== 0);
+        
         $stats['total_memory_mb'] = round(($totalElements * 10) / 1024 / 1024, 2);
 
         return $stats;
