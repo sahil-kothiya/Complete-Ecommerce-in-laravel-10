@@ -34,9 +34,9 @@ class FastFilterService
         $startTime = microtime(true);
         $sets = [];
 
-        // Collect all filter sets
+        // Collect all filter sets using RedisKeyManager
         if (!empty($filters['category_id'])) {
-            $categoryKey = "index:category:{$filters['category_id']}";
+            $categoryKey = RedisKeyManager::indexCategory($filters['category_id']);
             if (Redis::exists($categoryKey)) {
                 $sets[] = $categoryKey;
             }
@@ -59,21 +59,21 @@ class FastFilterService
         }
 
         if (!empty($filters['price_range'])) {
-            $priceKey = "index:price:{$filters['price_range']}";
+            $priceKey = RedisKeyManager::indexPrice($filters['price_range']);
             if (Redis::exists($priceKey)) {
                 $sets[] = $priceKey;
             }
         }
 
         if (!empty($filters['min_rating'])) {
-            $ratingKey = "index:rating:{$filters['min_rating']}";
+            $ratingKey = RedisKeyManager::indexRating($filters['min_rating']);
             if (Redis::exists($ratingKey)) {
                 $sets[] = $ratingKey;
             }
         }
 
         if (!empty($filters['min_discount'])) {
-            $discountKey = "index:discount:{$filters['min_discount']}";
+            $discountKey = RedisKeyManager::indexDiscount($filters['min_discount']);
             if (Redis::exists($discountKey)) {
                 $sets[] = $discountKey;
             }
@@ -100,7 +100,8 @@ class FastFilterService
         }
 
         // Multiple filters = intersect all sets
-        $tempKey = "temp:filter:" . md5(implode('|', $sets) . serialize($filters));
+        $hash = md5(implode('|', $sets) . serialize($filters));
+        $tempKey = RedisKeyManager::tempFilter($hash);
 
         try {
             // Check if temp key already exists (cached intersection)

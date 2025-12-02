@@ -121,11 +121,11 @@ class PerformanceHeaders
         // Content Security Policy
         $csp = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://code.jquery.com https://cdnjs.cloudflare.com https://stackpath.bootstrapcdn.com",
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://stackpath.bootstrapcdn.com https://cdnjs.cloudflare.com https://code.jquery.com",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://code.jquery.com https://cdnjs.cloudflare.com https://stackpath.bootstrapcdn.com https://cdn.jsdelivr.net",
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://stackpath.bootstrapcdn.com https://cdnjs.cloudflare.com https://code.jquery.com https://cdn.jsdelivr.net",
             "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:",
             "img-src 'self' data: https: http:",
-            "connect-src 'self' https://stackpath.bootstrapcdn.com https://cdnjs.cloudflare.com https://code.jquery.com",
+            "connect-src 'self' https://stackpath.bootstrapcdn.com https://cdnjs.cloudflare.com https://code.jquery.com https://cdn.jsdelivr.net",
             "frame-ancestors 'self'",
             "base-uri 'self'",
             "form-action 'self'",

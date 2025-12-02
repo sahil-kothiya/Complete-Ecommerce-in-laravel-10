@@ -152,7 +152,8 @@ class AppServiceProvider extends ServiceProvider
     private function shareGlobalData(): void
     {
         $ttl = $this->getTtlConfig();
-        $settingsKey = 'cache:homepage:settings';
+        // Use RedisKeyManager for consistent key naming
+        $settingsKey = \App\Services\RedisKeyManager::cacheSettings('global');
 
         // Try Redis first, then Laravel cache, then DB
         $settings = $this->getCachedSettings($settingsKey, $ttl['settings']);

@@ -97,10 +97,10 @@ return [
     | be other applications utilizing the same cache. So, we'll specify a
     | value to get prefixed to all our keys so we can avoid collisions.
     |
-    | Clean structure: ecommerce:v1:{component}:{details}
+    | NOTE: Do NOT add prefix here - use RedisKeyManager for all Redis keys
     |
     */
 
-    'prefix' => env('CACHE_PREFIX', 'ecommerce:v1'),
+    'prefix' => env('CACHE_PREFIX', ''),
 
 ];

@@ -17,8 +17,9 @@ class OptimizePerformance
      * Critical assets to preload
      */
     protected array $criticalAssets = [
-        '/css/app.css' => ['as' => 'style'],
-        '/js/app.js' => ['as' => 'script', 'crossorigin' => true],
+        // Commented out - these are not critical assets for frontend
+        // '/css/app.css' => ['as' => 'style'],
+        // '/js/app.js' => ['as' => 'script', 'crossorigin' => true],
     ];
 
     /**

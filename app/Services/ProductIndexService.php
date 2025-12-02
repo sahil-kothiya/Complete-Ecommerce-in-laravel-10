@@ -15,12 +15,12 @@ use Illuminate\Support\Facades\DB;
  * Builds and maintains Redis Set-based indexes for ultra-fast filtering.
  * Designed for 10M+ products with sub-100ms filter response times.
  *
- * Index Structure:
- * - index:category:{id} → Set of product IDs
- * - index:brand:{id} → Set of product IDs
- * - index:price:{range} → Set of product IDs
- * - index:rating:{min} → Set of product IDs
- * - index:discount:{range} → Set of product IDs
+ * Index Structure (via RedisKeyManager):
+ * - ecom:index:cat:{id} → Set of product IDs
+ * - ecom:index:brand:{id} → Set of product IDs
+ * - ecom:index:price:{range} → Set of product IDs
+ * - ecom:index:rating:{min} → Set of product IDs
+ * - ecom:index:discount:{range} → Set of product IDs
  *
  * Memory footprint: ~200-500MB for 10M products
  * Build time: ~5-10 minutes for complete rebuild
@@ -83,7 +83,7 @@ class ProductIndexService
         Log::info("[1/5] Building category indexes for {$totalCategories} categories...");
 
         foreach ($categories as $category) {
-            $indexKey = "index:category:{$category->id}";
+            $indexKey = RedisKeyManager::indexCategory($category->id);
 
             // Use UNLINK (non-blocking) instead of DEL
             Redis::unlink($indexKey);

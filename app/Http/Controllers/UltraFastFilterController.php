@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\FastFilterService;
 use App\Services\IndexHealthService;
+use App\Services\OptimizedFilterCacheService;
 use App\Helpers\UrlEncryptor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Redis;
@@ -25,14 +26,19 @@ class UltraFastFilterController extends Controller
 {
     private FastFilterService $filterService;
     private IndexHealthService $healthService;
+    private OptimizedFilterCacheService $optimizedCache;
 
     private const CACHE_TTL = 300; // 5 minutes
     private const MAX_EXECUTION_TIME = 120; // 120 seconds max (increased for safe fallback)
 
-    public function __construct(FastFilterService $filterService, IndexHealthService $healthService)
-    {
+    public function __construct(
+        FastFilterService $filterService, 
+        IndexHealthService $healthService,
+        OptimizedFilterCacheService $optimizedCache
+    ) {
         $this->filterService = $filterService;
         $this->healthService = $healthService;
+        $this->optimizedCache = $optimizedCache;
     }
 
     public function getFilterData(Request $request, $path = null)
@@ -135,14 +141,31 @@ class UltraFastFilterController extends Controller
     {
         $cacheKey = $this->generateCacheKey($category, $filters, $page, $perPage, $sortBy);
 
-        return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($category, $filters, $page, $perPage, $sortBy) {
+        // Use shorter TTL for filter results to keep cache fresh
+        $cacheTtl = 180; // 3 minutes instead of 5
+
+        return Cache::remember($cacheKey, $cacheTtl, function () use ($category, $filters, $page, $perPage, $sortBy) {
 
             // Convert filters to database query (robust fallback strategy)
-            $query = Product::where('status', 'active');
+            $query = Product::where('products.status', 'active');
+
+            $priceFilterConfig = $this->parsePriceFilterConfig($filters['price_range'] ?? '');
+            $requiresVariantPricing = $priceFilterConfig !== null || in_array($sortBy, ['price_low_high', 'price_high_low']);
+
+            if ($requiresVariantPricing) {
+                $variantPriceSubquery = $this->buildVariantPriceSubquery($priceFilterConfig);
+                $query->leftJoin(
+                    DB::raw("LATERAL ({$variantPriceSubquery}) as pv_min"),
+                    DB::raw('TRUE'),
+                    DB::raw('TRUE')
+                );
+            }
+
+            $effectivePriceExpression = $this->getEffectivePriceExpression($requiresVariantPricing);
 
             // Apply category filter (indexed column - fast)
             if ($category) {
-                $query->where('cat_id', $category->id);
+                $query->where('products.cat_id', $category->id);
             }
 
             // Apply brand filter (indexed column - fast)
@@ -150,38 +173,16 @@ class UltraFastFilterController extends Controller
                 $brandIds = $this->getBrandIdsBySlug($filters['brands']);
                 if (!empty($brandIds)) {
                     // Optimize: Use IN clause with limit to prevent full scan
-                    $query->whereIn('brand_id', array_slice($brandIds, 0, 50)); // Max 50 brands
+                    $query->whereIn('products.brand_id', array_slice($brandIds, 0, 50)); // Max 50 brands
                 }
             }
 
-            // Apply price range filter - OPTIMIZED to prevent timeout
-            if (!empty($filters['price_range'])) {
-                $range = explode('-', $filters['price_range']);
-                if (count($range) === 2) {
-                    $minPrice = (float) $range[0];
-                    $maxPrice = (float) $range[1];
-
-                    // Simplified query: Only check base_price for efficiency
-                    // Variant prices will be checked during product detail fetch
-                    $query->where(function ($q) use ($minPrice, $maxPrice) {
-                        $q->whereBetween('base_price', [$minPrice, $maxPrice])
-                          ->orWhere(function($subQ) use ($minPrice, $maxPrice) {
-                              // For products with variants, be more permissive
-                              $subQ->where('has_variants', true)
-                                   ->where('base_price', '>=', $minPrice * 0.5) // 50% tolerance
-                                   ->where('base_price', '<=', $maxPrice * 1.5); // 50% tolerance
-                          });
-                    });
-                } elseif (str_contains($filters['price_range'], '+')) {
-                    $minPrice = (float) str_replace('+', '', $filters['price_range']);
-
-                    $query->where(function ($q) use ($minPrice) {
-                        $q->where('base_price', '>=', $minPrice)
-                          ->orWhere(function($subQ) use ($minPrice) {
-                              $subQ->where('has_variants', true)
-                                   ->where('base_price', '>=', $minPrice * 0.5);
-                          });
-                    });
+            // Apply price range filter using effective price expression (covers variants via lateral join)
+            if ($priceFilterConfig) {
+                if ($priceFilterConfig['type'] === 'between') {
+                    $query->whereBetween(DB::raw($effectivePriceExpression), [$priceFilterConfig['min'], $priceFilterConfig['max']]);
+                } else {
+                    $query->where(DB::raw($effectivePriceExpression), '>=', $priceFilterConfig['min']);
                 }
             }
 
@@ -210,37 +211,35 @@ class UltraFastFilterController extends Controller
             // Get total count (fast with indexes)
             $total = $query->count('products.id');
 
-                if ($total === 0) {
-                    return $this->buildSimilarProductsResponse($category, $filters, $perPage);
-                }
-
-            // Select base fields - need to adjust if rating_high_low is used
-            if ($sortBy === 'rating_high_low') {
-                // Already have the join and select from the switch statement
-            } else {
-                $query->select([
-                    'products.id', 'products.title', 'products.slug', 'products.base_price',
-                    'products.base_discount', 'products.base_stock', 'products.condition',
-                    'products.has_variants', 'products.brand_id'
-                ]);
+            if ($total === 0) {
+                return $this->getEmptyResult('database_indexed');
             }
 
-            // Apply sorting - for price sorts, get larger sample and sort in-memory
-            $isPriceSort = in_array($sortBy, ['price_low_high', 'price_high_low']);
-            $fetchSize = $isPriceSort ? $perPage * 3 : $perPage;
-            $fetchOffset = $isPriceSort ? max(0, (($page - 1) * $perPage) - $perPage) : ($page - 1) * $perPage;
+            // Select base fields
+            $query->select([
+                'products.id', 'products.title', 'products.slug', 'products.base_price',
+                'products.base_discount', 'products.base_stock', 'products.condition',
+                'products.has_variants', 'products.brand_id'
+            ]);
 
+            // Apply sorting - use database ORDER BY for efficiency
             switch ($sortBy) {
                 case 'price_low_high':
-                    $query->orderBy('products.base_price', 'asc');
+                    $query->orderBy(DB::raw($effectivePriceExpression), 'asc');
                     break;
                 case 'price_high_low':
-                    $query->orderBy('products.base_price', 'desc');
+                    $query->orderBy(DB::raw($effectivePriceExpression), 'desc');
                     break;
                 case 'rating_high_low':
-                    $query->leftJoin('product_ratings_cache', 'products.id', '=', 'product_ratings_cache.product_id')
-                          ->orderByDesc('product_ratings_cache.average_rating')
-                          ->select('products.*'); // Ensure we still select only product columns
+                    // Check if rating join already exists
+                    $hasRatingJoin = collect($query->getQuery()->joins ?? [])->contains(function($join) {
+                        return strpos($join->table ?? '', 'product_ratings_cache') !== false;
+                    });
+                    
+                    if (!$hasRatingJoin) {
+                        $query->leftJoin('product_ratings_cache as prc_rating', 'products.id', '=', 'prc_rating.product_id');
+                    }
+                    $query->orderByDesc(DB::raw('COALESCE(prc_rating.average_rating, 0)'));
                     break;
                 case 'name_a_z':
                     $query->orderBy('products.title', 'asc');
@@ -255,29 +254,17 @@ class UltraFastFilterController extends Controller
             }
 
             // Apply pagination
-            $productIds = $query->skip($fetchOffset)
-                               ->take($fetchSize)
+            $productIds = $query->skip(($page - 1) * $perPage)
+                               ->take($perPage)
                                ->pluck('products.id')
                                ->toArray();
 
             if (empty($productIds)) {
-                return $this->getEmptyResult();
+                return $this->getEmptyResult('database_indexed');
             }
 
             // Fetch product details
-            $products = $this->fetchProductDetails($productIds);
-
-            // Sort by price in-memory for price sorts
-            if ($isPriceSort && !empty($products)) {
-                usort($products, function($a, $b) use ($sortBy) {
-                    $priceA = $a['pr']['f'] ?? $a['pr']['o'] ?? PHP_INT_MAX;
-                    $priceB = $b['pr']['f'] ?? $b['pr']['o'] ?? PHP_INT_MAX;
-                    return ($sortBy === 'price_low_high') ? ($priceA <=> $priceB) : ($priceB <=> $priceA);
-                });
-                // Slice to exact page after sorting
-                $offsetInPage = ($page - 1) * $perPage - $fetchOffset;
-                $products = array_slice($products, max(0, $offsetInPage), $perPage);
-            }
+            $products = $this->fetchProductDetails($productIds, $filters);
 
             // Build filter data
             $filterData = $this->buildRedisFilterData($category, $filters);
@@ -491,7 +478,7 @@ class UltraFastFilterController extends Controller
     /**
      * Fetch optimized product details for display
      */
-    private function fetchProductDetails(array $productIds): array
+    private function fetchProductDetails(array $productIds, array $filters = []): array
     {
         if (empty($productIds)) {
             return [];
@@ -534,19 +521,24 @@ class UltraFastFilterController extends Controller
             }
         }
 
-        return collect($orderedProducts)->map(function($product) use ($ratingsMap) {
-            // For products with variants, get min price from variants
+        return collect($orderedProducts)->map(function($product) use ($ratingsMap, $filters) {
+            // For products with variants, get min price from variants (cached)
             $basePrice = $product->base_price;
             $baseDiscount = $product->base_discount ?? 0;
             $stock = $product->base_stock ?? 0;
 
             if ($product->has_variants && ($basePrice === null || $basePrice == 0)) {
-                // Get cheapest variant
-                $cheapestVariant = DB::table('product_variants')
-                    ->where('product_id', $product->id)
-                    ->where('status', 'active')
-                    ->orderBy('price', 'asc')
-                    ->first(['price', 'discount', 'stock']);
+                // Get cheapest variant with caching
+                $variantCacheKey = "product_variant_min_price:{$product->id}";
+                $cheapestVariant = Cache::remember($variantCacheKey, 3600, function() use ($product) {
+                    return DB::table('product_variants')
+                        ->where('product_id', $product->id)
+                        ->where('status', 'active')
+                        ->where('stock', '>', 0)
+                        ->orderByRaw('price - (price * COALESCE(discount, 0) / 100)')
+                        ->select('price', 'discount', 'stock')
+                        ->first();
+                });
 
                 if ($cheapestVariant) {
                     $basePrice = $cheapestVariant->price;
@@ -556,6 +548,8 @@ class UltraFastFilterController extends Controller
             }
 
             $finalPrice = $basePrice * (1 - $baseDiscount / 100);
+            
+            // Note: Price filtering already done by Redis index, no need to re-filter here
 
             // Normalize image paths to storage-relative paths expected by frontend slider
             $images = $product->images
@@ -610,16 +604,30 @@ class UltraFastFilterController extends Controller
     private function generateCacheKey($category, array $filters, int $page, int $perPage, string $sortBy): string
     {
         $categoryKey = $category ? $category->slug : 'all';
-        return 'uf_' . md5($categoryKey . serialize($filters) . "{$page}_{$perPage}_{$sortBy}");
+        // Use RedisKeyManager for consistent key naming
+        $filterHash = md5(serialize($filters) . "{$page}_{$perPage}_{$sortBy}");
+        return \App\Services\RedisKeyManager::filterResults("{$categoryKey}:{$filterHash}");
     }
 
     private function parseCurrentFilters(Request $request): array
     {
+        // Handle price_range from either price_range param or price_min/price_max combo
+        $priceRange = $request->input('price_range', '');
+        
+        if (empty($priceRange)) {
+            $priceMin = $request->input('price_min', '');
+            $priceMax = $request->input('price_max', '');
+            
+            if ($priceMin && $priceMax) {
+                $priceRange = "{$priceMin}-{$priceMax}";
+            }
+        }
+        
         return [
             'brands' => array_slice($this->parseArray($request->input('brands', [])), 0, 20),
             'ratings' => array_slice($this->parseArray($request->input('ratings', [])), 0, 5),
             'discounts' => array_slice($this->parseArray($request->input('discounts', [])), 0, 10),
-            'price_range' => $request->input('price_range', ''),
+            'price_range' => $priceRange,
             'availability' => $this->parseArray($request->input('availability', [])),
         ];
     }
@@ -772,9 +780,6 @@ class UltraFastFilterController extends Controller
                 ['r' => '0-100', 'l' => 'Under $100'],
                 ['r' => '100-500', 'l' => '$100 - $500'],
                 ['r' => '500-1000', 'l' => '$500 - $1,000'],
-                ['r' => '1000-2000', 'l' => '$1,000 - $2,000'],
-                ['r' => '2000-5000', 'l' => '$2,000 - $5,000'],
-                ['r' => '5000+', 'l' => '$5,000 & Above']
             ];
 
             return [
@@ -905,6 +910,29 @@ class UltraFastFilterController extends Controller
         });
     }
 
+    /**
+     * Map dynamic price range to Redis index keys
+     * Redis indexes use fixed ranges: 0-100, 100-500, 500-1000
+     */
+    private function mapPriceRangeToRedisKeys(float $minPrice, float $maxPrice): array
+    {
+        $fixedRanges = [
+            ['min' => 0, 'max' => 100, 'key' => 'index:price_range:0-100'],
+            ['min' => 100, 'max' => 500, 'key' => 'index:price_range:100-500'],
+            ['min' => 500, 'max' => 1000, 'key' => 'index:price_range:500-1000'],
+        ];
+
+        $matchingKeys = [];
+        foreach ($fixedRanges as $range) {
+            // Include this range if it overlaps with the requested range
+            if ($range['max'] >= $minPrice && $range['min'] <= $maxPrice) {
+                $matchingKeys[] = $range['key'];
+            }
+        }
+
+        return $matchingKeys;
+    }
+
     private function buildBrandCountsFromDatabase(array $currentFilters): array
     {
         $cacheKey = 'brand_filter_counts_fallback';
@@ -933,6 +961,70 @@ class UltraFastFilterController extends Controller
             $brand['sel'] = in_array($brand['s'], $currentFilters['brands'] ?? []);
             return $brand;
         }, $brands);
+    }
+
+    /**
+     * Parse price filter configuration from request
+     * Returns null if no price filter, or array with 'type', 'min', 'max'
+     */
+    private function parsePriceFilterConfig(?string $priceRange): ?array
+    {
+        if (empty($priceRange)) {
+            return null;
+        }
+
+        // Format: "100-1000" or "1000+"
+        if (str_contains($priceRange, '-')) {
+            [$min, $max] = explode('-', $priceRange, 2);
+            return [
+                'type' => 'between',
+                'min' => (float) $min,
+                'max' => (float) $max
+            ];
+        } elseif (str_contains($priceRange, '+')) {
+            $min = (float) str_replace('+', '', $priceRange);
+            return [
+                'type' => 'min_only',
+                'min' => $min,
+                'max' => PHP_INT_MAX
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Build lateral subquery for minimum variant price
+     */
+    private function buildVariantPriceSubquery(?array $priceFilterConfig): string
+    {
+        // Lateral join to get the minimum effective price from variants for each product
+        return "(
+            SELECT 
+                product_variants.product_id,
+                MIN(product_variants.price * (1 - COALESCE(product_variants.discount, 0) / 100.0)) as min_variant_price
+            FROM product_variants
+            WHERE product_variants.product_id = products.id
+              AND product_variants.status = 'active'
+            GROUP BY product_variants.product_id
+        )";
+    }
+
+    /**
+     * Get effective price expression (considers variants when needed)
+     */
+    private function getEffectivePriceExpression(bool $requiresVariantPricing): string
+    {
+        if ($requiresVariantPricing) {
+            // Use COALESCE to prefer variant pricing when available, fall back to base price
+            return "COALESCE(
+                pv_min.min_variant_price, 
+                products.base_price * (1 - COALESCE(products.base_discount, 0) / 100.0)
+            )";
+        }
+        
+        // Simple case: just use base price with discount
+        return "products.base_price * (1 - COALESCE(products.base_discount, 0) / 100.0)";
     }
 
 }

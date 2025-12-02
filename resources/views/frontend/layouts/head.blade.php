@@ -71,12 +71,8 @@
 <!-- Themify Icons -->
 <link rel="stylesheet" href="{{ asset('frontend/css/themify-icons.css') }}">
 
-<!-- jQuery UI - Async load -->
-<link rel="preload" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css" as="style"
-    onload="this.onload=null;this.rel='stylesheet'">
-<noscript>
-    <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
-</noscript>
+<!-- jQuery UI - Load synchronously for slider -->
+<link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
 
 <!-- Eshop StyleSheet -->
 <link rel="stylesheet" href="{{ asset('frontend/css/reset.min.css') }}">

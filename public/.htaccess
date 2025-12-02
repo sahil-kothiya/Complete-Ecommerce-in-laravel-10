@@ -153,13 +153,9 @@
     Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
     Header always set X-XSS-Protection "1; mode=block"
     Header always set X-DNS-Prefetch-Control "on"
-    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'"
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://code.jquery.com https://cdnjs.cloudflare.com https://stackpath.bootstrapcdn.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://cdn.jsdelivr.net; frame-ancestors 'self'"
     Header unset Server
     Header unset X-Powered-By
-
-    # Preload main Vite assets
-    Header add Link "</build/assets/app.css>; rel=preload; as=style"
-    Header add Link "</build/assets/app.js>; rel=preload; as=script"
 
     # Keep-Alive
     Header set Connection "Keep-Alive"

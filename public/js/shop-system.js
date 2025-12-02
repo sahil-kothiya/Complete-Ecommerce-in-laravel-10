@@ -6,7 +6,7 @@
     }
     const appUrl = window.location.origin;
     let e = {
-        maxPrice: window.maxPrice || 100,
+        maxPrice: window.maxPrice || 1000,
         filterDebounceTime: 300,
         sliderAnimationSpeed: 800,
         cartAnimationDelay: 800,
@@ -82,8 +82,11 @@
                             "brand" === e ? (a = "brands") : "min_rating" === e ? (a = "ratings") : "min_discount" === e && (a = "discounts"), t.append(a, i.join(","));
                         }
                     }),
-                    e.querySelectorAll('select, input[type="text"], input[type="hidden"]').forEach((e) => {
-                        e.name && e.value && "price_range" !== e.name && t.set(e.name, e.value);
+                    e.querySelectorAll('select, input[type="text"]').forEach((e) => {
+                        // Skip price_min and price_max as they're combined into price_range
+                        if (e.name && e.value && e.name !== 'price_min' && e.name !== 'price_max') {
+                            t.set(e.name, e.value);
+                        }
                     }),
                     t
                 );
@@ -121,35 +124,116 @@
             this.init();
         }
         init() {
-            let i = document.getElementById("slider-range"),
-                a = document.getElementById("amount");
-            if (!i || !a) return;
-            let s = parseFloat(i.dataset.min) || 0,
-                l = parseFloat(i.dataset.max) || e.maxPrice,
-                r = s,
-                n = l,
-                d = document.getElementById("price_range")?.value;
-            d && ([r, n] = d.split("-").map(parseFloat)),
-                void 0 !== $.ui && $.ui.slider
-                    ? ($(i).slider({
-                        range: !0,
-                        min: s,
-                        max: l,
-                        values: [r, n],
-                        slide(e, i) {
-                            (a.value = `${t.formatPrice(i.values[0])} - ${t.formatPrice(i.values[1])}`), (document.getElementById("price_range").value = `${i.values[0]}-${i.values[1]}`);
-                        },
-                        change: (e, t) => {
+            // Price range dropdowns - setup change listeners
+            this.setupPriceRangeDropdowns();
+        }
+        setupPriceRangeDropdowns() {
+            const minDropdown = document.getElementById('price_min');
+            const maxDropdown = document.getElementById('price_max');
+            const hiddenInput = document.getElementById('price_range');
+
+            if (minDropdown && maxDropdown && hiddenInput) {
+                const allowedMinValues = Array.from(minDropdown.options)
+                    .map((opt) => opt.value)
+                    .filter((value) => value !== '');
+                const allowedMaxValues = Array.from(maxDropdown.options)
+                    .map((opt) => opt.value)
+                    .filter((value) => value !== '');
+
+                const defaultMinValue = allowedMinValues[0] ?? '0';
+                const defaultMaxValue = allowedMaxValues[allowedMaxValues.length - 1] ?? e.maxPrice.toString();
+
+                if (!minDropdown.value) {
+                    minDropdown.value = defaultMinValue;
+                }
+                if (!maxDropdown.value) {
+                    maxDropdown.value = defaultMaxValue;
+                }
+                if (!hiddenInput.value) {
+                    hiddenInput.value = `${minDropdown.value}-${maxDropdown.value}`;
+                }
+
+                const applyRange = (minVal, maxVal, shouldApplyCall = true) => {
+                    hiddenInput.value = `${minVal}-${maxVal}`;
+                    if (window.filterSystem) {
+                        window.filterSystem.handlePriceRangeChange(Number(minVal), Number(maxVal), '$');
+                    }
+                    console.log('[PriceFilter] applying range', hiddenInput.value);
+                    if (shouldApplyCall) {
+                        this.applyFilters();
+                    }
+                };
+
+                const updatePriceRange = (eventSource = 'unknown', shouldApply = true) => {
+                    const min = minDropdown.value;
+                    const max = maxDropdown.value;
+                    console.log('[PriceFilter] change detected', { source: eventSource, min, max });
+
+                    if (min && !allowedMinValues.includes(min)) {
+                        console.warn('[PriceFilter] invalid min selected, resetting', min);
+                        minDropdown.value = defaultMinValue;
+                        return;
+                    }
+                    if (max && !allowedMaxValues.includes(max)) {
+                        console.warn('[PriceFilter] invalid max selected, resetting', max);
+                        maxDropdown.value = defaultMaxValue;
+                        return;
+                    }
+
+                    if (min && max) {
+                        const minVal = parseFloat(min);
+                        const maxVal = parseFloat(max);
+
+                        if (minVal >= maxVal) {
+                            console.warn('[PriceFilter] invalid range (min >= max), adjusting', { minVal, maxVal });
+                            const nextMax = allowedMaxValues.find((value) => Number(value) > minVal) ?? defaultMaxValue;
+                            if (nextMax === max) {
+                                return;
+                            }
+                            maxDropdown.value = nextMax;
+                            updatePriceRange('auto_adjust', shouldApply);
+                            return;
+                        }
+
+                        applyRange(minVal, maxVal, shouldApply);
+                    } else if (min && !max) {
+                        const minVal = parseFloat(min);
+                        const fallbackMax = allowedMaxValues.find((value) => Number(value) > minVal) ?? defaultMaxValue;
+                        console.log('[PriceFilter] only min selected, auto-setting max', { minVal, fallbackMax });
+                        maxDropdown.value = fallbackMax;
+                        applyRange(minVal, Number(fallbackMax), shouldApply);
+                    } else if (!min && max) {
+                        const maxVal = parseFloat(max);
+                        console.log('[PriceFilter] only max selected, using default min', { maxVal });
+                        minDropdown.value = defaultMinValue;
+                        applyRange(Number(defaultMinValue), maxVal, shouldApply);
+                    } else {
+                        hiddenInput.value = '';
+                        if (window.filterSystem) {
+                            window.filterSystem.removeFromActiveFilters('price');
+                            window.filterSystem.updateActiveFiltersDisplay();
+                        }
+                        console.log('[PriceFilter] cleared');
+                        if (shouldApply) {
                             this.applyFilters();
-                        },
-                    }),
-                        (a.value = `${t.formatPrice(r)} - ${t.formatPrice(n)}`))
-                    : console.warn(
-                        'jQuery UI Slider not loaded. Add <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/ui-lightness/jquery-ui.css"> and <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script> to layout.'
-                    );
+                        }
+                    }
+                };
+
+                minDropdown.addEventListener('change', () => updatePriceRange('min_dropdown'));
+                maxDropdown.addEventListener('change', () => updatePriceRange('max_dropdown'));
+
+                // Initialize hidden value without triggering API call
+                updatePriceRange('initial', false);
+            } else {
+                console.warn('[PriceFilter] dropdown elements missing');
+            }
         }
         applyFilters() {
-            window.unifiedShopSystem?.applyFilters();
+            // Call the filter system's apply method directly
+            if (window.filterSystem) {
+                window.filterSystem.debouncedApply(1);
+            }
         }
     }
     class a {
@@ -339,8 +423,8 @@
         initializePriceRange() {
             let t = document.getElementById("slider-range");
             if (!t || !window.jQuery || !jQuery.fn.slider) return;
-            let i = 0,
-                a = e.maxPrice,
+            let i = parseInt(t.dataset.min) || 0,
+                a = parseInt(t.dataset.max) || e.maxPrice,
                 s = t.dataset.currency || e.currency,
                 l = `${i}-${a}`,
                 r = document.getElementById("price_range");
@@ -529,16 +613,22 @@
         resetPriceRange() {
             let t = document.getElementById("slider-range"),
                 i = document.getElementById("price_range"),
-                a = document.getElementById("amount");
-            if (t && window.jQuery && jQuery.fn.slider) {
-                let s = e.maxPrice;
-                jQuery(t).slider("values", [0, s]);
-                i && (i.value = `0-${s}`);
-                a && (a.value = `${e.currency}0 - ${e.currency}${s}`);
+                a = document.getElementById("amount"),
+                minDropdown = document.getElementById("price_min"),
+                maxDropdown = document.getElementById("price_max"),
+                defaultMax = e.maxPrice;
 
-                // Remove price filter from active filters
-                this.removeFromActiveFilters("price");
+            if (t && window.jQuery && jQuery.fn.slider) {
+                jQuery(t).slider("values", [0, defaultMax]);
+                a && (a.value = `${e.currency}0 - ${e.currency}${defaultMax}`);
             }
+
+            i && (i.value = `0-${defaultMax}`);
+            minDropdown && (minDropdown.value = '0');
+            maxDropdown && (maxDropdown.value = defaultMax.toString());
+
+            // Remove price filter from active filters
+            this.removeFromActiveFilters("price");
         }
         updateActiveFiltersDisplay() {
             let e = document.getElementById("active-filters-list"),
@@ -917,20 +1007,28 @@
     }
     (window.unifiedShopSystem = new (class e {
         constructor() {
-            (this.imageSliderSystem = null), (this.filterSystem = null), (this.productInteractionSystem = null), this.init();
+            (this.priceFilterHandler = null), (this.imageSliderSystem = null), (this.filterSystem = null), (this.productInteractionSystem = null), this.init();
         }
         init() {
             let e = () => this.initialize();
             "loading" === document.readyState ? document.addEventListener("DOMContentLoaded", e) : e();
         }
         initialize() {
-            (this.imageSliderSystem = new a()),
+            (this.priceFilterHandler = new i()),
+                (this.imageSliderSystem = new a()),
                 (this.filterSystem = new s()),
                 (this.productInteractionSystem = new l()),
+                (window.priceFilterHandler = this.priceFilterHandler),
                 (window.imageSliderSystem = this.imageSliderSystem),
                 (window.filterSystem = this.filterSystem),
                 (window.productInteractionSystem = this.productInteractionSystem),
                 this.setupContentObserver();
+        }
+        applyFilters(page = 1) {
+            // Proxy method to trigger filter system
+            if (this.filterSystem) {
+                this.filterSystem.debouncedApply(page);
+            }
         }
         setupContentObserver() {
             let e = document.getElementById("product-grids");

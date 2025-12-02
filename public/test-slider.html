@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Test Price Slider</title>
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+    <style>
+        body {
+            padding: 50px;
+            font-family: Arial;
+        }
+
+        #slider-range {
+            margin: 20px 0;
+        }
+
+        #amount {
+            border: 1px solid #ccc;
+            padding: 5px;
+            width: 200px;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Price Range Slider Test</h2>
+
+    <div id="slider-range" data-min="0" data-max="1000"></div>
+
+    <p>
+        <label for="amount">Price range:</label>
+        <input type="text" id="amount" readonly>
+        <input type="hidden" id="price_range">
+    </p>
+
+    <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+    <script>
+        $(document).ready(function () {
+            let slider = document.getElementById('slider-range');
+            let min = parseInt(slider.dataset.min) || 0;
+            let max = parseInt(slider.dataset.max) || 1000;
+
+            console.log('Slider min:', min, 'max:', max);
+
+            $("#slider-range").slider({
+                range: true,
+                min: min,
+                max: max,
+                values: [0, 1000],
+                slide: function (event, ui) {
+                    $("#amount").val("$" + ui.values[0] + " - $" + ui.values[1]);
+                    $("#price_range").val(ui.values[0] + "-" + ui.values[1]);
+                    console.log('Price range:', ui.values[0], '-', ui.values[1]);
+                }
+            });
+
+            $("#amount").val("$" + $("#slider-range").slider("values", 0) +
+                " - $" + $("#slider-range").slider("values", 1));
+        });
+    </script>
+</body>
+
+</html>
