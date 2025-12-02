@@ -34,9 +34,14 @@ guidelines:
       baseFolder: "scripts"
       dateFormat: "DD-MM-YYYY"
       rule: "Store all generated test scripts under scripts/<current-date>/"
+
     noRandomLocations: true
+
+    autoFolderCreation:
+      rule: "If docs-archive/<current-date>/ or scripts/<current-date>/ folders do not exist, automatically create them before storing files."
+
     autoMoveMisplacedFiles:
-      rule: "Move incorrectly placed .md or script files into docs-archive/<date>/old/ or scripts/<date>/old/"
+      rule: "If any .md or test script appears directly inside docs-archive/ or scripts/ (not inside a date folder), create bkp-<current-date> inside that folder and move all misplaced files into it."
 
 format:
   defaultBehavior: "Every response must follow: ISSUE + SOLUTION in short form."

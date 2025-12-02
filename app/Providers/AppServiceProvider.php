@@ -2,45 +2,36 @@
 
 namespace App\Providers;
 
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\View;
+use App\Models\Banner;
+use App\Models\Cart;
+use App\Models\Category;
+use App\Models\Order;
+use App\Models\Post;
+use App\Models\Product;
+use App\Models\ProductReview;
+use App\Models\Settings;
+use App\Models\Wishlist;
+use App\Observers\BannerObserver;
+use App\Observers\CartObserver;
+use App\Observers\CategoryObserver;
+use App\Observers\OrderObserver;
+use App\Observers\PostObserver;
+use App\Observers\ProductObserver;
+use App\Observers\ReviewObserver;
+use App\Observers\SettingsObserver;
+use App\Observers\UserObserver;
+use App\Observers\WishlistObserver;
+use App\Services\DiscountService;
+use App\Services\RedisCacheService;
+use App\Services\ResponseCacheService;
+use App\User;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
-
-use App\Services\RedisCacheService;
-
-use App\Models\{
-    Settings,
-    Wishlist,
-    Cart,
-    Product,
-    Category,
-    Banner,
-    Post,
-    Order,
-    ProductReview
-};
-use App\User;
-
-use App\Observers\{
-    ProductObserver,
-    CategoryObserver,
-    BannerObserver,
-    CartObserver,
-    OrderObserver,
-    PostObserver,
-    ReviewObserver,
-    SettingsObserver,
-    UserObserver,
-    WishlistObserver
-};
-use App\Services\DiscountService;
-use App\Services\ResponseCacheService;
-use Carbon\Carbon;
+use Illuminate\Support\Facades\View;
+use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -181,19 +172,30 @@ class AppServiceProvider extends ServiceProvider
     private function getCachedSettings(string $key, int $ttl): ?Settings
     {
         // Try Redis first (fastest)
-        $settings = RedisCacheService::get($key);
+        $settingsData = RedisCacheService::get($key);
 
-        if ($settings !== null) {
-            return $settings;
+        if ($settingsData !== null) {
+            // Redis returns array, convert back to model if needed
+            if (is_array($settingsData)) {
+                $settings = new Settings();
+                $settings->fill($settingsData);
+                $settings->exists = true;
+
+                return $settings;
+            }
+
+            return $settingsData;
         }
 
         // Try Laravel cache (medium speed)
         $settings = Cache::get($key);
 
         if ($settings !== null) {
-            // Store in Redis for next time
-            RedisCacheService::put($key, $settings, $ttl);
-            return $settings;
+            // Store in Redis for next time (as array for consistency)
+            $settingsArray = $settings instanceof Settings ? $settings->toArray() : $settings;
+            RedisCacheService::put($key, $settingsArray, $ttl);
+
+            return $settings instanceof Settings ? $settings : null;
         }
 
         // Last resort: Database query (slowest)
@@ -204,12 +206,12 @@ class AppServiceProvider extends ServiceProvider
             'address',
             'phone',
             'email',
-            'logo'
+            'logo',
         ])->first();
 
         if ($settings) {
-            // Store in both caches
-            RedisCacheService::put($key, $settings, $ttl);
+            // Store in both caches (Redis gets array, Laravel gets model)
+            RedisCacheService::put($key, $settings->toArray(), $ttl);
             Cache::put($key, $settings, $ttl);
         }
 
@@ -222,7 +224,7 @@ class AppServiceProvider extends ServiceProvider
     private function setupUserSpecificData(): void
     {
         View::composer('*', function ($view) {
-            if (!Auth::check()) {
+            if (! Auth::check()) {
                 return;
             }
 
@@ -266,6 +268,7 @@ class AppServiceProvider extends ServiceProvider
 
                     // Store in Redis too
                     RedisCacheService::put($cartKey, $count, $ttl['cart']);
+
                     return $count;
                 }
             );
@@ -281,7 +284,7 @@ class AppServiceProvider extends ServiceProvider
     private function initializeCriticalCaches(): void
     {
         // Only in production/staging and if Redis is enabled
-        if (!app()->environment(['production', 'local']) || !Config::get('redis_cache.enabled.master', false)) {
+        if (! app()->environment(['production', 'local']) || ! Config::get('redis_cache.enabled.master', false)) {
             return;
         }
 
@@ -298,7 +301,7 @@ class AppServiceProvider extends ServiceProvider
             // Mark as initialized (expires in 1 hour, will re-warm if Redis is flushed)
             RedisCacheService::put($initKey, true, 3600);
         } catch (\Throwable $e) {
-            Log::warning('Cache initialization failed: ' . $e->getMessage());
+            Log::warning('Cache initialization failed: '.$e->getMessage());
         }
     }
 
@@ -309,7 +312,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $config = Config::get('redis_cache');
 
-        if (!$config['warming']['enabled'] ?? false) {
+        if (! $config['warming']['enabled'] ?? false) {
             return;
         }
 
@@ -334,7 +337,7 @@ class AppServiceProvider extends ServiceProvider
                 RedisCacheService::put($key, $categories, $ttl['categories'] ?? 43200);
                 Log::info('Cache warmed: categories', ['count' => $categories->count()]);
             } catch (\Throwable $e) {
-                Log::warning('Failed to warm categories cache: ' . $e->getMessage());
+                Log::warning('Failed to warm categories cache: '.$e->getMessage());
             }
         }
 
@@ -351,7 +354,7 @@ class AppServiceProvider extends ServiceProvider
                 RedisCacheService::put($key, $featured, $ttl['featured_products'] ?? 3600);
                 Log::info('Cache warmed: featured products', ['count' => $featured->count()]);
             } catch (\Throwable $e) {
-                Log::warning('Failed to warm featured products cache: ' . $e->getMessage());
+                Log::warning('Failed to warm featured products cache: '.$e->getMessage());
             }
         }
     }

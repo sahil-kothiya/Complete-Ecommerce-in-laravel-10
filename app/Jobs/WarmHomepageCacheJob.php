@@ -3,9 +3,12 @@
 namespace App\Jobs;
 
 use App\Helpers\ImageHelper;
-use App\Services\RedisCacheService;
+use App\Models\Banner;
+use App\Models\Category;
+use App\Models\Product;
+use App\Models\Settings;
 use App\Services\RedisCacheLogger;
-use App\Models\{Product, Category, Banner, Settings};
+use App\Services\RedisCacheService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -27,11 +30,15 @@ class WarmHomepageCacheJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $timeout = 120; // 2 minutes max
+
     public $tries = 1; // Don't retry - cache warming is optional
+
     public $failOnTimeout = false;
 
     private const HOMEPAGE_ALL_PRODUCTS_LIMIT = 12;
+
     private const PRODUCTS_PER_CATEGORY_SECTION = 12;
+
     private const MAX_CATEGORY_SECTIONS = 4;
 
     /**
@@ -44,13 +51,15 @@ class WarmHomepageCacheJob implements ShouldQueue
         $startTime = microtime(true);
 
         try {
-            if (!Config::get('redis_cache.enabled.master', false)) {
+            if (! Config::get('redis_cache.enabled.master', false)) {
                 Log::info('Cache warming skipped: Redis cache disabled');
+
                 return;
             }
 
-            if (!Config::get('cache_warmup.enabled', true)) {
+            if (! Config::get('cache_warmup.enabled', true)) {
                 Log::info('Cache warming skipped: Auto warmup disabled');
+
                 return;
             }
 
@@ -99,16 +108,15 @@ class WarmHomepageCacheJob implements ShouldQueue
             Log::info('✅ Homepage cache warmup completed', [
                 'duration_ms' => $duration,
                 'components_warmed' => $warmed,
-                'timestamp' => now()->toDateTimeString()
+                'timestamp' => now()->toDateTimeString(),
             ]);
-
         } catch (\Exception $e) {
             $duration = round((microtime(true) - $startTime) * 1000, 2);
 
             Log::error('❌ Homepage cache warmup failed', [
                 'error' => $e->getMessage(),
                 'duration_ms' => $duration,
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
         }
     }
@@ -119,7 +127,7 @@ class WarmHomepageCacheJob implements ShouldQueue
     private function warmSettings(array $ttl, int $cacheVersion): bool
     {
         try {
-            $key = "cache:homepage:settings_v{$cacheVersion}";
+            $key = "ec:pg:home:settings_v{$cacheVersion}";
 
             if (RedisCacheService::has($key)) {
                 return true; // Already cached
@@ -132,18 +140,20 @@ class WarmHomepageCacheJob implements ShouldQueue
                 'address',
                 'phone',
                 'email',
-                'logo'
+                'logo',
             ])->first();
 
             if ($settings) {
                 RedisCacheService::put($key, $settings, $ttl['settings'] ?? 86400);
                 Cache::put($key, $settings, $ttl['settings'] ?? 86400);
+
                 return true;
             }
 
             return false;
         } catch (\Exception $e) {
-            Log::warning('Failed to warm settings cache: ' . $e->getMessage());
+            Log::warning('Failed to warm settings cache: '.$e->getMessage());
+
             return false;
         }
     }
@@ -154,7 +164,7 @@ class WarmHomepageCacheJob implements ShouldQueue
     private function warmCategories(array $ttl, int $cacheVersion): bool
     {
         try {
-            $key = "cache:homepage:categories_v{$cacheVersion}";
+            $key = "ec:pg:home:categories_v{$cacheVersion}";
 
             if (RedisCacheService::has($key)) {
                 return true;
@@ -168,12 +178,14 @@ class WarmHomepageCacheJob implements ShouldQueue
 
             if ($categories->isNotEmpty()) {
                 RedisCacheService::put($key, $categories, $ttl['categories'] ?? 43200);
+
                 return true;
             }
 
             return false;
         } catch (\Exception $e) {
-            Log::warning('Failed to warm categories cache: ' . $e->getMessage());
+            Log::warning('Failed to warm categories cache: '.$e->getMessage());
+
             return false;
         }
     }
@@ -184,7 +196,7 @@ class WarmHomepageCacheJob implements ShouldQueue
     private function warmBanners(array $ttl, int $cacheVersion): bool
     {
         try {
-            $key = "cache:homepage:banners_v{$cacheVersion}";
+            $key = "ec:pg:home:banners_v{$cacheVersion}";
 
             if (RedisCacheService::has($key)) {
                 return true;
@@ -198,12 +210,14 @@ class WarmHomepageCacheJob implements ShouldQueue
 
             if ($banners->isNotEmpty()) {
                 RedisCacheService::put($key, $banners, $ttl['banners'] ?? 21600);
+
                 return true;
             }
 
             return false;
         } catch (\Exception $e) {
-            Log::warning('Failed to warm banners cache: ' . $e->getMessage());
+            Log::warning('Failed to warm banners cache: '.$e->getMessage());
+
             return false;
         }
     }
@@ -214,7 +228,7 @@ class WarmHomepageCacheJob implements ShouldQueue
     private function warmFeaturedProducts(array $ttl, int $cacheVersion): bool
     {
         try {
-            $key = "cache:homepage:products:featured_v{$cacheVersion}";
+            $key = "ec:pg:home:products:featured_v{$cacheVersion}";
 
             if (RedisCacheService::has($key)) {
                 return true;
@@ -249,14 +263,14 @@ class WarmHomepageCacheJob implements ShouldQueue
                     },
                     'images' => function ($query) {
                         $query->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order']);
-                    }
+                    },
                 ])
                 ->get();
 
             $transformedProducts = [];
             foreach ($products as $product) {
                 // Debug: Check if images are loaded
-                if (!$product->has_variants && $product->images->count() == 0) {
+                if (! $product->has_variants && $product->images->count() == 0) {
                     Log::warning("Product {$product->id} has no images loaded in warmup", [
                         'has_variants' => $product->has_variants,
                         'images_loaded' => $product->relationLoaded('images'),
@@ -290,7 +304,8 @@ class WarmHomepageCacheJob implements ShouldQueue
 
             return true;
         } catch (\Exception $e) {
-            Log::warning('Failed to warm featured products cache: ' . $e->getMessage());
+            Log::warning('Failed to warm featured products cache: '.$e->getMessage());
+
             return false;
         }
     }
@@ -301,7 +316,7 @@ class WarmHomepageCacheJob implements ShouldQueue
     private function warmCategoryProducts(array $ttl, int $cacheVersion): bool
     {
         try {
-            $key = "cache:homepage:category_products_v{$cacheVersion}";
+            $key = "ec:pg:home:category_products_v{$cacheVersion}";
 
             if (RedisCacheService::has($key)) {
                 return true;
@@ -357,7 +372,7 @@ class WarmHomepageCacheJob implements ShouldQueue
                         },
                         'images' => function ($query) {
                             $query->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order']);
-                        }
+                        },
                     ])
                     ->get();
 
@@ -374,26 +389,28 @@ class WarmHomepageCacheJob implements ShouldQueue
                     );
                 }
 
-                if (!empty($transformedProducts)) {
+                if (! empty($transformedProducts)) {
                     $categoryProducts[$category->slug] = [
                         'id' => $category->id,
                         'title' => $category->title,
                         'slug' => $category->slug,
                         'products' => $transformedProducts,
-                        'count' => count($transformedProducts)
+                        'count' => count($transformedProducts),
                     ];
                     $categoriesProcessed++;
                 }
             }
 
-            if (!empty($categoryProducts)) {
+            if (! empty($categoryProducts)) {
                 RedisCacheService::put($key, $categoryProducts, $ttl['homepage_full'] ?? 1800);
+
                 return true;
             }
 
             return false;
         } catch (\Exception $e) {
-            Log::warning('Failed to warm category products cache: ' . $e->getMessage());
+            Log::warning('Failed to warm category products cache: '.$e->getMessage());
+
             return false;
         }
     }
@@ -417,7 +434,7 @@ class WarmHomepageCacheJob implements ShouldQueue
                     $variantImageArray = [];
                     if ($variant->images && $variant->images->count() > 0) {
                         foreach ($variant->images->take(3) as $img) {
-                            $imagePath = !empty($img->image_path)
+                            $imagePath = ! empty($img->image_path)
                                 ? ImageHelper::variantImageUrl($img->image_path)
                                 : asset('images/no-image.png');
 
@@ -428,9 +445,9 @@ class WarmHomepageCacheJob implements ShouldQueue
                         }
                     }                    $variantsData[] = [
                         'id' => $variant->id,
-                        'price' => (float)$variant->price,
-                        'discount' => (float)($variant->discount ?? 0),
-                        'stock' => (int)$variant->stock,
+                        'price' => (float) $variant->price,
+                        'discount' => (float) ($variant->discount ?? 0),
+                        'stock' => (int) $variant->stock,
                         'status' => $variant->status,
                         'images' => $variantImageArray,
                     ];
@@ -440,7 +457,7 @@ class WarmHomepageCacheJob implements ShouldQueue
                     }
 
                     // Use first variant images if main images still empty
-                    if (empty($images) && !empty($variantImageArray)) {
+                    if (empty($images) && ! empty($variantImageArray)) {
                         $images = $variantImageArray;
                     }
                 }
@@ -450,7 +467,7 @@ class WarmHomepageCacheJob implements ShouldQueue
         // For simple products or if no variant images, use product images
         if (empty($images) && $product->images && $product->images->count() > 0) {
             foreach ($product->images->take(3) as $img) {
-                $imagePath = !empty($img->image_path)
+                $imagePath = ! empty($img->image_path)
                     ? ImageHelper::productImageUrl($img->image_path)
                     : asset('images/no-image.png');
 
@@ -476,21 +493,21 @@ class WarmHomepageCacheJob implements ShouldQueue
             $maxDiscount = $product->base_discount ?? 0;
         }
 
-        return (object)[
+        return (object) [
             'id' => $product->id,
             'title' => $product->title,
             'slug' => $product->slug,
-            'base_price' => (float)$product->base_price,
-            'base_discount' => (float)($product->base_discount ?? 0),
-            'base_stock' => (int)($product->base_stock ?? 0),
-            'has_variants' => (bool)$product->has_variants,
+            'base_price' => (float) $product->base_price,
+            'base_discount' => (float) ($product->base_discount ?? 0),
+            'base_stock' => (int) ($product->base_stock ?? 0),
+            'has_variants' => (bool) $product->has_variants,
             'cat_id' => $product->cat_id,
             'condition' => $product->condition ?? 'default',
             'stock' => $stock,
             'max_discount' => $maxDiscount,
             'images' => $images,
             'variants' => $variantsData,
-            'brand' => $product->brand ? (object)[
+            'brand' => $product->brand ? (object) [
                 'id' => $product->brand->id,
                 'title' => $product->brand->title,
                 'slug' => $product->brand->slug,

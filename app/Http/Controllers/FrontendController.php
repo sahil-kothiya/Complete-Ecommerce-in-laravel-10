@@ -37,9 +37,10 @@ use Spatie\Newsletter\Facades\Newsletter;
  */
 class FrontendController extends Controller
 {
-    private const RECENT_PRODUCTS_CACHE_PREFIX = 'cache:recent_products:';
-    private const HOMEPAGE_CACHE_PREFIX = 'cache:homepage:';
-    private const PRODUCT_GRIDS_CACHE_PREFIX = 'cache:product_grids:';
+    // DEPRECATED: Use RedisKeyManager instead for all new code
+    private const RECENT_PRODUCTS_CACHE_PREFIX = 'ec:idx:new:';
+    private const HOMEPAGE_CACHE_PREFIX = 'ec:pg:home:';
+    private const PRODUCT_GRIDS_CACHE_PREFIX = 'ec:pg:cat:';
     private const CACHE_TTL = 3600; // Default cache TTL in seconds
     private const HOMEPAGE_ALL_PRODUCTS_LIMIT = 12; // All Products section - EXACTLY 12
     private const PRODUCTS_PER_CATEGORY_SECTION = 12; // Each category section - EXACTLY 12

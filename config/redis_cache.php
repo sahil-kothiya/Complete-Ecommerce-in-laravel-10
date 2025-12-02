@@ -24,11 +24,15 @@ return [
         'master' => env('REDIS_CACHE_ENABLED', true),           // Master switch - kills all caching if false
         'homepage' => env('CACHE_HOMEPAGE_ENABLED', true),      // Homepage full page cache
         'products' => env('CACHE_PRODUCTS_ENABLED', true),      // Product entity caching
+        'variants' => env('CACHE_VARIANTS_ENABLED', true),      // Variant entity caching (NEW)
         'categories' => env('CACHE_CATEGORIES_ENABLED', true),  // Category caching
+        'brands' => env('CACHE_BRANDS_ENABLED', true),          // Brand caching
         'banners' => env('CACHE_BANNERS_ENABLED', true),        // Banner caching
         'settings' => env('CACHE_SETTINGS_ENABLED', true),      // Settings caching
         'search' => env('CACHE_SEARCH_ENABLED', true),          // Search results caching
         'filters' => env('CACHE_FILTERS_ENABLED', true),        // Product filter caching
+        'indexes' => env('CACHE_INDEXES_ENABLED', true),        // Pre-computed indexes (NEW)
+        'components' => env('CACHE_COMPONENTS_ENABLED', true),  // Page components (NEW)
         'wishlist' => env('CACHE_WISHLIST_ENABLED', true),      // Wishlist caching
         'cart' => env('CACHE_CART_ENABLED', true),              // Cart caching
         'user' => env('CACHE_USER_ENABLED', true),              // User data caching
@@ -60,9 +64,18 @@ return [
         // Entity Caches
         'product_card' => env('CACHE_TTL_PRODUCT_CARD', 7200),          // 2 hours - lightweight
         'product_full' => env('CACHE_TTL_PRODUCT_FULL', 3600),          // 1 hour - complete data
-        'product_variant' => env('CACHE_TTL_PRODUCT_VARIANT', 3600),    // 1 hour
+        'product_meta' => env('CACHE_TTL_PRODUCT_META', 10800),         // 3 hours - metadata only
+        'product_images' => env('CACHE_TTL_PRODUCT_IMAGES', 14400),     // 4 hours - images rarely change
         'category' => env('CACHE_TTL_CATEGORY', 21600),                 // 6 hours
         'brand' => env('CACHE_TTL_BRAND', 21600),                       // 6 hours
+
+        // Variant Caches (NEW)
+        'variant_full' => env('CACHE_TTL_VARIANT_FULL', 3600),          // 1 hour - complete variant data
+        'variant_card' => env('CACHE_TTL_VARIANT_CARD', 7200),          // 2 hours - lightweight variant
+        'variant_images' => env('CACHE_TTL_VARIANT_IMAGES', 14400),     // 4 hours - variant images
+        'variants_list' => env('CACHE_TTL_VARIANTS_LIST', 3600),        // 1 hour - all variants for product
+        'variants_active' => env('CACHE_TTL_VARIANTS_ACTIVE', 1800),    // 30 min - active variants (dynamic)
+        'variants_stock' => env('CACHE_TTL_VARIANTS_STOCK', 900),       // 15 min - stock status (very dynamic)
 
         // Settings & Metadata
         'settings' => env('CACHE_TTL_SETTINGS', 86400),                 // 24 hours
@@ -83,6 +96,14 @@ return [
         'product_ids' => env('CACHE_TTL_PRODUCT_IDS', 3600),            // 1 hour - ID arrays
         'aggregates' => env('CACHE_TTL_AGGREGATES', 3600),              // 1 hour - counts, sums
         'statistics' => env('CACHE_TTL_STATISTICS', 21600),             // 6 hours
+
+        // Index Caches (NEW - Pre-computed Sets)
+        'index_category' => env('CACHE_TTL_INDEX_CATEGORY', 7200),      // 2 hours - product IDs by category
+        'index_brand' => env('CACHE_TTL_INDEX_BRAND', 7200),            // 2 hours - product IDs by brand
+        'index_price' => env('CACHE_TTL_INDEX_PRICE', 3600),            // 1 hour - product IDs by price range
+        'index_rating' => env('CACHE_TTL_INDEX_RATING', 7200),          // 2 hours - product IDs by rating
+        'index_featured' => env('CACHE_TTL_INDEX_FEATURED', 10800),     // 3 hours - featured products
+        'index_bestsellers' => env('CACHE_TTL_INDEX_BESTSELLERS', 3600), // 1 hour - best-selling products
     ],
 
     /*
@@ -95,47 +116,51 @@ return [
     |
     */
     'prefixes' => [
-        // Full Pages
-        'homepage' => 'pages:home',
-        'category_page' => 'pages:category',
-        'product_page' => 'pages:product',
+        // ALIGNED WITH RedisKeyManager - DO NOT CHANGE
+        // Full Pages - ec:pg:*
+        'homepage' => 'pg:home',
+        'category_page' => 'pg:cat',
+        'product_page' => 'pg:prod',
 
-        // Entities
-        'product' => 'entities:product',
-        'product_card' => 'entities:product:card',
-        'product_light' => 'entities:product:light',
-        'product_variant' => 'entities:variant',
-        'category' => 'entities:category',
-        'banner' => 'entities:banner',
-        'brand' => 'entities:brand',
+        // Entities - ec:p:* / ec:v:* / ec:cat:* / ec:br:*
+        'product' => 'p',
+        'product_card' => 'p',
+        'product_full' => 'p',
+        'product_meta' => 'p',
+        'variant' => 'v',
+        'variant_card' => 'v',
+        'variant_full' => 'v',
+        'category' => 'cat',
+        'banner' => 'cmp',
+        'brand' => 'br',
 
-        // Collections
-        'collection' => 'collections',
-        'featured' => 'collections:featured',
-        'latest' => 'collections:latest',
-        'bestseller' => 'collections:bestseller',
+        // Collections - ec:idx:*
+        'collection' => 'idx',
+        'featured' => 'idx:feat',
+        'latest' => 'idx:new',
+        'bestseller' => 'idx:bestsell',
 
-        // Components
-        'component' => 'components',
-        'menu' => 'components:menu',
-        'footer' => 'components:footer',
+        // Components - ec:cmp:*
+        'component' => 'cmp',
+        'menu' => 'cmp:nav',
+        'footer' => 'cmp:footer',
 
-        // Search & Filters (aligned with SmartFilterCacheService)
-        'search' => 'search',
-        'filter' => 'filters',
+        // Search & Filters - ec:srch:* / ec:flt:*
+        'search' => 'srch',
+        'filter' => 'flt',
 
-        // User Data
-        'user' => 'users',
-        'wishlist' => 'users:wishlist',
-        'cart' => 'users:cart',
+        // User Data - ec:usr:*
+        'user' => 'usr',
+        'wishlist' => 'usr',
+        'cart' => 'usr',
 
-        // Metadata
+        // Metadata - ec:meta:* / ec:tmp:*
         'meta' => 'meta',
-        'lock' => 'locks',
-        'version' => 'meta:version',
+        'lock' => 'tmp:lock',
+        'version' => 'meta:ver',
 
-        // Settings
-        'settings' => 'settings',
+        // Settings - ec:set:*
+        'settings' => 'set',
     ],
 
     /*

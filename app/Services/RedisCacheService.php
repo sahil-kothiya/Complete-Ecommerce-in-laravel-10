@@ -65,11 +65,13 @@ class RedisCacheService
 
     /**
      * Generate cache key with prefix
-     * Format: ecommerce:v1:{category}:{identifiers}
+     * Format: ec:{prefix}:{identifiers}
+     * 
+     * @deprecated Use RedisKeyManager methods instead for type-safe keys
      */
     public static function makeKey(string $type, ...$identifiers): string
     {
-        $namespace = 'ecommerce:v1';
+        $namespace = 'ec';  // Changed from 'ecommerce:v1' to align with RedisKeyManager
         $prefix = self::config("prefixes.{$type}", $type);
         $key = "{$namespace}:{$prefix}";
 

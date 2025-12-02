@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Services\RedisCacheService;
 use App\Models\Banner;
 use App\Models\Category;
 use App\Models\Product;
@@ -17,8 +16,10 @@ use Illuminate\Support\Facades\Log;
  */
 class CacheWarmupService
 {
-    private const HOMEPAGE_CACHE_PREFIX = 'cache:homepage:';
-    // No longer needed - use RedisCacheService::makeKey('product_card', $id)
+    // DEPRECATED: Use RedisKeyManager instead
+    // Kept for backward compatibility, mapped to new ec: structure
+    private const HOMEPAGE_CACHE_PREFIX = 'ec:pg:home:';
+    // No longer needed - use RedisKeyManager::productCard($id)
 
     /**
      * Warm up all homepage related caches
@@ -57,7 +58,7 @@ class CacheWarmupService
         } catch (\Exception $e) {
             $results['success'] = false;
             $results['errors'][] = $e->getMessage();
-            Log::error("Homepage cache warmup failed: " . $e->getMessage());
+            Log::error('Homepage cache warmup failed: '.$e->getMessage());
         }
 
         return $results;
@@ -71,7 +72,7 @@ class CacheWarmupService
         $startTime = microtime(true);
 
         try {
-            $key = self::HOMEPAGE_CACHE_PREFIX . 'categories';
+            $key = self::HOMEPAGE_CACHE_PREFIX.'categories';
             $ttl = config('redis_cache.ttl.categories', 43200);
 
             // Fetch active parent categories
@@ -92,7 +93,8 @@ class CacheWarmupService
                 'duration_ms' => round((microtime(true) - $startTime) * 1000, 2),
             ];
         } catch (\Exception $e) {
-            Log::error("Failed to warmup categories: " . $e->getMessage());
+            Log::error('Failed to warmup categories: '.$e->getMessage());
+
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -108,12 +110,12 @@ class CacheWarmupService
         $startTime = microtime(true);
 
         try {
-            $key = self::HOMEPAGE_CACHE_PREFIX . 'banners';
+            $key = self::HOMEPAGE_CACHE_PREFIX.'banners';
             $ttl = config('redis_cache.ttl.banners', 21600);
 
             $banners = Banner::select(['id', 'title', 'slug', 'photo', 'description', 'status', 'link_type', 'link'])
-                ->with(['discounts' => fn($q) => $q->select(['discounts.id', 'discounts.title', 'discounts.type', 'discounts.value'])
-                    ->with(['categories' => fn($q2) => $q2->select(['categories.id', 'categories.title', 'categories.slug'])])
+                ->with(['discounts' => fn ($q) => $q->select(['discounts.id', 'discounts.title', 'discounts.type', 'discounts.value'])
+                    ->with(['categories' => fn ($q2) => $q2->select(['categories.id', 'categories.title', 'categories.slug'])]),
                 ])
                 ->where('status', 'active')
                 ->latest('id')
@@ -129,7 +131,8 @@ class CacheWarmupService
                 'duration_ms' => round((microtime(true) - $startTime) * 1000, 2),
             ];
         } catch (\Exception $e) {
-            Log::error("Failed to warmup banners: " . $e->getMessage());
+            Log::error('Failed to warmup banners: '.$e->getMessage());
+
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -145,7 +148,7 @@ class CacheWarmupService
         $startTime = microtime(true);
 
         try {
-            $key = self::HOMEPAGE_CACHE_PREFIX . 'products:featured';
+            $key = self::HOMEPAGE_CACHE_PREFIX.'products:featured';
             $ttl = config('redis_cache.ttl.featured_products', 3600);
 
             // Get featured product IDs (indexed query)
@@ -161,20 +164,20 @@ class CacheWarmupService
             // Fetch products with minimal data
             $products = Product::select([
                 'id', 'title', 'slug', 'base_price', 'base_discount',
-                'base_stock', 'has_variants', 'cat_id', 'condition'
+                'base_stock', 'has_variants', 'cat_id', 'condition',
             ])
                 ->whereIn('id', $productIds)
                 ->with([
-                    'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                    'images' => fn ($q) => $q->orderBy('sort_order', 'asc')
                         ->take(3)
                         ->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
-                    'variants' => fn($q) => $q->where('status', 'active')
+                    'variants' => fn ($q) => $q->where('status', 'active')
                         ->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
                         ->with([
-                            'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                            'images' => fn ($q) => $q->orderBy('sort_order', 'asc')
                                 ->take(3)
-                                ->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
-                        ])
+                                ->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
+                        ]),
                 ])
                 ->get();
 
@@ -199,7 +202,8 @@ class CacheWarmupService
                 'duration_ms' => round((microtime(true) - $startTime) * 1000, 2),
             ];
         } catch (\Exception $e) {
-            Log::error("Failed to warmup featured products: " . $e->getMessage());
+            Log::error('Failed to warmup featured products: '.$e->getMessage());
+
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -215,7 +219,7 @@ class CacheWarmupService
         $startTime = microtime(true);
 
         try {
-            $key = self::HOMEPAGE_CACHE_PREFIX . 'category_products';
+            $key = self::HOMEPAGE_CACHE_PREFIX.'category_products';
             $ttl = config('redis_cache.ttl.category_products', 3600);
 
             // Get featured categories
@@ -246,22 +250,22 @@ class CacheWarmupService
                     // Fetch products
                     $products = Product::select([
                         'id', 'title', 'slug', 'base_price', 'base_discount',
-                        'base_stock', 'has_variants', 'cat_id', 'condition'
+                        'base_stock', 'has_variants', 'cat_id', 'condition',
                     ])
                         ->whereIn('id', $productIds)
                         ->with([
-                            'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                            'images' => fn ($q) => $q->orderBy('sort_order', 'asc')
                                 ->take(3)
                                 ->select(['id', 'product_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
-                            'variants' => fn($q) => $q->where('status', 'active')
+                            'variants' => fn ($q) => $q->where('status', 'active')
                                 ->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
                                 ->where('stock', '>', 0)
                                 ->limit(1)
                                 ->with([
-                                    'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                                    'images' => fn ($q) => $q->orderBy('sort_order', 'asc')
                                         ->take(3)
-                                        ->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order'])
-                                ])
+                                        ->select(['id', 'product_variant_id', 'image_path', 'thumbnail_path', 'is_primary', 'sort_order']),
+                                ]),
                         ])
                         ->get();
 
@@ -273,7 +277,7 @@ class CacheWarmupService
 
                     $categoryProducts[$category->slug] = [
                         'title' => $category->title,
-                        'products' => $transformedProducts
+                        'products' => $transformedProducts,
                     ];
 
                     $totalProducts += count($transformedProducts);
@@ -291,7 +295,8 @@ class CacheWarmupService
                 'duration_ms' => round((microtime(true) - $startTime) * 1000, 2),
             ];
         } catch (\Exception $e) {
-            Log::error("Failed to warmup category products: " . $e->getMessage());
+            Log::error('Failed to warmup category products: '.$e->getMessage());
+
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -308,15 +313,15 @@ class CacheWarmupService
 
         try {
             $version = RedisCacheService::getVersion();
-            $key = self::HOMEPAGE_CACHE_PREFIX . "full_page_v{$version}";
+            $key = self::HOMEPAGE_CACHE_PREFIX."full_page_v{$version}";
             $ttl = 1800; // 30 minutes
 
             // Fetch all components
             $cacheKeys = [
-                'categories' => self::HOMEPAGE_CACHE_PREFIX . 'categories',
-                'banners' => self::HOMEPAGE_CACHE_PREFIX . 'banners',
-                'featured' => self::HOMEPAGE_CACHE_PREFIX . 'products:featured',
-                'category_products' => self::HOMEPAGE_CACHE_PREFIX . 'category_products',
+                'categories' => self::HOMEPAGE_CACHE_PREFIX.'categories',
+                'banners' => self::HOMEPAGE_CACHE_PREFIX.'banners',
+                'featured' => self::HOMEPAGE_CACHE_PREFIX.'products:featured',
+                'category_products' => self::HOMEPAGE_CACHE_PREFIX.'category_products',
             ];
 
             $components = RedisCacheService::mget(array_values($cacheKeys));
@@ -341,7 +346,8 @@ class CacheWarmupService
                 'duration_ms' => round((microtime(true) - $startTime) * 1000, 2),
             ];
         } catch (\Exception $e) {
-            Log::error("Failed to warmup full page: " . $e->getMessage());
+            Log::error('Failed to warmup full page: '.$e->getMessage());
+
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -430,7 +436,7 @@ class CacheWarmupService
                         $results['cached_count']++;
                     }
                 } catch (\Exception $e) {
-                    $results['errors'][] = "Product {$productId}: " . $e->getMessage();
+                    $results['errors'][] = "Product {$productId}: ".$e->getMessage();
                 }
             }
 
@@ -439,7 +445,7 @@ class CacheWarmupService
         } catch (\Exception $e) {
             $results['success'] = false;
             $results['errors'][] = $e->getMessage();
-            Log::error("Failed to warmup top products: " . $e->getMessage());
+            Log::error('Failed to warmup top products: '.$e->getMessage());
         }
 
         return $results;
@@ -471,7 +477,8 @@ class CacheWarmupService
 
             return $results;
         } catch (\Exception $e) {
-            Log::error("Failed to rebuild homepage cache: " . $e->getMessage());
+            Log::error('Failed to rebuild homepage cache: '.$e->getMessage());
+
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -485,7 +492,7 @@ class CacheWarmupService
     private function clearHomepageCaches(): void
     {
         $patterns = [
-            self::HOMEPAGE_CACHE_PREFIX . '*',
+            self::HOMEPAGE_CACHE_PREFIX.'*',
         ];
 
         foreach ($patterns as $pattern) {
@@ -501,11 +508,11 @@ class CacheWarmupService
     public function getWarmupStatus(): array
     {
         $cacheKeys = [
-            'full_page' => self::HOMEPAGE_CACHE_PREFIX . 'full_page_v' . RedisCacheService::getVersion(),
-            'categories' => self::HOMEPAGE_CACHE_PREFIX . 'categories',
-            'banners' => self::HOMEPAGE_CACHE_PREFIX . 'banners',
-            'featured_products' => self::HOMEPAGE_CACHE_PREFIX . 'products:featured',
-            'category_products' => self::HOMEPAGE_CACHE_PREFIX . 'category_products',
+            'full_page' => self::HOMEPAGE_CACHE_PREFIX.'full_page_v'.RedisCacheService::getVersion(),
+            'categories' => self::HOMEPAGE_CACHE_PREFIX.'categories',
+            'banners' => self::HOMEPAGE_CACHE_PREFIX.'banners',
+            'featured_products' => self::HOMEPAGE_CACHE_PREFIX.'products:featured',
+            'category_products' => self::HOMEPAGE_CACHE_PREFIX.'category_products',
         ];
 
         $status = [];
