@@ -4,12 +4,8 @@ namespace App\Models;
 
 use App\Services\RedisCacheService;
 use Illuminate\Database\Eloquent\Model;
-use App\Models\Cart;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use App\Models\ProductVariantOption;
-use App\Models\ProductVariantType;
-use App\Models\ProductVariantTypeSelection;
 
 class Product extends Model
 {
@@ -29,7 +25,7 @@ class Product extends Model
         'is_featured',
         'condition',
         'has_variants',
-        'size'
+        'size',
     ];
 
     protected $casts = [
@@ -167,13 +163,13 @@ class Product extends Model
                     ->selectRaw('AVG(CAST(rate AS DECIMAL(3,2))) as avg_rating, COUNT(*) as total')
                     ->first();
 
-                if (!$rating || !$rating->avg_rating) {
+                if (! $rating || ! $rating->avg_rating) {
                     return ['average' => 0, 'total' => 0];
                 }
 
                 return [
                     'average' => round($rating->avg_rating, 1),
-                    'total' => (int) $rating->total
+                    'total' => (int) $rating->total,
                 ];
             }
         );
@@ -181,7 +177,7 @@ class Product extends Model
 
     public function getPriceRangeAttribute()
     {
-        if (!$this->has_variants) {
+        if (! $this->has_variants) {
             return null;
         }
 
@@ -191,15 +187,15 @@ class Product extends Model
             return null;
         }
 
-        $prices = $variants->map(fn($v) => $v->discounted_price);
+        $prices = $variants->map(fn ($v) => $v->discounted_price);
         $min = $prices->min();
         $max = $prices->max();
 
         if ($min === $max) {
-            return '$' . number_format($min, 2);
+            return '$'.number_format($min, 2);
         }
 
-        return '$' . number_format($min, 2) . ' - $' . number_format($max, 2);
+        return '$'.number_format($min, 2).' - $'.number_format($max, 2);
     }
 
     public function loadVariantTypes(): void
@@ -249,6 +245,7 @@ class Product extends Model
                         strpos($sku, str_replace(' ', '', $optionValue)) !== false ||
                         strpos($sku, str_replace(' ', '-', $optionValue)) !== false) {
                         $selectedOptionIds[] = $option->id;
+
                         continue;
                     }
 
@@ -275,6 +272,7 @@ class Product extends Model
 
                 $type->options = $typeOptions->map(function ($opt) use ($selectedOptionIds) {
                     $opt->selected = in_array($opt->id, $selectedOptionIds);
+
                     return $opt;
                 })->values();
 
@@ -298,6 +296,7 @@ class Product extends Model
 
         // Fallback – load on-the-fly (still only 2 queries)
         $this->loadVariantTypes();
+
         return $this->getRelation('variantTypes');
     }
 
@@ -312,14 +311,12 @@ class Product extends Model
         return $this->variantTypes;
     }
 
-
-
     /**
      * Get cheapest in-stock variant
      */
     public function getCheapestVariantAttribute()
     {
-        if (!$this->has_variants) {
+        if (! $this->has_variants) {
             return null;
         }
 
@@ -398,13 +395,13 @@ class Product extends Model
         $variants = $this->activeVariants()
             ->with('variantOptions.variantType')
             ->get()
-            ->map(fn($v) => [
+            ->map(fn ($v) => [
                 'id' => $v->id,
                 'sku' => $v->sku,
                 'price' => $v->price,
                 'stock' => $v->stock,
                 'display' => $v->display_name,
-                'values' => $v->variant_values
+                'values' => $v->variant_values,
             ]);
 
         $json = $variants->toJson();
@@ -449,18 +446,18 @@ class Product extends Model
         // -----------------------------------------------------------------
         if (! $this->has_variants) {
             $discount = $this->base_discount ?? 0;
-            $originalPrice = $this->base_price;
-            $discountedPrice = $discount > 0
+            $originalPrice = $this->base_price ?? 0; // Handle NULL price
+            $discountedPrice = ($originalPrice > 0 && $discount > 0)
                 ? $originalPrice * (1 - $discount / 100)
                 : $originalPrice;
 
             return (object) [
-                'price'          => $discountedPrice,
-                'original_price' => $originalPrice,
-                'discount'       => $discount,
-                'stock'          => $this->base_stock,
-                'image_url'      => $this->primaryImage?->url ?? asset('images/no-image.png'),
-                'display_name'   => $this->title,
+                'price' => round($discountedPrice, 2),
+                'original_price' => round($originalPrice, 2),
+                'discount' => $discount,
+                'stock' => $this->base_stock ?? 0,
+                'image_url' => $this->primaryImage?->url ?? asset('images/no-image.png'),
+                'display_name' => $this->title,
             ];
         }
 
@@ -477,25 +474,43 @@ class Product extends Model
             $variant = $this->activeVariants()
                 ->with(['primaryImage', 'variantOptions'])
                 ->orderBy('price')
-                ->first(); // fallback to any active variant (still show “out of stock”)
+                ->first(); // fallback to any active variant (still show "out of stock")
+        }
+
+        // Final fallback: If NO variants exist at all, fall back to base product data
+        if (! $variant) {
+            $discount = $this->base_discount ?? 0;
+            $originalPrice = $this->base_price ?? 0;
+            $discountedPrice = ($originalPrice > 0 && $discount > 0)
+                ? $originalPrice * (1 - $discount / 100)
+                : $originalPrice;
+
+            return (object) [
+                'price' => round($discountedPrice, 2),
+                'original_price' => round($originalPrice, 2),
+                'discount' => $discount,
+                'stock' => 0, // No variants = out of stock
+                'image_url' => $this->primaryImage?->url ?? asset('images/no-image.png'),
+                'display_name' => $this->title,
+            ];
         }
 
         $discounted = $variant?->discounted_price ?? $variant?->price ?? 0;
-        $original   = $variant?->price ?? 0;
-        $discount   = $variant?->discount ?? 0;
-        $stock      = $variant?->stock ?? 0;
+        $original = $variant?->price ?? 0;
+        $discount = $variant?->discount ?? 0;
+        $stock = $variant?->stock ?? 0;
 
         return (object) [
-            'price'          => $discounted,
-            'original_price' => $original,
-            'discount'       => $discount,
-            'stock'          => $stock,
-            'image_url'      => $variant?->primaryImage?->url
+            'price' => round($discounted, 2),
+            'original_price' => round($original, 2),
+            'discount' => $discount,
+            'stock' => $stock,
+            'image_url' => $variant?->primaryImage?->url
                             ?? $variant?->images->first()?->url
                             ?? $this->primaryImage?->url
                             ?? asset('images/no-image.png'),
-            'display_name'   => $variant?->display_name
-                            ? $this->title . ' – ' . $variant->display_name
+            'display_name' => $variant?->display_name
+                            ? $this->title.' – '.$variant->display_name
                             : $this->title,
         ];
     }

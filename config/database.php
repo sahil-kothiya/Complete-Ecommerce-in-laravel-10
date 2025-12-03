@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Str;
-
 return [
 
     /*
@@ -149,11 +147,18 @@ return [
             'password' => env('REDIS_PASSWORD', null),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_DB', '0'),
-             'read_write_timeout' => 60,
+            'read_write_timeout' => 60,
+            'timeout' => 5,
+            'retry_interval' => 100,
+            'persistent' => true,
+            'persistent_id' => 'ec_cache',
             'context' => [
                 'tcp' => [
                     'nodelay' => true,
                 ],
+            ],
+            'options' => [
+                'prefix' => '',
             ],
         ],
 
@@ -163,6 +168,11 @@ return [
             'password' => env('REDIS_PASSWORD', null),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_CACHE_DB', '0'),
+            'read_write_timeout' => 60,
+            'timeout' => 5,
+            'retry_interval' => 100,
+            'persistent' => true,
+            'persistent_id' => 'ec_cache_conn',
         ],
         'session' => [
             'url' => env('REDIS_URL'),
@@ -170,6 +180,11 @@ return [
             'password' => env('REDIS_PASSWORD', null),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_SESSION_DB', '2'),
+            'read_write_timeout' => 60,
+            'timeout' => 5,
+            'retry_interval' => 100,
+            'persistent' => true,
+            'persistent_id' => 'ec_session_conn',
         ],
     ],
 

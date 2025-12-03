@@ -2,12 +2,12 @@
 
 namespace App\Services;
 
-use App\Models\Product;
-use App\Models\Category;
 use App\Models\Brand;
-use Illuminate\Support\Facades\Redis;
-use Illuminate\Support\Facades\Log;
+use App\Models\Category;
+use App\Models\Product;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Redis;
 
 /**
  * Product Index Service
@@ -16,11 +16,11 @@ use Illuminate\Support\Facades\DB;
  * Designed for 10M+ products with sub-100ms filter response times.
  *
  * Index Structure (via RedisKeyManager):
- * - ecom:index:cat:{id} → Set of product IDs
- * - ecom:index:brand:{id} → Set of product IDs
- * - ecom:index:price:{range} → Set of product IDs
- * - ecom:index:rating:{min} → Set of product IDs
- * - ecom:index:discount:{range} → Set of product IDs
+ * - ec:idx:cat:{id} → Set of product IDs
+ * - ec:idx:br:{id} → Set of product IDs
+ * - ec:idx:price:{range} → Set of product IDs
+ * - ec:idx:rating:{min} → Set of product IDs
+ * - ec:idx:discount:{min} → Set of product IDs
  *
  * Memory footprint: ~200-500MB for 10M products
  * Build time: ~5-10 minutes for complete rebuild
@@ -28,8 +28,11 @@ use Illuminate\Support\Facades\DB;
 class ProductIndexService
 {
     private const INDEX_TTL = 86400; // 24 hours
+
     private const CHUNK_SIZE = 5000; // Process 5000 products at a time for speed
+
     private const BATCH_SIZE = 10000; // Redis pipeline batch size
+
     private const PIPELINE_BATCH = 1000; // Pipeline operations in batches
 
     /**
@@ -65,7 +68,7 @@ class ProductIndexService
 
     /**
      * Build category index - OPTIMIZED
-     * Index: index:category:{category_id} → Set[product_ids]
+     * Index: ec:idx:cat:{category_id} → Set[product_ids]
      */
     public function buildCategoryIndex($progressCallback = null): int
     {
@@ -94,7 +97,7 @@ class ProductIndexService
             // PostgreSQL optimized: Use cursor for large datasets
             DB::table('products')
                 ->where('status', 'active')
-                ->where(function($query) use ($category) {
+                ->where(function ($query) use ($category) {
                     $query->where('cat_id', $category->id)
                           ->orWhere('child_cat_id', $category->id);
                 })
@@ -102,10 +105,10 @@ class ProductIndexService
                 ->orderBy('id')
                 ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$hasProducts, &$pipeline) {
                     $ids = $products->pluck('id')->toArray();
-                    if (!empty($ids)) {
+                    if (! empty($ids)) {
                         // Use pipeline for batch SADD operations
                         $pipeline = array_merge($pipeline, $ids);
-                        
+
                         if (count($pipeline) >= self::PIPELINE_BATCH) {
                             Redis::sadd($indexKey, ...$pipeline);
                             $pipeline = [];
@@ -115,7 +118,7 @@ class ProductIndexService
                 });
 
             // Flush remaining pipeline
-            if (!empty($pipeline)) {
+            if (! empty($pipeline)) {
                 Redis::sadd($indexKey, ...$pipeline);
             }
 
@@ -137,7 +140,7 @@ class ProductIndexService
         Log::info($message);
 
         if ($progressCallback) {
-            $progressCallback(1, $message, "100%");
+            $progressCallback(1, $message, '100%');
         }
 
         return $categoriesIndexed;
@@ -145,7 +148,7 @@ class ProductIndexService
 
     /**
      * Build brand index - OPTIMIZED
-     * Index: index:brand:{brand_id} → Set[product_ids]
+     * Index: ec:idx:br:{brand_id} → Set[product_ids]
      */
     public function buildBrandIndex($progressCallback = null): int
     {
@@ -178,9 +181,9 @@ class ProductIndexService
                 ->orderBy('id')
                 ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$hasProducts, &$pipeline) {
                     $ids = $products->pluck('id')->toArray();
-                    if (!empty($ids)) {
+                    if (! empty($ids)) {
                         $pipeline = array_merge($pipeline, $ids);
-                        
+
                         if (count($pipeline) >= self::PIPELINE_BATCH) {
                             Redis::sadd($indexKey, ...$pipeline);
                             $pipeline = [];
@@ -190,7 +193,7 @@ class ProductIndexService
                 });
 
             // Flush remaining
-            if (!empty($pipeline)) {
+            if (! empty($pipeline)) {
                 Redis::sadd($indexKey, ...$pipeline);
             }
 
@@ -213,7 +216,7 @@ class ProductIndexService
         Log::info($message);
 
         if ($progressCallback) {
-            $progressCallback(2, $message, "100%");
+            $progressCallback(2, $message, '100%');
         }
 
         return $brandsIndexed;
@@ -221,7 +224,7 @@ class ProductIndexService
 
     /**
      * Build price range indexes - OPTIMIZED
-     * Index: index:price:{range} → Set[product_ids]
+     * Index: ec:idx:price:{range} → Set[product_ids]
      */
     public function buildPriceIndex($progressCallback = null): int
     {
@@ -241,7 +244,7 @@ class ProductIndexService
         Log::info("[3/5] Building price range indexes ({$total} ranges)...");
 
         foreach ($priceRanges as $key => $range) {
-            $indexKey = "index:price:{$key}";
+            $indexKey = RedisKeyManager::indexPriceRange($key);
             $rangeStart = microtime(true);
 
             Redis::unlink($indexKey);
@@ -256,7 +259,7 @@ class ProductIndexService
                 ->orderBy('id')
                 ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$count) {
                     $ids = $products->pluck('id')->toArray();
-                    if (!empty($ids)) {
+                    if (! empty($ids)) {
                         Redis::sadd($indexKey, ...$ids);
                         $count += count($ids);
                     }
@@ -274,7 +277,7 @@ class ProductIndexService
                 ->orderBy('product_variants.id')
                 ->chunkById(self::BATCH_SIZE, function ($variants) use ($indexKey, &$count) {
                     $ids = $variants->pluck('id')->toArray();
-                    if (!empty($ids)) {
+                    if (! empty($ids)) {
                         Redis::sadd($indexKey, ...$ids);
                         $count += count($ids);
                     }
@@ -287,7 +290,7 @@ class ProductIndexService
             $processed++;
             $percentComplete = round(($processed / $total) * 100, 2);
             $rangeTime = round(microtime(true) - $rangeStart, 2);
-            Log::debug("  {$key}: " . $count . " products ({$rangeTime}s)");
+            Log::debug("  {$key}: ".$count." products ({$rangeTime}s)");
         }
 
         $totalTime = round(microtime(true) - $startTime, 2);
@@ -296,7 +299,7 @@ class ProductIndexService
         Log::info($message);
 
         if ($progressCallback) {
-            $progressCallback(3, $message, "100%");
+            $progressCallback(3, $message, '100%');
         }
 
         return $total;
@@ -304,7 +307,7 @@ class ProductIndexService
 
     /**
      * Build rating indexes - OPTIMIZED
-     * Index: index:rating:{min_rating} → Set[product_ids]
+     * Index: ec:idx:rating:{min_rating} → Set[product_ids]
      */
     public function buildRatingIndex($progressCallback = null): int
     {
@@ -315,7 +318,7 @@ class ProductIndexService
         Log::info("[4/5] Building rating indexes ({$total} levels)...");
 
         foreach ($ratings as $minRating) {
-            $indexKey = "index:rating:{$minRating}";
+            $indexKey = RedisKeyManager::indexRating($minRating);
             $ratingStart = microtime(true);
 
             Redis::unlink($indexKey);
@@ -333,7 +336,7 @@ class ProductIndexService
                 // chunkById will add orderBy products.id
                 ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$count) {
                     $ids = $products->pluck('id')->toArray();
-                    if (!empty($ids)) {
+                    if (! empty($ids)) {
                         Redis::sadd($indexKey, ...$ids);
                         $count += count($ids);
                     }
@@ -344,7 +347,7 @@ class ProductIndexService
             }
 
             $ratingTime = round(microtime(true) - $ratingStart, 2);
-            Log::debug("  {$minRating}+ stars: " . $count . " products ({$ratingTime}s)");
+            Log::debug("  {$minRating}+ stars: ".$count." products ({$ratingTime}s)");
         }
 
         $totalTime = round(microtime(true) - $startTime, 2);
@@ -353,7 +356,7 @@ class ProductIndexService
         Log::info($message);
 
         if ($progressCallback) {
-            $progressCallback(4, $message, "100%");
+            $progressCallback(4, $message, '100%');
         }
 
         return $total;
@@ -361,7 +364,7 @@ class ProductIndexService
 
     /**
      * Build discount indexes - OPTIMIZED
-     * Index: index:discount:{range} → Set[product_ids]
+     * Index: ec:idx:discount:{min} → Set[product_ids]
      */
     public function buildDiscountIndex($progressCallback = null): int
     {
@@ -393,7 +396,7 @@ class ProductIndexService
                 ->orderBy('id')
                 ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$count) {
                     $ids = $products->pluck('id')->toArray();
-                    if (!empty($ids)) {
+                    if (! empty($ids)) {
                         Redis::sadd($indexKey, ...$ids);
                         $count += count($ids);
                     }
@@ -411,7 +414,7 @@ class ProductIndexService
                 ->orderBy('product_variants.id')
                 ->chunkById(self::BATCH_SIZE, function ($variants) use ($indexKey, &$count) {
                     $ids = $variants->pluck('id')->toArray();
-                    if (!empty($ids)) {
+                    if (! empty($ids)) {
                         Redis::sadd($indexKey, ...$ids);
                         $count += count($ids);
                     }
@@ -422,7 +425,7 @@ class ProductIndexService
             }
 
             $discountTime = round(microtime(true) - $discountStart, 2);
-            Log::debug("  {$minDiscount}%+: " . $count . " products ({$discountTime}s)");
+            Log::debug("  {$minDiscount}%+: ".$count." products ({$discountTime}s)");
         }
 
         $totalTime = round(microtime(true) - $startTime, 2);
@@ -431,7 +434,7 @@ class ProductIndexService
         Log::info($message);
 
         if ($progressCallback) {
-            $progressCallback(5, $message, "100%");
+            $progressCallback(5, $message, '100%');
         }
 
         return $total;
@@ -445,28 +448,29 @@ class ProductIndexService
     {
         if ($product->status !== 'active') {
             $this->removeProductFromIndexes($product);
+
             return;
         }
 
-        // Update category index
+        // Category indexes
         if ($product->cat_id) {
-            Redis::sadd("index:category:{$product->cat_id}", $product->id);
+            Redis::sadd(RedisKeyManager::indexCategory($product->cat_id), $product->id);
         }
 
         if ($product->child_cat_id) {
-            Redis::sadd("index:category:{$product->child_cat_id}", $product->id);
+            Redis::sadd(RedisKeyManager::indexCategory($product->child_cat_id), $product->id);
         }
 
-        // Update brand index
+        // Brand index
         if ($product->brand_id) {
-            Redis::sadd("index:brand:{$product->brand_id}", $product->id);
+            Redis::sadd(RedisKeyManager::indexBrand($product->brand_id), $product->id);
         }
 
         // Update price index
         if ($product->base_price) {
-            $priceRange = $this->getPriceRange((float)$product->base_price);
+            $priceRange = $this->getPriceRange((float) $product->base_price);
             if ($priceRange) {
-                Redis::sadd("index:price:{$priceRange}", $product->id);
+                Redis::sadd(RedisKeyManager::indexPriceRange($priceRange), $product->id);
             }
         }
 
@@ -475,7 +479,7 @@ class ProductIndexService
             $discountRanges = ['10' => 10, '25' => 25, '50' => 50, '75' => 75];
             foreach ($discountRanges as $key => $minDiscount) {
                 if ($product->base_discount >= $minDiscount) {
-                    Redis::sadd("index:discount:{$key}", $product->id);
+                    Redis::sadd(RedisKeyManager::indexDiscount($key), $product->id);
                 }
             }
         }
@@ -490,11 +494,11 @@ class ProductIndexService
     {
         // Get all index keys and remove this product ID
         $patterns = [
-            'index:category:*',
-            'index:brand:*',
-            'index:price:*',
-            'index:rating:*',
-            'index:discount:*',
+            'ec:idx:cat:*',
+            'ec:idx:br:*',
+            'ec:idx:price:*',
+            'ec:idx:rating:*',
+            'ec:idx:discount:*',
         ];
 
         foreach ($patterns as $pattern) {
@@ -512,11 +516,22 @@ class ProductIndexService
      */
     private function getPriceRange(float $price): ?string
     {
-        if ($price < 100) return '0-100';
-        if ($price < 500) return '100-500';
-        if ($price < 1000) return '500-1000';
-        if ($price < 5000) return '1000-5000';
-        if ($price < 10000) return '5000-10000';
+        if ($price < 100) {
+            return '0-100';
+        }
+        if ($price < 500) {
+            return '100-500';
+        }
+        if ($price < 1000) {
+            return '500-1000';
+        }
+        if ($price < 5000) {
+            return '1000-5000';
+        }
+        if ($price < 10000) {
+            return '5000-10000';
+        }
+
         return '10000+';
     }
 
@@ -537,16 +552,16 @@ class ProductIndexService
         ];
 
         // Helper function to use SCAN instead of KEYS for production safety
-        $getKeysByPattern = function($pattern) {
+        $getKeysByPattern = function ($pattern) {
             $keys = [];
             $cursor = '0';
-            
+
             do {
                 // Laravel Redis scan returns [cursor, keys]
                 [$cursor, $found] = Redis::scan($cursor, ['match' => $pattern, 'count' => 100]);
                 $keys = array_merge($keys, $found);
             } while ($cursor !== '0' && $cursor !== 0);
-            
+
             return $keys;
         };
 
@@ -556,7 +571,7 @@ class ProductIndexService
             $count = Redis::scard($key);
             $stats['categories'][] = [
                 'key' => $key,
-                'product_count' => $count
+                'product_count' => $count,
             ];
         }
 
@@ -566,7 +581,7 @@ class ProductIndexService
             $count = Redis::scard($key);
             $stats['brands'][] = [
                 'key' => $key,
-                'product_count' => $count
+                'product_count' => $count,
             ];
         }
 
@@ -576,7 +591,7 @@ class ProductIndexService
             $count = Redis::scard($key);
             $stats['price_ranges'][] = [
                 'key' => $key,
-                'product_count' => $count
+                'product_count' => $count,
             ];
         }
 
@@ -586,7 +601,7 @@ class ProductIndexService
             $count = Redis::scard($key);
             $stats['ratings'][] = [
                 'key' => $key,
-                'product_count' => $count
+                'product_count' => $count,
             ];
         }
 
@@ -596,7 +611,7 @@ class ProductIndexService
             $count = Redis::scard($key);
             $stats['discounts'][] = [
                 'key' => $key,
-                'product_count' => $count
+                'product_count' => $count,
             ];
         }
 
@@ -616,4 +631,3 @@ class ProductIndexService
         return $stats;
     }
 }
-

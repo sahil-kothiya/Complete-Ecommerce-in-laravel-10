@@ -20,6 +20,8 @@ class Kernel extends HttpKernel
         \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
         \App\Http\Middleware\TrimStrings::class,
         \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
+        // Redis failure handling - must be early to catch all Redis errors
+        \App\Http\Middleware\RedisFailureHandler::class,
         // Performance optimizations - must be last in global middleware
         \App\Http\Middleware\OptimizePerformance::class,
         \App\Http\Middleware\CompressResponse::class,

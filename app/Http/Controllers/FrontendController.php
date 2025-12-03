@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\ImageHelper;
-use App\Services\RedisCacheService;
 use App\Helpers\UrlEncryptor;
 use App\Models\Banner;
 use App\Models\Brand;
@@ -14,11 +13,11 @@ use App\Models\PostTag;
 use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductVariant;
-use App\Models\ProductVariantType;
 use App\Models\VariantImage;
-use App\Services\ProductFilterService;
 use App\Services\ProductSearchService;
 use App\Services\RecentProductService;
+use App\Services\RedisCacheService;
+use App\Services\RedisKeyManager;
 use App\User;
 use Helper;
 use Illuminate\Http\Request;
@@ -37,27 +36,39 @@ use Spatie\Newsletter\Facades\Newsletter;
  */
 class FrontendController extends Controller
 {
-    // DEPRECATED: Use RedisKeyManager instead for all new code
+    // DEPRECATED: These constants exist for backward compatibility only.
+    // ALL NEW CODE MUST use RedisKeyManager methods directly:
+    // - RedisKeyManager::indexNew() instead of RECENT_PRODUCTS_CACHE_PREFIX
+    // - RedisKeyManager::pageHome($version) instead of HOMEPAGE_CACHE_PREFIX
+    // - RedisKeyManager::pageCategory($id, $page) instead of PRODUCT_GRIDS_CACHE_PREFIX
     private const RECENT_PRODUCTS_CACHE_PREFIX = 'ec:idx:new:';
+
     private const HOMEPAGE_CACHE_PREFIX = 'ec:pg:home:';
+
     private const PRODUCT_GRIDS_CACHE_PREFIX = 'ec:pg:cat:';
+
     private const CACHE_TTL = 3600; // Default cache TTL in seconds
+
     private const HOMEPAGE_ALL_PRODUCTS_LIMIT = 12; // All Products section - EXACTLY 12
+
     private const PRODUCTS_PER_CATEGORY_SECTION = 12; // Each category section - EXACTLY 12
+
     private const HOMEPAGE_TOTAL_PRODUCTS = 60; // Fixed total: 12 + (4 categories × 12) = 60
+
     private const MAX_CATEGORY_SECTIONS = 4; // Maximum 4 category sections on homepage
+
     private const MAX_PRODUCTS_PER_CATEGORY_FETCH = 60; // Fetch up to 60 products per category initially
+
     private static ?array $ttlConfig = null;
 
     protected $recentProductService;
+
     private ProductSearchService $searchService;
+
     private bool $homepageCacheEnabled;
 
     /**
      * Constructor to initialize services.
-     *
-     * @param ProductSearchService $searchService
-     * @param RecentProductService $recentProductService
      */
     public function __construct(ProductSearchService $searchService, RecentProductService $recentProductService)
     {
@@ -74,7 +85,6 @@ class FrontendController extends Controller
     /**
      * Redirect authenticated users to their role-based route.
      *
-     * @param Request $request
      * @return \Illuminate\Http\RedirectResponse
      */
     public function index(Request $request)
@@ -100,7 +110,7 @@ class FrontendController extends Controller
 
             // Get cache version for versioned cache invalidation when enabled
             $cacheVersion = $cacheEnabled ? RedisCacheService::getVersion() : 0;
-            $fullPageKey = $cacheEnabled ? self::HOMEPAGE_CACHE_PREFIX . "full_page_v{$cacheVersion}" : null;
+            $fullPageKey = $cacheEnabled ? RedisKeyManager::pageHome($cacheVersion) : null;
 
             // TIER 1: Try full page cache first (FASTEST PATH - 1-5ms)
             $cachedPage = $cacheEnabled ? RedisCacheService::get($fullPageKey) : null;
@@ -109,7 +119,7 @@ class FrontendController extends Controller
                 Log::info('🚀 Homepage loaded from FULL PAGE CACHE', [
                     'load_time_ms' => round($loadTime, 2),
                     'cache_version' => $cacheVersion,
-                    'source' => 'REDIS_FULL_PAGE'
+                    'source' => 'REDIS_FULL_PAGE',
                 ]);
 
                 // Add cache info to view data
@@ -127,15 +137,15 @@ class FrontendController extends Controller
 
             // Define component cache keys
             $cacheKeys = [
-                'categories' => $cacheEnabled ? self::HOMEPAGE_CACHE_PREFIX . "categories_v{$cacheVersion}" : null,
-                'banners' => $cacheEnabled ? self::HOMEPAGE_CACHE_PREFIX . "banners_v{$cacheVersion}" : null,
-                'featured' => $cacheEnabled ? self::HOMEPAGE_CACHE_PREFIX . "products:featured_v{$cacheVersion}" : null,
-                'categoryProducts' => $cacheEnabled ? self::HOMEPAGE_CACHE_PREFIX . "category_products_v{$cacheVersion}" : null,
+                'categories' => $cacheEnabled ? RedisKeyManager::categoryTreeAll().":v{$cacheVersion}" : null,
+                'banners' => $cacheEnabled ? RedisKeyManager::componentBanners().":v{$cacheVersion}" : null,
+                'featured' => $cacheEnabled ? RedisKeyManager::componentFeatured().":v{$cacheVersion}" : null,
+                'categoryProducts' => $cacheEnabled ? RedisKeyManager::componentNewArrivals().":v{$cacheVersion}" : null,
             ];
 
             // Batch fetch all components in one Redis call (pipeline optimization)
             $cacheKeyList = $cacheEnabled ? array_values(array_filter($cacheKeys)) : [];
-            $cachedComponents = ($cacheEnabled && !empty($cacheKeyList))
+            $cachedComponents = ($cacheEnabled && ! empty($cacheKeyList))
                 ? RedisCacheService::mget($cacheKeyList)
                 : [];
 
@@ -171,7 +181,7 @@ class FrontendController extends Controller
 
             // Get IDs of products already shown in All Products section to exclude from categories
             $excludeProductIds = is_array($featuredProducts)
-                ? array_column(array_filter($featuredProducts, fn($p) => is_array($p) && isset($p['id'])), 'id')
+                ? array_column(array_filter($featuredProducts, fn ($p) => is_array($p) && isset($p['id'])), 'id')
                 : collect($featuredProducts)->pluck('id')->toArray();
 
             // Get category products (exactly 12 per category, max 4 categories)
@@ -182,12 +192,12 @@ class FrontendController extends Controller
             // Assemble final data structure
             // Filter out any null/empty products from featured products
             $filteredFeaturedProducts = is_array($featuredProducts)
-                ? array_filter($featuredProducts, function($product) {
+                ? array_filter($featuredProducts, function ($product) {
                     return $product !== null &&
                            (is_object($product) && isset($product->id)) ||
                            (is_array($product) && isset($product['id']));
                 })
-                : collect($featuredProducts)->filter(function($product) {
+                : collect($featuredProducts)->filter(function ($product) {
                     return $product !== null &&
                            (is_object($product) && isset($product->id)) ||
                            (is_array($product) && isset($product['id']));
@@ -208,11 +218,12 @@ class FrontendController extends Controller
                 'load_time_ms' => round($loadTime, 2),
                 'cache_enabled' => $cacheEnabled,
                 'cache_sources' => $cacheLog,
-                'cache_hit_rate' => round((count(array_filter($cacheLog, fn($v) => $v === 'REDIS')) / count($cacheLog)) * 100, 2) . '%',
+                'cache_hit_rate' => round((count(array_filter($cacheLog, fn ($v) => $v === 'REDIS')) / count($cacheLog)) * 100, 2).'%',
                 'all_products_count' => count($filteredFeaturedProducts),
                 'category_sections' => count($categoryProducts ?? []),
                 'products_per_category' => $categoryProductCounts,
-            ]);            $data = [
+            ]);
+            $data = [
                 'version' => $cacheEnabled ? $cacheVersion : null,
                 'generated_at' => now()->toIso8601String(),
                 'categories' => $categories,
@@ -240,7 +251,7 @@ class FrontendController extends Controller
                 'error' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             // Return error view or rethrow
@@ -251,8 +262,8 @@ class FrontendController extends Controller
     /**
      * Fetch featured categories with their products.
      *
-     * @param string $key Cache key
-     * @param int $ttl Time to live
+     * @param  string  $key Cache key
+     * @param  int  $ttl Time to live
      * @return \Illuminate\Support\Collection
      */
     protected function getFeaturedCategoriesData(?string $key, int $ttl, bool $useCache = true)
@@ -272,42 +283,42 @@ class FrontendController extends Controller
         if ($useCache && $key) {
             RedisCacheService::put($key, $featuredCategories, $ttl);
         }
+
         return $featuredCategories;
     }
 
     /**
      * Clear homepage cache.
-     *
-     * @return bool
      */
     public function clearHomepageCache(): bool
     {
         $keys = [
-            self::HOMEPAGE_CACHE_PREFIX . 'categories',
-            self::HOMEPAGE_CACHE_PREFIX . 'banners',
-            self::HOMEPAGE_CACHE_PREFIX . 'product_lists',
-            self::HOMEPAGE_CACHE_PREFIX . 'category_banners'
+            RedisKeyManager::categoryTreeAll(),
+            RedisKeyManager::componentBanners(),
+            RedisKeyManager::componentFeatured(),
+            RedisKeyManager::componentNewArrivals(),
         ];
 
         try {
             RedisCacheService::forgetMany($keys);
+
             return true;
         } catch (\Exception $e) {
-            Log::error('Failed to clear homepage cache: ' . $e->getMessage());
+            Log::error('Failed to clear homepage cache: '.$e->getMessage());
+
             return false;
         }
     }
 
     /**
      * Get TTL configuration from cache settings.
-     *
-     * @return array
      */
     private function getTtlConfig(): array
     {
         if (self::$ttlConfig === null) {
             self::$ttlConfig = config('redis_cache.ttl', []);
         }
+
         return self::$ttlConfig;
     }
 
@@ -315,8 +326,8 @@ class FrontendController extends Controller
      * Fetch categories data with caching.
      * Optimized: Minimal data fetching for homepage display
      *
-     * @param string $key Cache key
-     * @param int $ttl Time to live
+     * @param  string  $key Cache key
+     * @param  int  $ttl Time to live
      * @return \Illuminate\Support\Collection
      */
     private function getCategoriesData(?string $key, int $ttl, bool $useCache = true)
@@ -340,8 +351,8 @@ class FrontendController extends Controller
      * Fetch banners data with caching.
      * Optimized: Only active banners with minimal eager loading
      *
-     * @param string $key Cache key
-     * @param int $ttl Time to live
+     * @param  string  $key Cache key
+     * @param  int  $ttl Time to live
      * @return \Illuminate\Support\Collection
      */
     private function getBannersData(?string $key, int $ttl, bool $useCache = true)
@@ -351,9 +362,9 @@ class FrontendController extends Controller
             ->where('status', 'active')
             ->orderBy('id', 'DESC')
             ->limit(5)
-            ->with(['discounts' => function($q) {
+            ->with(['discounts' => function ($q) {
                 $q->select(['discounts.id', 'discounts.title', 'discounts.type', 'discounts.value'])
-                  ->with(['categories' => function($q2) {
+                  ->with(['categories' => function ($q2) {
                       $q2->select(['categories.id', 'categories.title', 'categories.slug']);
                   }]);
             }])
@@ -387,7 +398,7 @@ class FrontendController extends Controller
         $grouped = [];
         foreach ($products as $product) {
             $catId = is_object($product) ? $product->cat_id : $product['cat_id'];
-            if (!isset($grouped[$catId])) {
+            if (! isset($grouped[$catId])) {
                 $grouped[$catId] = [];
             }
             $grouped[$catId][] = $product;
@@ -406,11 +417,11 @@ class FrontendController extends Controller
                 ->count();
 
             // Only include categories that have featured products
-            if (!empty($categoryProducts) && $featuredCount > 0) {
+            if (! empty($categoryProducts) && $featuredCount > 0) {
                 $result[$category->slug] = [
                     'title' => $category->title,
                     'products' => $categoryProducts,
-                    'featured_count' => $featuredCount
+                    'featured_count' => $featuredCount,
                 ];
             }
         }
@@ -421,7 +432,8 @@ class FrontendController extends Controller
     /**
      * Get homepage category products (pre-grouped and optimized for display)
      * Optimized for 10M+ products using category-indexed queries
-     * @param array $excludeProductIds Product IDs to exclude (from All Products section)
+     *
+     * @param  array  $excludeProductIds Product IDs to exclude (from All Products section)
      */
     private function getHomepageCategoryProducts(?string $key, int $ttl, bool $useCache = true, array $excludeProductIds = [])
     {
@@ -438,6 +450,7 @@ class FrontendController extends Controller
             if ($useCache && $key) {
                 RedisCacheService::put($key, [], $ttl);
             }
+
             return [];
         }
 
@@ -450,7 +463,7 @@ class FrontendController extends Controller
             ->where('status', 'active')
             ->where('is_featured', 1);
 
-        if (!empty($excludeProductIds)) {
+        if (! empty($excludeProductIds)) {
             $allProductsQuery->whereNotIn('id', $excludeProductIds);
         }
 
@@ -490,18 +503,20 @@ class FrontendController extends Controller
             if ($useCache && $key) {
                 RedisCacheService::put($key, [], $ttl);
             }
+
             return [];
         }
 
         $totalEligible = count($preparedCategories);
         $maxDisplayable = self::PRODUCTS_PER_CATEGORY_SECTION * self::MAX_CATEGORY_SECTIONS; // 12 × 4 = 48
-        $totalPotential = array_sum(array_map(fn($payload) => $payload['available'], $preparedCategories));
+        $totalPotential = array_sum(array_map(fn ($payload) => $payload['available'], $preparedCategories));
         $totalLimit = min($maxDisplayable, $totalPotential);
 
         if ($totalLimit === 0) {
             if ($useCache && $key) {
                 RedisCacheService::put($key, [], $ttl);
             }
+
             return [];
         }
 
@@ -536,6 +551,7 @@ class FrontendController extends Controller
             if ($useCache && $key) {
                 RedisCacheService::put($key, [], $ttl);
             }
+
             return [];
         }
 
@@ -559,25 +575,25 @@ class FrontendController extends Controller
         $missingIds = array_diff($allSelectedProductIds, array_keys($allProductCards));
         $totalCacheMisses = count($missingIds);
 
-        if (!empty($missingIds)) {
+        if (! empty($missingIds)) {
             // OPTIMIZED: Single query for all missing products
             $products = Product::select([
                 'id', 'title', 'slug', 'base_price', 'base_discount',
-                'base_stock', 'has_variants', 'cat_id', 'condition'
+                'base_stock', 'has_variants', 'cat_id', 'condition',
             ])
                 ->whereIn('id', $missingIds)
                 ->with([
-                    'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                    'images' => fn ($q) => $q->orderBy('sort_order', 'asc')
                         ->take(3)
                         ->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order']),
-                    'variants' => fn($q) => $q->where('status', 'active')
+                    'variants' => fn ($q) => $q->where('status', 'active')
                         ->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
                         ->with([
-                            'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                            'images' => fn ($q) => $q->orderBy('sort_order', 'asc')
                                 ->take(3)
-                                ->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
+                                ->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order']),
                         ]),
-                    'brand' => fn($q) => $q->select(['id', 'title', 'slug'])
+                    'brand' => fn ($q) => $q->select(['id', 'title', 'slug']),
                 ])
                 ->get();
 
@@ -592,7 +608,7 @@ class FrontendController extends Controller
                 $product->setRelation('images', $imageCollections->get($product->id, collect()));
                 $card = $this->transformProductForDisplay($product);
                 if ($useCache) {
-                    $cacheKey = RedisCacheService::makeKey('product_card', $product->id);
+                    $cacheKey = RedisKeyManager::productCard($product->id);
                     RedisCacheService::put($cacheKey, $card, 7200);
                 }
                 $allProductCards[$product->id] = $card;
@@ -680,6 +696,7 @@ class FrontendController extends Controller
             if ($useCache && $key) {
                 RedisCacheService::put($key, [], $ttl);
             }
+
             return [];
         }
 
@@ -689,24 +706,24 @@ class FrontendController extends Controller
         // STEP 3: Query database for cache misses only
         $missingIds = array_diff($productIds, array_keys($productCards));
 
-        if (!empty($missingIds)) {
+        if (! empty($missingIds)) {
             $products = Product::select([
                 'id', 'title', 'slug', 'base_price', 'base_discount',
-                'base_stock', 'has_variants', 'cat_id', 'condition'
+                'base_stock', 'has_variants', 'cat_id', 'condition',
             ])
                 ->whereIn('id', $missingIds)
                 ->with([
-                    'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                    'images' => fn ($q) => $q->orderBy('sort_order', 'asc')
                         ->take(3)
                         ->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order']),
-                    'variants' => fn($q) => $q->where('status', 'active')
+                    'variants' => fn ($q) => $q->where('status', 'active')
                         ->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
                         ->with([
-                            'images' => fn($q) => $q->orderBy('sort_order', 'asc')
+                            'images' => fn ($q) => $q->orderBy('sort_order', 'asc')
                                 ->take(3)
-                                ->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
+                                ->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order']),
                         ]),
-                    'brand' => fn($q) => $q->select(['id', 'title', 'slug'])
+                    'brand' => fn ($q) => $q->select(['id', 'title', 'slug']),
                 ])
                 ->get();
 
@@ -720,7 +737,7 @@ class FrontendController extends Controller
                 $product->setRelation('images', $imageCollections->get($product->id, collect()));
                 $card = $this->transformProductForDisplay($product);
                 if ($useCache) {
-                    $cacheKey = RedisCacheService::makeKey('product_card', $product->id);
+                    $cacheKey = RedisKeyManager::productCard($product->id);
                     RedisCacheService::put($cacheKey, $card, 7200); // 2 hour TTL
                 }
                 $productCards[$product->id] = $card;
@@ -753,11 +770,11 @@ class FrontendController extends Controller
      */
     private function batchFetchProductCards(array $productIds, bool $useCache = true): array
     {
-        if (empty($productIds) || !$useCache) {
+        if (empty($productIds) || ! $useCache) {
             return [];
         }
 
-        $keys = array_map(fn($id) => RedisCacheService::makeKey('product_card', $id), $productIds);
+        $keys = array_map(fn ($id) => RedisKeyManager::productCard($id), $productIds);
         $cachedData = RedisCacheService::mget($keys);
 
         $products = [];
@@ -784,11 +801,10 @@ class FrontendController extends Controller
         $variantMaxDiscount = 0;
 
         if ($product->has_variants && $product->variants && $product->variants->count() > 0) {
-
             foreach ($product->variants as $variant) {
                 // Gather images (limit 3) for this variant - always load if not present
-                if (!$variant->relationLoaded('images')) {
-                    $variant->load(['images' => fn($q) => $q->orderBy('sort_order', 'asc')->take(3)]);
+                if (! $variant->relationLoaded('images')) {
+                    $variant->load(['images' => fn ($q) => $q->orderBy('sort_order', 'asc')->take(3)]);
                 }
 
                 $variantImages = $variant->images;
@@ -798,16 +814,16 @@ class FrontendController extends Controller
                     Log::info('Product Images - Variant', [
                         'product_id' => $product->id,
                         'variant_id' => $variant->id,
-                        'images' => $variantImages->map(fn($img) => [
+                        'images' => $variantImages->map(fn ($img) => [
                             'id' => $img->id,
                             'image_path' => $img->image_path,
                             'url' => $img->url,
-                            'is_primary' => $img->is_primary ?? false
-                        ])->toArray()
+                            'is_primary' => $img->is_primary ?? false,
+                        ])->toArray(),
                     ]);
 
                     foreach ($variantImages->take(3) as $img) {
-                        $imagePath = !empty($img->image_path) ? ImageHelper::variantImageUrl($img->image_path) : asset('images/no-image.png');
+                        $imagePath = ! empty($img->image_path) ? ImageHelper::variantImageUrl($img->image_path) : asset('images/no-image.png');
                         $variantImageArray[] = [
                             'image_path' => $imagePath,
                             'alt_text' => $img->alt_text ?? $product->title,
@@ -818,19 +834,19 @@ class FrontendController extends Controller
                 // Build variant data record (raw values only; frontend handles pricing calculations)
                 $variantRecord = [
                     'id' => $variant->id,
-                    'price' => (float)$variant->price,
-                    'discount' => (float)($variant->discount ?? 0),
-                    'stock' => (int)$variant->stock,
+                    'price' => (float) $variant->price,
+                    'discount' => (float) ($variant->discount ?? 0),
+                    'stock' => (int) $variant->stock,
                     'status' => $variant->status,
                     'images' => $variantImageArray,
                 ];
 
                 $variantsData[] = $variantRecord;
-                $variantStockTotal += (int)$variant->stock;
-                $variantMaxDiscount = max($variantMaxDiscount, (float)($variant->discount ?? 0));
+                $variantStockTotal += (int) $variant->stock;
+                $variantMaxDiscount = max($variantMaxDiscount, (float) ($variant->discount ?? 0));
 
                 // Also expose first variant images globally if master images list still small
-                if (empty($images) && !empty($variantImageArray)) {
+                if (empty($images) && ! empty($variantImageArray)) {
                     $images = $variantImageArray; // seed product-level images with variant images
                 }
             }
@@ -839,8 +855,8 @@ class FrontendController extends Controller
         // For simple products or if no variant images, use product images
         if (empty($images)) {
             // Always load images if not present
-            if (!$product->relationLoaded('images')) {
-                $product->load(['images' => fn($q) => $q->orderBy('sort_order', 'asc')->take(3)]);
+            if (! $product->relationLoaded('images')) {
+                $product->load(['images' => fn ($q) => $q->orderBy('sort_order', 'asc')->take(3)]);
             }
 
             $productImages = $product->images;
@@ -848,16 +864,16 @@ class FrontendController extends Controller
             if ($productImages && $productImages->count() > 0) {
                 Log::info('Product Images - Simple Product', [
                     'product_id' => $product->id,
-                    'images' => $productImages->map(fn($img) => [
+                    'images' => $productImages->map(fn ($img) => [
                         'id' => $img->id,
                         'image_path' => $img->image_path,
                         'url' => $img->url,
-                        'is_primary' => $img->is_primary ?? false
-                    ])->toArray()
+                        'is_primary' => $img->is_primary ?? false,
+                    ])->toArray(),
                 ]);
 
                 foreach ($productImages->take(3) as $img) {
-                    $imagePath = !empty($img->image_path) ? ImageHelper::productImageUrl($img->image_path) : asset('images/no-image.png');
+                    $imagePath = ! empty($img->image_path) ? ImageHelper::productImageUrl($img->image_path) : asset('images/no-image.png');
                     $images[] = [
                         'image_path' => $imagePath,
                         'alt_text' => $img->alt_text ?? $product->title,
@@ -884,21 +900,21 @@ class FrontendController extends Controller
         }
 
         // Return a plain stdClass object that survives serialization
-        return (object)[
+        return (object) [
             'id' => $product->id,
             'title' => $product->title,
             'slug' => $product->slug,
-            'base_price' => (float)$product->base_price,
-            'base_discount' => (float)($product->base_discount ?? 0),
-            'base_stock' => (int)($product->base_stock ?? 0),
-            'has_variants' => (bool)$product->has_variants,
+            'base_price' => (float) $product->base_price,
+            'base_discount' => (float) ($product->base_discount ?? 0),
+            'base_stock' => (int) ($product->base_stock ?? 0),
+            'has_variants' => (bool) $product->has_variants,
             'cat_id' => $product->cat_id,
             'condition' => $product->condition ?? 'default',
             'stock' => $stock,
             'max_discount' => $maxDiscount,
             'images' => $images,
             'variants' => $variantsData, // raw variant data for client-side calculations
-            'brand' => $product->brand ? (object)[
+            'brand' => $product->brand ? (object) [
                 'id' => $product->brand->id,
                 'title' => $product->brand->title,
                 'slug' => $product->brand->slug,
@@ -911,8 +927,8 @@ class FrontendController extends Controller
     /**
      * Fetch homepage products data with caching.
      *
-     * @param string $key Cache key
-     * @param int $ttl Time to live
+     * @param  string  $key Cache key
+     * @param  int  $ttl Time to live
      * @return \Illuminate\Support\Collection
      */
     private function getHomepageProductsDataOLD(string $key, int $ttl)
@@ -935,19 +951,19 @@ class FrontendController extends Controller
             'cat_id',
             'condition',
             'summary',
-            'is_featured'
+            'is_featured',
         ])
             ->where('status', 'active')
             ->where('is_featured', true)
             ->with([
-                'images' => fn($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order']),
-                'cat_info' => fn($q) => $q->select(['id', 'title']),
-                'variants' => fn($q) => $q->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
+                'images' => fn ($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order']),
+                'cat_info' => fn ($q) => $q->select(['id', 'title']),
+                'variants' => fn ($q) => $q->select(['id', 'product_id', 'price', 'discount', 'stock', 'status'])
                     ->with([
-                        'images' => fn($q) => $q->select(['id','product_variant_id','image_path','is_primary','sort_order'])
+                        'images' => fn ($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
                             ->orderByDesc('is_primary')->orderBy('sort_order')->take(3),
-                        'primaryImage'
-                    ])
+                        'primaryImage',
+                    ]),
             ])
             ->latest('id')
             ->where('has_variants', true)
@@ -969,7 +985,7 @@ class FrontendController extends Controller
 
                 'url' => $primaryImage->url,
                 'thumbnail_url' => $primaryImage->thumbnail_url,
-                'alt_text' => $primaryImage->alt_text ?? $product->title
+                'alt_text' => $primaryImage->alt_text ?? $product->title,
             ] : null;
 
             // Calculate discounted price
@@ -1014,14 +1030,14 @@ class FrontendController extends Controller
     /**
      * Fetch category banners data with caching.
      *
-     * @param string $key Cache key
-     * @param mixed $categories Categories data
-     * @param int $ttl Time to live
+     * @param  string  $key Cache key
+     * @param  mixed  $categories Categories data
+     * @param  int  $ttl Time to live
      * @return \Illuminate\Support\Collection
      */
     private function getCategoryBannersData(string $key, $categories, int $ttl)
     {
-        if (!$categories) {
+        if (! $categories) {
             return collect();
         }
 
@@ -1030,15 +1046,15 @@ class FrontendController extends Controller
             return $redisData;
         }
 
-        $categoryBanners = $categories->filter(fn($cat) => !empty($cat->photo));
+        $categoryBanners = $categories->filter(fn ($cat) => ! empty($cat->photo));
         RedisCacheService::put($key, $categoryBanners, $ttl);
+
         return $categoryBanners;
     }
 
     /**
      * Display product grids with filtering and caching.
      *
-     * @param Request $request
      * @return \Illuminate\View\View
      */
     public function productGrids(Request $request)
@@ -1054,20 +1070,20 @@ class FrontendController extends Controller
                 unset($cachedData['products_data']);
             }
             $cachedData = $this->hydrateRelationshipsFromCache($cachedData);
+
             return view('frontend.pages.product-grids', $cachedData);
         }
 
         $data = $this->fetchOptimizedProductGridsData($request, $ttl);
         $this->cacheCompletePageData($cacheKey, $data, $ttl['category_products'] ?? 3600);
+
         return view('frontend.pages.product-grids', $data);
     }
 
     /**
      * Generate optimized cache key for product grids.
      *
-     * @param Request $request
-     * @param string $slug
-     * @return string
+     * @param  string  $slug
      */
     private function generateOptimizedCacheKey(Request $request, $slug = ''): string
     {
@@ -1083,7 +1099,14 @@ class FrontendController extends Controller
             'page' => $request->input('page', 1),
             'query' => $request->input('query', ''),
         ];
-        return self::PRODUCT_GRIDS_CACHE_PREFIX . md5(json_encode($params));
+        // Use page cache key based on category/filters
+        $categoryId = $request->input('cat_id', 0);
+        $page = $request->input('page', 1);
+        if ($categoryId) {
+            return RedisKeyManager::pageCategory($categoryId, $page).':'.md5(json_encode($params));
+        }
+
+        return RedisKeyManager::pageHome(1).':grids:'.md5(json_encode($params));
     }
 
     private function fetchOptimizedProductGridsData(Request $request, array $ttl)
@@ -1114,27 +1137,27 @@ class FrontendController extends Controller
             ->where('products.status', 'active')
             ->with([
                 // Fetch up to 3 product images (primary first) for non-variant scrolling
-                'images' => fn($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order'])
+                'images' => fn ($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order'])
                     ->orderByDesc('is_primary')
                     ->orderBy('sort_order')
                     ->take(3),
-                'cat_info' => fn($q) => $q->select(['id', 'title']),
-                'variants' => fn($q) => $q->where('status', 'active')
+                'cat_info' => fn ($q) => $q->select(['id', 'title']),
+                'variants' => fn ($q) => $q->where('status', 'active')
                     ->select(['id', 'product_id', 'price', 'discount', 'stock'])
                     ->with([
                         // Fetch up to 3 images per active variant (primary first)
-                        'images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
+                        'images' => fn ($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
                             ->orderByDesc('is_primary')
                             ->orderBy('sort_order')
-                            ->take(3)
-                    ])
+                            ->take(3),
+                    ]),
             ]);
 
         // Apply filters (categories, brands, price, ratings, discounts)
-        if (!empty($categories)) {
+        if (! empty($categories)) {
             $productsQuery->whereIn('cat_id', Category::whereIn('slug', $categories)->pluck('id'));
         }
-        if (!empty($brands)) {
+        if (! empty($brands)) {
             $productsQuery->whereIn('brand_id', Brand::whereIn('slug', $brands)->pluck('id'));
         }
 
@@ -1149,7 +1172,7 @@ class FrontendController extends Controller
                                 base_price - (base_price * base_discount / 100)
                             ELSE
                                 base_price
-                        END BETWEEN ? AND ?', [(float)$minPrice, (float)$maxPrice]);
+                        END BETWEEN ? AND ?', [(float) $minPrice, (float) $maxPrice]);
                 })
                     ->orWhere(function ($q) use ($minPrice, $maxPrice) {
                         $q->where('has_variants', true)
@@ -1161,13 +1184,13 @@ class FrontendController extends Controller
                                             price - (price * discount / 100)
                                         ELSE
                                             price
-                                    END BETWEEN ? AND ?', [(float)$minPrice, (float)$maxPrice]);
+                                    END BETWEEN ? AND ?', [(float) $minPrice, (float) $maxPrice]);
                             });
                     });
             });
         }
 
-        if (!empty($minRatings)) {
+        if (! empty($minRatings)) {
             $productsQuery->whereRaw('
                 products.id IN (
                     SELECT product_id
@@ -1178,15 +1201,15 @@ class FrontendController extends Controller
                 )', [min(array_map('intval', $minRatings))]);
         }
 
-        if (!empty($minDiscounts)) {
-            $validDiscounts = array_filter(array_map('intval', $minDiscounts), fn($d) => $d >= 0 && $d <= 100);
-            if (!empty($validDiscounts)) {
+        if (! empty($minDiscounts)) {
+            $validDiscounts = array_filter(array_map('intval', $minDiscounts), fn ($d) => $d >= 0 && $d <= 100);
+            if (! empty($validDiscounts)) {
                 $productsQuery->where(function ($query) use ($validDiscounts) {
                     $query->where('has_variants', false)
                         ->whereIn('base_discount', $validDiscounts)
                         ->orWhere(function ($q) use ($validDiscounts) {
                             $q->where('has_variants', true)
-                                ->whereHas('variants', fn($subQuery) => $subQuery->whereIn('discount', $validDiscounts));
+                                ->whereHas('variants', fn ($subQuery) => $subQuery->whereIn('discount', $validDiscounts));
                         });
                 });
             }
@@ -1249,7 +1272,7 @@ class FrontendController extends Controller
         // Iterate and mutate each product (frontend will handle pricing)
         foreach ($products as $product) {
             if ($product->has_variants && $product->variants->count() > 0) {
-                $variantWithImage = $product->variants->first(fn($v) => $v->images->count() > 0);
+                $variantWithImage = $product->variants->first(fn ($v) => $v->images->count() > 0);
                 $primaryImage = $variantWithImage?->images->first() ?? $product->variants->first()?->images->first();
             } else {
                 $primaryImage = $product->images->first();
@@ -1257,16 +1280,16 @@ class FrontendController extends Controller
 
             if ($primaryImage) {
                 $imagePath = $primaryImage->image_path;
+                $thumbnailPath = $primaryImage->thumbnail_path ?? $imagePath;
 
                 if (strpos($imagePath, 'storage/') !== 0) {
-                    $imagePath = 'storage/' . ltrim($imagePath, '/');
+                    $imagePath = 'storage/'.ltrim($imagePath, '/');
                 }
                 if (strpos($thumbnailPath, 'storage/') !== 0) {
-
+                    $thumbnailPath = 'storage/'.ltrim($thumbnailPath, '/');
                 }
                 $product->primary_image = [
                     'image_path' => $imagePath,
-
                     'url' => asset($imagePath),
                     'thumbnail_url' => asset($thumbnailPath),
                     'alt_text' => $product->title,
@@ -1280,13 +1303,13 @@ class FrontendController extends Controller
                 : ($product->base_discount ?? 0);
 
             $product->stock = $product->has_variants
-                ? (int)$product->variants->sum('stock')
-                : (int)$product->base_stock;
+                ? (int) $product->variants->sum('stock')
+                : (int) $product->base_stock;
 
             unset($product->original_price, $product->discounted_price);
         }
 
-        $recentProducts = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['latest_products'] ?? 1800);
+        $recentProducts = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX.'grids', $ttl['latest_products'] ?? 1800);
 
         return [
             'products' => $products,
@@ -1303,8 +1326,6 @@ class FrontendController extends Controller
     /**
      * Fetch optimized product grids data.
      *
-     * @param Request $request
-     * @param array $ttl
      * @return array
      */
     private function fetchOptimizedProductGridsDataOLD(Request $request, array $ttl)
@@ -1335,19 +1356,19 @@ class FrontendController extends Controller
             ->where('products.status', 'active')
             ->with([
                 // include product_id so images are properly hydrated back to the product
-                'images' => fn($q) => $q->select(['id','product_id','image_path','is_primary','sort_order'])
+                'images' => fn ($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order'])
                     ->orderByDesc('is_primary')->orderBy('sort_order')->take(3),
-                'cat_info' => fn($q) => $q->select(['id', 'title']),
-                'variants' => fn($q) => $q->where('status', 'active')
+                'cat_info' => fn ($q) => $q->select(['id', 'title']),
+                'variants' => fn ($q) => $q->where('status', 'active')
                     ->select(['id', 'product_id', 'price', 'discount', 'stock'])
-                    ->with(['images' => fn($q) => $q->select(['id','product_variant_id','image_path','is_primary','sort_order'])
-                        ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)])
+                    ->with(['images' => fn ($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
+                        ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)]),
             ]);
 
-        if (!empty($categories)) {
+        if (! empty($categories)) {
             $productsQuery->whereIn('cat_id', Category::whereIn('slug', $categories)->pluck('id'));
         }
-        if (!empty($brands)) {
+        if (! empty($brands)) {
             $productsQuery->whereIn('brand_id', Brand::whereIn('slug', $brands)->pluck('id'));
         }
 
@@ -1363,7 +1384,7 @@ class FrontendController extends Controller
                                 base_price - (base_price * base_discount / 100)
                             ELSE
                                 base_price
-                        END BETWEEN ? AND ?', [(float)$minPrice, (float)$maxPrice]);
+                        END BETWEEN ? AND ?', [(float) $minPrice, (float) $maxPrice]);
                 })
                     // Variant products (use lowest variant price)
                     ->orWhere(function ($q) use ($minPrice, $maxPrice) {
@@ -1376,13 +1397,13 @@ class FrontendController extends Controller
                                             price - (price * discount / 100)
                                         ELSE
                                             price
-                                    END BETWEEN ? AND ?', [(float)$minPrice, (float)$maxPrice]);
+                                    END BETWEEN ? AND ?', [(float) $minPrice, (float) $maxPrice]);
                             });
                     });
             });
         }
 
-        if (!empty($minRatings)) {
+        if (! empty($minRatings)) {
             $productsQuery->whereRaw('
                 products.id IN (
                     SELECT product_id
@@ -1393,17 +1414,17 @@ class FrontendController extends Controller
                 )', [min(array_map('intval', $minRatings))]);
         }
 
-        if (!empty($minDiscounts)) {
-            $validDiscounts = array_filter(array_map('intval', $minDiscounts), fn($d) => $d >= 0 && $d <= 100);
-            if (!empty($validDiscounts)) {
+        if (! empty($minDiscounts)) {
+            $validDiscounts = array_filter(array_map('intval', $minDiscounts), fn ($d) => $d >= 0 && $d <= 100);
+            if (! empty($validDiscounts)) {
                 $productsQuery->where(function ($query) use ($validDiscounts) {
                     $query->where('has_variants', false)
                         ->whereIn('base_discount', $validDiscounts)
                         ->orWhere(function ($q) use ($validDiscounts) {
                             $q->where('has_variants', true)
-                                ->whereHas('variants', fn($subQuery) => $subQuery->whereIn('discount', $validDiscounts));
+                                ->whereHas('variants', fn ($subQuery) => $subQuery->whereIn('discount', $validDiscounts));
                         })
-                        ->orWhereHas('discounts', fn($subQuery) => $subQuery->where('type', 'percentage')
+                        ->orWhereHas('discounts', fn ($subQuery) => $subQuery->where('type', 'percentage')
                             ->where('is_active', true)
                             ->where('starts_at', '<=', now())
                             ->where('ends_at', '>=', now())
@@ -1466,7 +1487,7 @@ class FrontendController extends Controller
         // Removed deprecated setPath call
         $products->appends($request->except('page'));
 
-        $recentProducts = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['latest_products'] ?? 1800);
+        $recentProducts = $this->getRecentProductsData(RedisKeyManager::indexNew().':grids:old', $ttl['latest_products'] ?? 1800);
 
         return [
             'products' => $products,
@@ -1483,7 +1504,7 @@ class FrontendController extends Controller
     /**
      * Hydrate relationships from cached data.
      *
-     * @param array $cachedData
+     * @param  array  $cachedData
      * @return array
      */
     private function hydrateRelationshipsFromCache($cachedData)
@@ -1491,26 +1512,24 @@ class FrontendController extends Controller
         if (isset($cachedData['products'])) {
             $cachedData['products'] = $cachedData['products']->map(function ($product) {
                 if (isset($product['images'])) {
-                    $product['images'] = collect($product['images'])->map(fn($img) => (object) $img);
+                    $product['images'] = collect($product['images'])->map(fn ($img) => (object) $img);
                 }
                 if (isset($product['cat_info'])) {
                     $product['cat_info'] = (object) $product['cat_info'];
                 }
+
                 return (object) $product;
             });
         }
         if (isset($cachedData['recent_products'])) {
-            $cachedData['recent_products'] = collect($cachedData['recent_products'])->map(fn($item) => (object) $item);
+            $cachedData['recent_products'] = collect($cachedData['recent_products'])->map(fn ($item) => (object) $item);
         }
+
         return $cachedData;
     }
 
     /**
      * Cache complete page data for product grids.
-     *
-     * @param string $cacheKey
-     * @param array $data
-     * @param int $ttl
      */
     private function cacheCompletePageData(string $cacheKey, array $data, int $ttl)
     {
@@ -1538,37 +1557,37 @@ class FrontendController extends Controller
         $data = $request->all();
         $queryParams = [];
 
-        if (!empty($data['show'])) {
+        if (! empty($data['show'])) {
             $queryParams['show'] = $data['show'];
         }
 
-        if (!empty($data['sortBy'])) {
+        if (! empty($data['sortBy'])) {
             $queryParams['sortBy'] = $data['sortBy'];
         }
 
-        if (!empty($data['category'])) {
+        if (! empty($data['category'])) {
             $queryParams['category'] = is_array($data['category'])
                 ? implode(',', $data['category'])
                 : $data['category'];
         }
 
-        if (!empty($data['brand'])) {
+        if (! empty($data['brand'])) {
             $queryParams['brand'] = is_array($data['brand'])
                 ? implode(',', $data['brand'])
                 : $data['brand'];
         }
 
-        if (!empty($data['price_range'])) {
+        if (! empty($data['price_range'])) {
             $queryParams['price'] = $data['price_range'];
         }
 
-        if (!empty($data['min_rating'])) {
+        if (! empty($data['min_rating'])) {
             $queryParams['min_rating'] = is_array($data['min_rating'])
                 ? implode(',', $data['min_rating'])
                 : $data['min_rating'];
         }
 
-        if (!empty($data['min_discount'])) {
+        if (! empty($data['min_discount'])) {
             $queryParams['min_discount'] = is_array($data['min_discount'])
                 ? implode(',', $data['min_discount'])
                 : $data['min_discount'];
@@ -1577,7 +1596,7 @@ class FrontendController extends Controller
         $tempRequest = new Request($queryParams);
         $cacheKey = $this->generateOptimizedCacheKey($tempRequest);
 
-        if (!RedisCacheService::has($cacheKey)) {
+        if (! RedisCacheService::has($cacheKey)) {
             $this->preWarmFilterCache($tempRequest);
         }
 
@@ -1612,7 +1631,7 @@ class FrontendController extends Controller
                     ->where('slug', $segments[0])
                     ->first();
 
-                if (!$currentCategory) {
+                if (! $currentCategory) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Category not found',
@@ -1626,7 +1645,7 @@ class FrontendController extends Controller
                         ->where('status', 'active')
                         ->first();
 
-                    if (!$child) {
+                    if (! $child) {
                         return response()->json([
                             'success' => false,
                             'message' => 'Sub-category not found',
@@ -1667,14 +1686,14 @@ class FrontendController extends Controller
                 'last_page' => $products->lastPage(),
             ], 200, ['Content-Type' => 'application/json']);
         } catch (\Exception $e) {
-            Log::error('Apply Filters Error: ' . $e->getMessage(), [
+            Log::error('Apply Filters Error: '.$e->getMessage(), [
                 'request' => $request->all(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to apply filters: ' . $e->getMessage(),
+                'message' => 'Failed to apply filters: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1682,16 +1701,16 @@ class FrontendController extends Controller
     protected function applyFiltersToQuery($productQuery, Request $request)
     {
         $brands = $request->input('brand', []);
-        if (!empty($brands)) {
+        if (! empty($brands)) {
             if (is_string($brands)) {
                 $brands = array_filter(explode(',', $brands));
             }
-            if (!empty($brands)) {
+            if (! empty($brands)) {
                 $brandIds = Brand::whereIn('slug', $brands)
                     ->where('status', 'active')
                     ->pluck('id')
                     ->toArray();
-                if (!empty($brandIds)) {
+                if (! empty($brandIds)) {
                     $productQuery->whereIn('brand_id', $brandIds);
                 }
             }
@@ -1734,7 +1753,7 @@ class FrontendController extends Controller
         }
 
         $minRatings = $request->input('min_rating', []);
-        if (!empty($minRatings)) {
+        if (! empty($minRatings)) {
             $minRatings = is_array($minRatings) ? $minRatings : array_filter(explode(',', $minRatings));
             $minRating = min(array_map('intval', $minRatings));
             $productQuery->whereRaw('
@@ -1748,21 +1767,21 @@ class FrontendController extends Controller
         }
 
         $minDiscounts = $request->input('min_discount', []);
-        if (!empty($minDiscounts)) {
+        if (! empty($minDiscounts)) {
             if (is_string($minDiscounts)) {
                 $minDiscounts = array_filter(explode(',', $minDiscounts));
             }
-            if (!empty($minDiscounts)) {
-                $validDiscounts = array_filter(array_map('intval', $minDiscounts), fn($d) => $d >= 0 && $d <= 100);
-                if (!empty($validDiscounts)) {
+            if (! empty($minDiscounts)) {
+                $validDiscounts = array_filter(array_map('intval', $minDiscounts), fn ($d) => $d >= 0 && $d <= 100);
+                if (! empty($validDiscounts)) {
                     $productQuery->where(function ($query) use ($validDiscounts) {
                         $query->where('has_variants', false)
                             ->whereIn('base_discount', $validDiscounts)
                             ->orWhere(function ($q) use ($validDiscounts) {
                                 $q->where('has_variants', true)
-                                    ->whereHas('variants', fn($subQuery) => $subQuery->whereIn('discount', $validDiscounts));
+                                    ->whereHas('variants', fn ($subQuery) => $subQuery->whereIn('discount', $validDiscounts));
                             })
-                            ->orWhereHas('discounts', fn($subQuery) => $subQuery->where('type', 'percentage')
+                            ->orWhereHas('discounts', fn ($subQuery) => $subQuery->where('type', 'percentage')
                                 ->where('is_active', true)
                                 ->where('starts_at', '<=', now())
                                 ->where('ends_at', '>=', now())
@@ -1842,12 +1861,14 @@ class FrontendController extends Controller
         try {
             $filters = $request->all();
             $encryptedFilters = UrlEncryptor::encodePath(json_encode($filters));
+
             return response()->json([
                 'success' => true,
                 'encryptedFilters' => $encryptedFilters,
             ]);
         } catch (\Exception $e) {
-            Log::error('Filter encryption error: ' . $e->getMessage());
+            Log::error('Filter encryption error: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to encrypt filters',
@@ -1877,7 +1898,7 @@ class FrontendController extends Controller
 
         $children = $category->children()->where('status', 'active')->get();
         foreach ($children as $child) {
-            if (!$descendantIds->contains($child->id)) {
+            if (! $descendantIds->contains($child->id)) {
                 $descendantIds->push($child->id);
                 $this->collectDescendantIds($child, $descendantIds, $depth + 1);
             }
@@ -1886,8 +1907,6 @@ class FrontendController extends Controller
 
     /**
      * Pre-warm cache for product filters.
-     *
-     * @param Request $request
      */
     private function preWarmFilterCache(Request $request): void
     {
@@ -1895,7 +1914,7 @@ class FrontendController extends Controller
             $ttl = $this->getTtlConfig();
             $cacheKey = $this->generateOptimizedCacheKey($request);
 
-            if (!RedisCacheService::has($cacheKey)) {
+            if (! RedisCacheService::has($cacheKey)) {
                 $data = $this->fetchOptimizedProductGridsData($request, $ttl);
                 $this->cacheCompletePageData($cacheKey, $data, $ttl['category_products'] ?? 3600);
             }
@@ -1907,19 +1926,18 @@ class FrontendController extends Controller
     /**
      * Restore paginator from cached data.
      *
-     * @param array $paginatorData
-     * @param Request $request
+     * @param  array  $paginatorData
      * @return LengthAwarePaginator
      */
     private function restorePaginatorFromCache($paginatorData, Request $request)
     {
         return new LengthAwarePaginator(
-            collect($paginatorData['data'])->map(fn($item) => (object) $item),
+            collect($paginatorData['data'])->map(fn ($item) => (object) $item),
             $paginatorData['total'],
             $paginatorData['per_page'],
             $paginatorData['current_page'],
             [
-                'path' => $request->input('category_slug') ? '/product-cat/' . $request->input('category_slug') : '/product-grids',
+                'path' => $request->input('category_slug') ? '/product-cat/'.$request->input('category_slug') : '/product-grids',
                 'query' => $request->query(),
             ]
         );
@@ -1927,8 +1945,6 @@ class FrontendController extends Controller
 
     /**
      * Warm up cache for common filter combinations.
-     *
-     * @return array
      */
     public function warmUpCommonFilters(): array
     {
@@ -1950,7 +1966,7 @@ class FrontendController extends Controller
                 $request = new Request($params);
                 $cacheKey = $this->generateOptimizedCacheKey($request);
 
-                if (!RedisCacheService::has($cacheKey)) {
+                if (! RedisCacheService::has($cacheKey)) {
                     $data = $this->fetchOptimizedProductGridsData($request, $ttl);
                     $this->cacheCompletePageData($cacheKey, $data, $ttl['category_products'] ?? 3600);
                 }
@@ -1958,13 +1974,13 @@ class FrontendController extends Controller
                 $results["filter_combo_{$index}"] = [
                     'status' => 'success',
                     'duration_ms' => round((microtime(true) - $startTime) * 1000, 2),
-                    'params' => $params
+                    'params' => $params,
                 ];
             } catch (\Exception $e) {
                 $results["filter_combo_{$index}"] = [
                     'status' => 'failed',
                     'error' => $e->getMessage(),
-                    'params' => $params
+                    'params' => $params,
                 ];
             }
         }
@@ -1974,25 +1990,23 @@ class FrontendController extends Controller
 
     /**
      * Clear optimized cache for product grids.
-     *
-     * @return bool
      */
     public function clearOptimizedCache(): bool
     {
         try {
             $patterns = [
-                self::PRODUCT_GRIDS_CACHE_PREFIX . 'complete_page:*',
-                self::PRODUCT_GRIDS_CACHE_PREFIX . 'cat_ids:*',
-                self::PRODUCT_GRIDS_CACHE_PREFIX . 'brand_ids:*',
-                self::PRODUCT_GRIDS_CACHE_PREFIX . 'recent_products',
-                self::PRODUCT_GRIDS_CACHE_PREFIX . 'sidebar_*',
-                self::PRODUCT_GRIDS_CACHE_PREFIX . 'max_price'
+                RedisKeyManager::patternPages(),
+                RedisKeyManager::patternCategories(),
+                'ec:br:*:prods', // brand product lists
+                RedisKeyManager::indexNew(), // recent/new products
+                'ec:cmp:*', // sidebar components
+                'ec:agg:stats:price', // max_price aggregate
             ];
 
             $clearedKeys = 0;
             foreach ($patterns as $pattern) {
                 $keys = RedisCacheService::keys($pattern);
-                if (!empty($keys)) {
+                if (! empty($keys)) {
                     RedisCacheService::forgetMany($keys);
                     $clearedKeys += count($keys);
                 }
@@ -2000,7 +2014,8 @@ class FrontendController extends Controller
 
             return true;
         } catch (\Exception $e) {
-            Log::error('Failed to clear optimized cache: ' . $e->getMessage());
+            Log::error('Failed to clear optimized cache: '.$e->getMessage());
+
             return false;
         }
     }
@@ -2008,7 +2023,6 @@ class FrontendController extends Controller
     /**
      * Handle product search functionality.
      *
-     * @param Request $request
      * @return \Illuminate\View\View
      */
     public function productSearch(Request $request)
@@ -2016,7 +2030,7 @@ class FrontendController extends Controller
         $query = $request->input('search', '');
         $perPage = 9;
         $ttl = $this->getTtlConfig();
-        $recent_products = $this->getRecentProductsData(self::RECENT_PRODUCTS_CACHE_PREFIX . 'grids', $ttl['latest_products'] ?? 1800);
+        $recent_products = $this->getRecentProductsData(RedisKeyManager::indexNew().':search', $ttl['latest_products'] ?? 1800);
 
         if (empty($query)) {
             $products = Product::where('status', 'active')
@@ -2033,13 +2047,13 @@ class FrontendController extends Controller
                     'is_featured',
                 ])
                 ->with([
-                    'images' => fn($q) => $q->select(['id','product_id','image_path','is_primary','sort_order'])
+                    'images' => fn ($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order'])
                         ->orderByDesc('is_primary')->orderBy('sort_order')->take(3),
-                    'cat_info' => fn($q) => $q->select(['id', 'title']),
-                    'variants' => fn($q) => $q->where('status', 'active')
+                    'cat_info' => fn ($q) => $q->select(['id', 'title']),
+                    'variants' => fn ($q) => $q->where('status', 'active')
                         ->select(['id', 'product_id', 'price', 'discount', 'stock'])
-                        ->with(['images' => fn($q) => $q->select(['id','product_variant_id','image_path','is_primary','sort_order'])
-                            ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)])
+                        ->with(['images' => fn ($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
+                            ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)]),
                 ])
                 ->paginate($perPage);
 
@@ -2068,6 +2082,7 @@ class FrontendController extends Controller
                             ->select(['id', 'image_path'])
                             ->get();
                     }
+
                     return $product;
                 }),
                 $searchResult['total'],
@@ -2080,7 +2095,7 @@ class FrontendController extends Controller
             );
             $products->appends($request->except('page'));
         } catch (\Exception $e) {
-            Log::error('Search error: ' . $e->getMessage());
+            Log::error('Search error: '.$e->getMessage());
             $products = Product::where('title', 'ILIKE', "%{$query}%")
                 ->where('status', 'active')
                 ->select([
@@ -2096,13 +2111,13 @@ class FrontendController extends Controller
                     'is_featured',
                 ])
                 ->with([
-                    'images' => fn($q) => $q->select(['id','product_id','image_path','is_primary','sort_order'])
+                    'images' => fn ($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order'])
                         ->orderByDesc('is_primary')->orderBy('sort_order')->take(3),
-                    'cat_info' => fn($q) => $q->select(['id', 'title']),
-                    'variants' => fn($q) => $q->where('status', 'active')
+                    'cat_info' => fn ($q) => $q->select(['id', 'title']),
+                    'variants' => fn ($q) => $q->where('status', 'active')
                         ->select(['id', 'product_id', 'price', 'discount', 'stock'])
-                        ->with(['images' => fn($q) => $q->select(['id','product_variant_id','image_path','is_primary','sort_order'])
-                            ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)])
+                        ->with(['images' => fn ($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
+                            ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)]),
                 ])
                 ->paginate($perPage);
         }
@@ -2116,7 +2131,6 @@ class FrontendController extends Controller
     /**
      * Provide autocomplete suggestions for search.
      *
-     * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
     public function autocomplete(Request $request)
@@ -2135,12 +2149,12 @@ class FrontendController extends Controller
                     ->where('title', 'ILIKE', "%{$query}%")
                     ->select(['id', 'title', 'slug', 'base_price', 'base_discount', 'has_variants'])
                     ->with([
-                        'images' => fn($q) => $q->select(['id','image_path','is_primary','sort_order'])
+                        'images' => fn ($q) => $q->select(['id', 'image_path', 'is_primary', 'sort_order'])
                             ->orderByDesc('is_primary')->orderBy('sort_order')->take(3),
-                        'variants' => fn($q) => $q->where('status', 'active')
+                        'variants' => fn ($q) => $q->where('status', 'active')
                             ->select(['id', 'product_id', 'price', 'discount'])
-                            ->with(['images' => fn($q) => $q->select(['id','product_variant_id','image_path','is_primary','sort_order'])
-                                ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)])
+                            ->with(['images' => fn ($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
+                                ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)]),
                     ])
                     ->limit(10)
                     ->get();
@@ -2168,7 +2182,7 @@ class FrontendController extends Controller
                         'slug' => $product->slug,
                         'price' => $price,
                         'discount' => $product->has_variants ? null : $product->base_discount,
-                        'photo' => $photo
+                        'photo' => $photo,
                     ];
                 });
             }
@@ -2181,35 +2195,33 @@ class FrontendController extends Controller
 
     /**
      * Check cache health for homepage and product grids.
-     *
-     * @return array
      */
     public function getCacheHealth(): array
     {
         $homepageKeys = [
-            'categories' => self::HOMEPAGE_CACHE_PREFIX . 'categories',
-            'banners' => self::HOMEPAGE_CACHE_PREFIX . 'banners',
-            'products' => self::HOMEPAGE_CACHE_PREFIX . 'product_lists',
-            'category_banners' => self::HOMEPAGE_CACHE_PREFIX . 'category_banners'
+            'categories' => RedisKeyManager::categoryTreeAll(),
+            'banners' => RedisKeyManager::componentBanners(),
+            'products' => RedisKeyManager::componentFeatured(),
+            'category_banners' => RedisKeyManager::componentBanners(),
         ];
 
         $productGridsKeys = [
-            'recent_products' => self::PRODUCT_GRIDS_CACHE_PREFIX . 'recent_products',
-            'sidebar_categories' => self::PRODUCT_GRIDS_CACHE_PREFIX . 'sidebar_categories',
-            'sidebar_brands' => self::PRODUCT_GRIDS_CACHE_PREFIX . 'sidebar_brands',
-            'max_price' => self::PRODUCT_GRIDS_CACHE_PREFIX . 'max_price'
+            'recent_products' => RedisKeyManager::indexNew(),
+            'sidebar_categories' => 'ec:cmp:nav:cats',
+            'sidebar_brands' => 'ec:cmp:nav:brands',
+            'max_price' => 'ec:agg:stats:price',
         ];
 
         $health = [
             'homepage' => [],
-            'product_grids' => []
+            'product_grids' => [],
         ];
 
         foreach ($homepageKeys as $name => $key) {
             $exists = RedisCacheService::has($key);
             $health['homepage'][$name] = [
                 'cached' => $exists,
-                'key' => $key
+                'key' => $key,
             ];
         }
 
@@ -2217,11 +2229,12 @@ class FrontendController extends Controller
             $exists = RedisCacheService::has($key);
             $health['product_grids'][$name] = [
                 'cached' => $exists,
-                'key' => $key
+                'key' => $key,
             ];
         }
 
         $health['redis_stats'] = RedisCacheService::getStats();
+
         return $health;
     }
 
@@ -2253,26 +2266,26 @@ class FrontendController extends Controller
             ->where('status', 'active')
             ->with([
                 // Product images - only what we need
-                'images' => fn($q) => $q->select([
+                'images' => fn ($q) => $q->select([
                     'id',
                     'product_id',
                     'image_path',
 
                     'is_primary',
-                    'sort_order'
+                    'sort_order',
                 ])
                     ->orderByDesc('is_primary')
                     ->orderBy('sort_order'),
 
                 // Category info
-                'cat_info' => fn($q) => $q->select(['id', 'title', 'slug']),
-                'sub_cat_info' => fn($q) => $q->select(['id', 'title', 'slug']),
+                'cat_info' => fn ($q) => $q->select(['id', 'title', 'slug']),
+                'sub_cat_info' => fn ($q) => $q->select(['id', 'title', 'slug']),
 
                 // Reviews with user info
-                'getReview.user_info' => fn($q) => $q->select(['id', 'name', 'photo']),
+                'getReview.user_info' => fn ($q) => $q->select(['id', 'name', 'photo']),
 
                 // Active variants with all needed data - FIXED relationship
-                'variants' => fn($q) => $q->where('status', 'active')
+                'variants' => fn ($q) => $q->where('status', 'active')
                     ->select([
                         'id',
                         'product_id',
@@ -2281,57 +2294,57 @@ class FrontendController extends Controller
                         'discount',
                         'stock',
                         'status',
-                        'variant_values'
+                        'variant_values',
                     ])
                     ->with([
                         // Variant images
-                        'images' => fn($iq) => $iq->select([
+                        'images' => fn ($iq) => $iq->select([
                             'id',
                             'product_variant_id',
                             'image_path',
 
                             'is_primary',
-                            'sort_order'
+                            'sort_order',
                         ])
                             ->orderByDesc('is_primary')
                             ->orderBy('sort_order'),
 
                         // Variant options with types - FIXED foreign key
-                        'variantOptions' => fn($vq) => $vq->select([
+                        'variantOptions' => fn ($vq) => $vq->select([
                             'product_variant_options.id',
                             'variant_type_id',
                             'value',
                             'display_value',
                             'hex_color',
-                            'sort_order'
+                            'sort_order',
                         ])
                             ->with([
-                                'variantType' => fn($tq) => $tq->select([
+                                'variantType' => fn ($tq) => $tq->select([
                                     'id',
                                     'name',
                                     'display_name',
-                                    'sort_order'
-                                ])
-                            ])
+                                    'sort_order',
+                                ]),
+                            ]),
                     ])
                     // Pre-sort by discounted price
                     ->orderByRaw('price * (1 - COALESCE(discount, 0)/100) ASC'),
 
                 // Related products with their primary image only
-                'rel_prods' => fn($q) => $q->where('status', 'active')
+                'rel_prods' => fn ($q) => $q->where('status', 'active')
                     ->limit(8)
                     ->with([
-                        'images' => fn($iq) => $iq->select([
+                        'images' => fn ($iq) => $iq->select([
                             'id',
                             'product_id',
                             'image_path',
 
                             'is_primary',
-                            'sort_order'
+                            'sort_order',
                         ])
                             ->where('is_primary', true)
-                            ->limit(1)
-                    ])
+                            ->limit(1),
+                    ]),
             ])
             ->firstOrFail();
 
@@ -2370,7 +2383,7 @@ class FrontendController extends Controller
      */
     protected function buildVariantTypes($product)
     {
-        if (!$product->has_variants || $product->variants->isEmpty()) {
+        if (! $product->has_variants || $product->variants->isEmpty()) {
             return collect();
         }
 
@@ -2381,18 +2394,18 @@ class FrontendController extends Controller
                 $type = $option->variantType;
 
                 // Initialize type group if not exists
-                if (!isset($typeMap[$type->id])) {
+                if (! isset($typeMap[$type->id])) {
                     $typeMap[$type->id] = [
                         'id' => $type->id,
                         'name' => $type->name,
                         'display_name' => $type->display_name,
                         'sort_order' => $type->sort_order,
-                        'options' => []
+                        'options' => [],
                     ];
                 }
 
                 // Add option if not already present (avoid duplicates)
-                if (!isset($typeMap[$type->id]['options'][$option->id])) {
+                if (! isset($typeMap[$type->id]['options'][$option->id])) {
                     $typeMap[$type->id]['options'][$option->id] = $option;
                 }
             }
@@ -2410,7 +2423,7 @@ class FrontendController extends Controller
                     'sort_order' => $type['sort_order'],
                     'options' => collect($type['options'])
                         ->sortBy('sort_order')
-                        ->values()
+                        ->values(),
                 ];
             });
     }
@@ -2420,7 +2433,7 @@ class FrontendController extends Controller
      */
     protected function processVariantsForFrontend($product)
     {
-        if (!$product->has_variants || $product->variants->isEmpty()) {
+        if (! $product->has_variants || $product->variants->isEmpty()) {
             return [];
         }
 
@@ -2429,11 +2442,11 @@ class FrontendController extends Controller
             Log::info('Product Images - Frontend Processing', [
                 'product_id' => $variant->product_id,
                 'variant_id' => $variant->id,
-                'images' => $variant->images->map(fn($img) => [
+                'images' => $variant->images->map(fn ($img) => [
                     'id' => $img->id,
                     'image_path' => $img->image_path,
-                    'is_primary' => $img->is_primary
-                ])->toArray()
+                    'is_primary' => $img->is_primary,
+                ])->toArray(),
             ]);
 
             // Process images with centralized helper to keep paths consistent
@@ -2441,7 +2454,7 @@ class FrontendController extends Controller
                 return [
                     'image_path' => ImageHelper::variantImageUrl($img->image_path),
                     'alt_text' => $img->alt_text ?? '',
-                    'is_primary' => $img->is_primary
+                    'is_primary' => $img->is_primary,
                 ];
             })->toArray();
 
@@ -2458,7 +2471,7 @@ class FrontendController extends Controller
                 'stock' => (int) $variant->stock,
                 'status' => $variant->status,
                 'variant_values' => $variantValues,
-                'images' => $processedImages
+                'images' => $processedImages,
             ];
         })->toArray();
     }
@@ -2470,7 +2483,7 @@ class FrontendController extends Controller
     {
         if ($product->has_variants && $product->variants->isNotEmpty()) {
             // Try to get cheapest in-stock variant
-            $inStockVariants = $product->variants->filter(fn($v) => $v->stock > 0);
+            $inStockVariants = $product->variants->filter(fn ($v) => $v->stock > 0);
 
             if ($inStockVariants->isNotEmpty()) {
                 // Already sorted by discounted price, so first is cheapest
@@ -2508,28 +2521,28 @@ class FrontendController extends Controller
             $variant = ProductVariant::where('id', $variantId)
                 ->where('status', 'active')
                 ->with([
-                    'images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])->orderBy('sort_order'),
-                    'product' => fn($q) => $q->select(['id', 'slug'])
+                    'images' => fn ($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])->orderBy('sort_order'),
+                    'product' => fn ($q) => $q->select(['id', 'slug']),
                 ])
                 ->select(['id', 'product_id', 'sku', 'price', 'discount', 'stock', 'status', 'variant_values'])
                 ->first();
 
-            if (!$variant) {
+            if (! $variant) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Variant not found or inactive'
+                    'message' => 'Variant not found or inactive',
                 ], 404);
             }
 
             Log::info('Product Images - Variant Details API', [
                 'variant_id' => $variant->id,
                 'product_id' => $variant->product_id,
-                'images' => $variant->images->map(fn($img) => [
+                'images' => $variant->images->map(fn ($img) => [
                     'id' => $img->id,
                     'image_path' => $img->image_path,
                     'is_primary' => $img->is_primary,
-                    'sort_order' => $img->sort_order
-                ])->toArray()
+                    'sort_order' => $img->sort_order,
+                ])->toArray(),
             ]);
 
             $discountedPrice = $variant->price * (1 - ($variant->discount ?? 0) / 100);
@@ -2544,18 +2557,18 @@ class FrontendController extends Controller
                     'discounted_price' => number_format($discountedPrice, 2),
                     'stock' => $variant->stock,
                     'in_stock' => $variant->stock > 0,
-                    'images' => $variant->images->map(fn($img) => [
+                    'images' => $variant->images->map(fn ($img) => [
                         'id' => $img->id,
                         'image_path' => ImageHelper::variantImageUrl($img->image_path),
                         'alt_text' => $img->alt_text ?? '',
-                        'is_primary' => $img->is_primary
-                    ])
-                ]
+                        'is_primary' => $img->is_primary,
+                    ]),
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error fetching variant details'
+                'message' => 'Error fetching variant details',
             ], 500);
         }
     }
@@ -2570,7 +2583,7 @@ class FrontendController extends Controller
     public function checkVariantAvailability(Request $request, $slug)
     {
         $request->validate([
-            'options' => 'required|array'
+            'options' => 'required|array',
         ]);
 
         $product = Product::where('slug', $slug)
@@ -2585,9 +2598,9 @@ class FrontendController extends Controller
             $variantsQuery = ProductVariant::where('product_id', $product->id)
                 ->where('status', 'active')
                 ->with([
-                    'images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
+                    'images' => fn ($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
                         ->orderByDesc('is_primary')
-                        ->orderBy('sort_order')
+                        ->orderBy('sort_order'),
                 ]);
 
             // Apply JSON containment per option pair
@@ -2601,7 +2614,7 @@ class FrontendController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'No matching variants found for provided options',
-                    'data' => ['variants' => []]
+                    'data' => ['variants' => []],
                 ], 404);
             }
 
@@ -2610,18 +2623,23 @@ class FrontendController extends Controller
                 $processedImages = $variant->images->map(function ($img) {
                     $path = $img->image_path;
                     if (strpos($path, 'storage/') !== 0) {
-                        $path = 'storage/' . ltrim($path, '/');
+                        $path = 'storage/'.ltrim($path, '/');
                     }
+
                     return [
                         'image_path' => asset($path),
-                        'is_primary' => $img->is_primary
+                        'is_primary' => $img->is_primary,
                     ];
                 })->toArray();
 
                 // Ensure variant_values is an array
                 $vals = $variant->variant_values;
                 if (is_string($vals)) {
-                    try { $vals = json_decode($vals, true) ?? []; } catch (\Exception $e) { $vals = []; }
+                    try {
+                        $vals = json_decode($vals, true) ?? [];
+                    } catch (\Exception $e) {
+                        $vals = [];
+                    }
                 }
 
                 return [
@@ -2631,13 +2649,13 @@ class FrontendController extends Controller
                     'discount' => (float) ($variant->discount ?? 0),
                     'stock' => (int) $variant->stock,
                     'variant_values' => $vals,
-                    'images' => $processedImages
+                    'images' => $processedImages,
                 ];
             })->toArray();
 
             return response()->json([
                 'success' => true,
-                'data' => [ 'variants' => $out ]
+                'data' => ['variants' => $out],
             ]);
         }
 
@@ -2648,16 +2666,16 @@ class FrontendController extends Controller
             ->where('status', 'active')
             ->whereJsonContains('variant_values', $options)
             ->with([
-                'images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
+                'images' => fn ($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
                     ->orderByDesc('is_primary')
-                    ->orderBy('sort_order')
+                    ->orderBy('sort_order'),
             ])
             ->first();
 
-        if (!$variant) {
+        if (! $variant) {
             return response()->json([
                 'success' => false,
-                'message' => 'Variant not found with selected options'
+                'message' => 'Variant not found with selected options',
             ], 404);
         }
 
@@ -2665,11 +2683,12 @@ class FrontendController extends Controller
         $processedImages = $variant->images->map(function ($img) {
             $path = $img->image_path;
             if (strpos($path, 'storage/') !== 0) {
-                $path = 'storage/' . ltrim($path, '/');
+                $path = 'storage/'.ltrim($path, '/');
             }
+
             return [
                 'image_path' => asset($path),
-                'is_primary' => $img->is_primary
+                'is_primary' => $img->is_primary,
             ];
         });
 
@@ -2682,8 +2701,8 @@ class FrontendController extends Controller
                 'discount' => (float) ($variant->discount ?? 0),
                 'stock' => (int) $variant->stock,
                 'discounted_price' => (float) $variant->discounted_price,
-                'images' => $processedImages
-            ]
+                'images' => $processedImages,
+            ],
         ]);
     }
 
@@ -2709,28 +2728,28 @@ class FrontendController extends Controller
             ])
             ->where('status', 'active')
             ->with([
-                'images' => fn($q) => $q->select(['id','product_id','image_path','is_primary','sort_order'])
+                'images' => fn ($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order'])
                     ->orderByDesc('is_primary')->orderBy('sort_order')->take(3),
-                'cat_info' => fn($q) => $q->select(['id', 'title']),
-                'variants' => fn($q) => $q->where('status', 'active')
+                'cat_info' => fn ($q) => $q->select(['id', 'title']),
+                'variants' => fn ($q) => $q->where('status', 'active')
                     ->select(['id', 'product_id', 'price', 'discount', 'stock'])
-                        ->with(['images' => fn($q) => $q->select(['id','product_variant_id','image_path','is_primary','sort_order'])
-                            ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)])
+                        ->with(['images' => fn ($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
+                            ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)]),
             ]);
 
-        if (!empty($_GET['category'])) {
+        if (! empty($_GET['category'])) {
             $slug = explode(',', $_GET['category']);
             $cat_ids = Category::select('id')->whereIn('slug', $slug)->pluck('id')->toArray();
             $products->whereIn('cat_id', $cat_ids);
         }
 
-        if (!empty($_GET['brand'])) {
+        if (! empty($_GET['brand'])) {
             $slugs = explode(',', $_GET['brand']);
             $brand_ids = Brand::select('id')->whereIn('slug', $slugs)->pluck('id')->toArray();
             $products->whereIn('brand_id', $brand_ids);
         }
 
-        if (!empty($_GET['sortBy'])) {
+        if (! empty($_GET['sortBy'])) {
             if ($_GET['sortBy'] == 'title') {
                 $products->orderBy('title', 'ASC');
             } elseif ($_GET['sortBy'] == 'price') {
@@ -2757,7 +2776,7 @@ class FrontendController extends Controller
             }
         }
 
-        if (!empty($_GET['price'])) {
+        if (! empty($_GET['price'])) {
             $price = explode('-', $_GET['price']);
             if (count($price) === 2 && is_numeric($price[0]) && is_numeric($price[1])) {
                 $products->where(function ($query) use ($price) {
@@ -2769,7 +2788,7 @@ class FrontendController extends Controller
                                     base_price - (base_price * base_discount / 100)
                                 ELSE
                                     base_price
-                            END BETWEEN ? AND ?', [(float)$price[0], (float)$price[1]]);
+                            END BETWEEN ? AND ?', [(float) $price[0], (float) $price[1]]);
                     })
                         ->orWhere(function ($q) use ($price) {
                             $q->where('has_variants', true)
@@ -2781,7 +2800,7 @@ class FrontendController extends Controller
                                                 price - (price * discount / 100)
                                             ELSE
                                                 price
-                                        END BETWEEN ? AND ?', [(float)$price[0], (float)$price[1]]);
+                                        END BETWEEN ? AND ?', [(float) $price[0], (float) $price[1]]);
                                 });
                         });
                 });
@@ -2799,19 +2818,18 @@ class FrontendController extends Controller
     /**
      * Display products by brand.
      *
-     * @param Request $request
      * @return \Illuminate\View\View
      */
     public function productBrand(Request $request)
     {
         $products = Brand::getProductByBrand($request->slug);
+
         return view('frontend.pages.product-grids', compact('products'));
     }
 
     /**
      * Display products by category.
      *
-     * @param Request $request
      * @return \Illuminate\View\View
      */
     public function productCat(Request $request)
@@ -2835,13 +2853,13 @@ class FrontendController extends Controller
             : $this->getDescendantIds($category);
 
         $productQuery = Product::with([
-            'images' => fn($q) => $q->select(['id','image_path','is_primary','sort_order'])
+            'images' => fn ($q) => $q->select(['id', 'image_path', 'is_primary', 'sort_order'])
                 ->orderByDesc('is_primary')->orderBy('sort_order')->take(3),
-            'cat_info' => fn($q) => $q->select(['id', 'title']),
-            'variants' => fn($q) => $q->where('status', 'active')
+            'cat_info' => fn ($q) => $q->select(['id', 'title']),
+            'variants' => fn ($q) => $q->where('status', 'active')
                 ->select(['id', 'product_id', 'price', 'discount', 'stock'])
-                ->with(['images' => fn($q) => $q->select(['id','image_path','product_id','is_primary','sort_order'])
-                    ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)])
+                ->with(['images' => fn ($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary', 'sort_order'])
+                    ->orderByDesc('is_primary')->orderBy('sort_order')->take(3)]),
         ])
             ->where('status', 'active')
             ->where(function ($query) use ($descendantIds) {
@@ -2895,7 +2913,7 @@ class FrontendController extends Controller
             $perPage = $request->input('show', 12);
 
             // Generate cache key
-            $cacheKey = 'filter_page_' . md5(serialize($filters) . "_{$page}_{$perPage}");
+            $cacheKey = 'filter_page_'.md5(serialize($filters)."_{$page}_{$perPage}");
 
             // Try cache first (5-50ms response)
             $cachedData = RedisCacheService::get($cacheKey);
@@ -2907,7 +2925,7 @@ class FrontendController extends Controller
                 Log::info('Filter Page: CACHE HIT', [
                     'time_ms' => round((microtime(true) - $startTime) * 1000, 2),
                     'filters' => $filters,
-                    'page' => $page
+                    'page' => $page,
                 ]);
             } else {
                 // Use Hybrid Filter Service for optimal performance
@@ -2930,20 +2948,20 @@ class FrontendController extends Controller
                 // Cache the results
                 RedisCacheService::put($cacheKey, [
                     'products' => $products,
-                    'total' => $total
+                    'total' => $total,
                 ], 1800); // 30 min cache
 
-                Log::info('Filter Page: ' . strtoupper(str_replace('_', ' ', $method)), [
+                Log::info('Filter Page: '.strtoupper(str_replace('_', ' ', $method)), [
                     'time_ms' => $result['time_ms'],
                     'filters' => $filters,
                     'page' => $page,
-                    'total' => $total
+                    'total' => $total,
                 ]);
             }
 
             // Calculate max price (cached)
             $maxPrice = RedisCacheService::remember(
-                'max_price_cat_' . $currentCategory->id,
+                'max_price_cat_'.$currentCategory->id,
                 3600,
                 function () use ($descendantIds) {
                     return Product::where('status', 'active')
@@ -2962,6 +2980,7 @@ class FrontendController extends Controller
             // AJAX response
             if ($request->wantsJson()) {
                 $html = view('frontend.pages.product-grid-html', compact('products'))->render();
+
                 return response()->json([
                     'success' => true,
                     'html' => $html,
@@ -2972,8 +2991,8 @@ class FrontendController extends Controller
                     'performance' => [
                         'time_ms' => $elapsedTime,
                         'method' => $method,
-                        'from_cache' => isset($cachedData)
-                    ]
+                        'from_cache' => isset($cachedData),
+                    ],
                 ]);
             }
 
@@ -2994,23 +3013,23 @@ class FrontendController extends Controller
                 'applied_filters' => $appliedFilters,
                 'has_filters' => $this->hasFiltersApplied($request),
                 'performance_time_ms' => $elapsedTime,
-                'filter_method' => $method
+                'filter_method' => $method,
             ]);
         } catch (\Exception $e) {
-            Log::error('Product category filter error: ' . $e->getMessage(), [
+            Log::error('Product category filter error: '.$e->getMessage(), [
                 'encrypted_path' => $encryptedPath,
                 'request_data' => $request->all(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             if ($request->wantsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to apply filters: ' . $e->getMessage(),
+                    'message' => 'Failed to apply filters: '.$e->getMessage(),
                 ], 500);
             }
 
-            abort(500, 'Error loading category: ' . $e->getMessage());
+            abort(500, 'Error loading category: '.$e->getMessage());
         }
     }
 
@@ -3030,16 +3049,16 @@ class FrontendController extends Controller
 
         // Brands
         $brands = $request->input('brand', []);
-        if (!empty($brands)) {
+        if (! empty($brands)) {
             if (is_string($brands)) {
                 $brands = array_filter(explode(',', $brands));
             }
-            if (!empty($brands)) {
+            if (! empty($brands)) {
                 $brandIds = Brand::whereIn('slug', $brands)
                     ->where('status', 'active')
                     ->pluck('id')
                     ->toArray();
-                if (!empty($brandIds)) {
+                if (! empty($brandIds)) {
                     $filters['brands'] = $brandIds;
                 }
             }
@@ -3053,7 +3072,7 @@ class FrontendController extends Controller
         // Minimum rating
         if ($request->filled('min_rating')) {
             $minRatings = $request->input('min_rating', []);
-            if (is_array($minRatings) && !empty($minRatings)) {
+            if (is_array($minRatings) && ! empty($minRatings)) {
                 $filters['min_rating'] = min(array_map('intval', $minRatings));
             }
         }
@@ -3061,7 +3080,7 @@ class FrontendController extends Controller
         // Minimum discount
         if ($request->filled('min_discount')) {
             $minDiscounts = $request->input('min_discount', []);
-            if (is_array($minDiscounts) && !empty($minDiscounts)) {
+            if (is_array($minDiscounts) && ! empty($minDiscounts)) {
                 $filters['min_discount'] = min(array_map('intval', $minDiscounts));
             }
         }
@@ -3078,64 +3097,65 @@ class FrontendController extends Controller
     public function productSubCatOLD(Request $request, $encryptedPath)
     {
         // try {
-            $slugPath = UrlEncryptor::decodePath($encryptedPath);
-            $segments = explode('/', trim($slugPath, '/'));
-            $currentCategory = Category::whereNull('parent_id')
+        $slugPath = UrlEncryptor::decodePath($encryptedPath);
+        $segments = explode('/', trim($slugPath, '/'));
+        $currentCategory = Category::whereNull('parent_id')
+            ->where('status', 'active')
+            ->where('slug', $segments[0])
+            ->firstOrFail();
+
+        array_shift($segments);
+        foreach ($segments as $segment) {
+            $child = $currentCategory->children()
+                ->where('slug', $segment)
                 ->where('status', 'active')
-                ->where('slug', $segments[0])
                 ->firstOrFail();
+            $currentCategory = $child;
+        }
 
-            array_shift($segments);
-            foreach ($segments as $segment) {
-                $child = $currentCategory->children()
-                    ->where('slug', $segment)
-                    ->where('status', 'active')
-                    ->firstOrFail();
-                $currentCategory = $child;
-            }
+        $descendantIds = $this->getDescendantIds($currentCategory);
+        $cacheKey = 'product_count_'.md5(serialize([
+            'category' => $currentCategory->id,
+            'descendant_ids' => $descendantIds,
+            'filters' => $request->except(['page', '_token']),
+        ]));
 
-            $descendantIds = $this->getDescendantIds($currentCategory);
-            $cacheKey = 'product_count_' . md5(serialize([
-                'category' => $currentCategory->id,
-                'descendant_ids' => $descendantIds,
-                'filters' => $request->except(['page', '_token'])
-            ]));
+        $productQuery = Product::with([
+            'images' => fn ($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true),
+            'cat_info' => fn ($q) => $q->select(['id', 'title']),
+            'sub_cat_info' => fn ($q) => $q->select(['id', 'title']),
+            'variants' => fn ($q) => $q->where('status', 'active')
+                ->select(['id', 'product_id', 'price', 'discount', 'stock'])
+                ->with(['images' => fn ($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true)]),
+        ])
+            ->where('status', 'active')
+            ->where(function ($query) use ($descendantIds) {
+                $query->whereIn('cat_id', $descendantIds)
+                    ->orWhereIn('child_cat_id', $descendantIds);
+            });
 
-            $productQuery = Product::with([
-                'images' => fn($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true),
-                'cat_info' => fn($q) => $q->select(['id', 'title']),
-                'sub_cat_info' => fn($q) => $q->select(['id', 'title']),
-                'variants' => fn($q) => $q->where('status', 'active')
-                    ->select(['id', 'product_id', 'price', 'discount', 'stock'])
-                    ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true)])
-            ])
-                ->where('status', 'active')
+        $this->applyFiltersToQuery($productQuery, $request);
+
+        $perPage = $request->input('show', 12);
+        $products = RedisCacheService::remember($cacheKey.'_results_'.$request->input('page', 1), self::CACHE_TTL, function () use ($productQuery, $perPage, $request) {
+            $products = $productQuery->paginate($perPage);
+            // Removed deprecated setPath call (encrypted path nested)
+            $products->appends($request->except(['page', '_token']));
+
+            return $products;
+        });
+
+        $totalProducts = RedisCacheService::remember($cacheKey, self::CACHE_TTL, function () use ($productQuery) {
+            return $productQuery->count();
+        });
+
+        $maxPrice = RedisCacheService::remember($cacheKey.'_max_price', self::CACHE_TTL, function () use ($descendantIds) {
+            return Product::where('status', 'active')
                 ->where(function ($query) use ($descendantIds) {
                     $query->whereIn('cat_id', $descendantIds)
                         ->orWhereIn('child_cat_id', $descendantIds);
-                });
-
-            $this->applyFiltersToQuery($productQuery, $request);
-
-            $perPage = $request->input('show', 12);
-            $products = RedisCacheService::remember($cacheKey . '_results_' . $request->input('page', 1), self::CACHE_TTL, function () use ($productQuery, $perPage, $request, $encryptedPath) {
-                $products = $productQuery->paginate($perPage);
-                // Removed deprecated setPath call (encrypted path nested)
-                $products->appends($request->except(['page', '_token']));
-                return $products;
-            });
-
-            $totalProducts = RedisCacheService::remember($cacheKey, self::CACHE_TTL, function () use ($productQuery) {
-                return $productQuery->count();
-            });
-
-            $maxPrice = RedisCacheService::remember($cacheKey . '_max_price', self::CACHE_TTL, function () use ($descendantIds) {
-                return Product::where('status', 'active')
-                    ->where(function ($query) use ($descendantIds) {
-                        $query->whereIn('cat_id', $descendantIds)
-                            ->orWhereIn('child_cat_id', $descendantIds);
-                    })
-                    ->selectRaw('
+                })
+                ->selectRaw('
                         MAX(
                             CASE
                                 WHEN has_variants = false THEN
@@ -3157,44 +3177,45 @@ class FrontendController extends Controller
                             END
                         ) as max_price
                     ')
-                    ->value('max_price') ?? 1000;
-            });
+                ->value('max_price') ?? 1000;
+        });
 
-            $recentProducts = $this->recentProductService->getRecentProducts();
+        $recentProducts = $this->recentProductService->getRecentProducts();
 
-            if ($request->wantsJson()) {
-                $html = view('frontend.pages.product-grid-html', compact('products'))->render();
-                return response()->json([
-                    'success' => true,
-                    'html' => $html,
-                    'message' => $products->isEmpty() ? 'No products found with current filters' : null,
-                    'total' => $products->total(),
-                    'current_page' => $products->currentPage(),
-                    'last_page' => $products->lastPage(),
-                    'debug_info' => [
-                        'total_before_pagination' => $totalProducts,
-                        'applied_filters' => $request->except(['page', '_token']),
-                    ]
-                ]);
-            }
+        if ($request->wantsJson()) {
+            $html = view('frontend.pages.product-grid-html', compact('products'))->render();
 
-            $appliedFilters = [
-                'brands' => $request->input('brand', []),
-                'price_range' => $request->input('price_range', ''),
-                'min_rating' => $request->input('min_rating', []),
-                'min_discount' => $request->input('min_discount', []),
-                'sortBy' => $request->input('sortBy', 'latest'),
-                'show' => $request->input('show', 12),
-            ];
-
-            return view('frontend.pages.product-grids', [
-                'products' => $products,
-                'mainCategory' => $currentCategory,
-                'max_price' => $maxPrice,
-                'recent_products' => $recentProducts,
-                'applied_filters' => $appliedFilters,
-                'has_filters' => $this->hasFiltersApplied($request),
+            return response()->json([
+                'success' => true,
+                'html' => $html,
+                'message' => $products->isEmpty() ? 'No products found with current filters' : null,
+                'total' => $products->total(),
+                'current_page' => $products->currentPage(),
+                'last_page' => $products->lastPage(),
+                'debug_info' => [
+                    'total_before_pagination' => $totalProducts,
+                    'applied_filters' => $request->except(['page', '_token']),
+                ],
             ]);
+        }
+
+        $appliedFilters = [
+            'brands' => $request->input('brand', []),
+            'price_range' => $request->input('price_range', ''),
+            'min_rating' => $request->input('min_rating', []),
+            'min_discount' => $request->input('min_discount', []),
+            'sortBy' => $request->input('sortBy', 'latest'),
+            'show' => $request->input('show', 12),
+        ];
+
+        return view('frontend.pages.product-grids', [
+            'products' => $products,
+            'mainCategory' => $currentCategory,
+            'max_price' => $maxPrice,
+            'recent_products' => $recentProducts,
+            'applied_filters' => $appliedFilters,
+            'has_filters' => $this->hasFiltersApplied($request),
+        ]);
         // } catch (\Exception $e) {
         //     Log::error('Product category filter error: ' . $e->getMessage(), [
         //         'encrypted_path' => $encryptedPath,
@@ -3216,7 +3237,6 @@ class FrontendController extends Controller
     /**
      * Check if any filters are applied in the request.
      *
-     * @param Request $request
      * @return bool
      */
     protected function hasFiltersApplied(Request $request)
@@ -3225,7 +3245,7 @@ class FrontendController extends Controller
 
         foreach ($filterKeys as $key) {
             $value = $request->input($key);
-            if (!empty($value)) {
+            if (! empty($value)) {
                 return true;
             }
         }
@@ -3254,18 +3274,18 @@ class FrontendController extends Controller
                     'has_variants',
                     'cat_id',
                     'condition',
-                    'summary'
+                    'summary',
                 ])
                 ->with([
-                    'images' => fn($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order'])
+                    'images' => fn ($q) => $q->select(['id', 'product_id', 'image_path', 'is_primary', 'sort_order'])
                         ->where('is_primary', true),
-                    'cat_info' => fn($q) => $q->select(['id', 'title']),
-                    'variants' => fn($q) => $q->where('status', 'active')
+                    'cat_info' => fn ($q) => $q->select(['id', 'title']),
+                    'variants' => fn ($q) => $q->where('status', 'active')
                         ->select(['id', 'product_id', 'price', 'discount', 'stock'])
                         ->with([
-                            'images' => fn($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
-                                ->where('is_primary', true)
-                        ])
+                            'images' => fn ($q) => $q->select(['id', 'product_variant_id', 'image_path', 'is_primary', 'sort_order'])
+                                ->where('is_primary', true),
+                        ]),
                 ])
                 ->orderBy('id', 'DESC')
                 ->limit(3)
@@ -3294,13 +3314,13 @@ class FrontendController extends Controller
 
                             // Ensure proper storage path
                             if (strpos($imagePath, 'storage/') !== 0) {
-                                $imagePath = 'storage/' . ltrim($imagePath, '/');
+                                $imagePath = 'storage/'.ltrim($imagePath, '/');
                             }
 
                             $product->primary_image = [
                                 'image_path' => $imagePath,
                                 'url' => asset($imagePath),
-                                'alt_text' => $product->title
+                                'alt_text' => $product->title,
                             ];
                         }
                     } else {
@@ -3320,13 +3340,13 @@ class FrontendController extends Controller
 
                         // Ensure proper storage path
                         if (strpos($imagePath, 'storage/') !== 0) {
-                            $imagePath = 'storage/' . ltrim($imagePath, '/');
+                            $imagePath = 'storage/'.ltrim($imagePath, '/');
                         }
 
                         $product->primary_image = [
                             'image_path' => $imagePath,
                             'url' => asset($imagePath),
-                            'alt_text' => $product->title
+                            'alt_text' => $product->title,
                         ];
                     } else {
                         $product->primary_image = null;
@@ -3340,7 +3360,7 @@ class FrontendController extends Controller
                 return $product;
             });
 
-            if (!RedisCacheService::put($key, $recentProducts, $ttl)) {
+            if (! RedisCacheService::put($key, $recentProducts, $ttl)) {
                 Log::warning("Failed to store recent products in Redis for key: {$key}");
             }
 
@@ -3351,8 +3371,8 @@ class FrontendController extends Controller
     /**
      * Fetch recent products with caching.
      *
-     * @param string $key Cache key
-     * @param int $ttl Time to live
+     * @param  string  $key Cache key
+     * @param  int  $ttl Time to live
      * @return \Illuminate\Support\Collection
      */
     private function getRecentProductsDataOLD(string $key, int $ttl)
@@ -3369,14 +3389,14 @@ class FrontendController extends Controller
                     'has_variants',
                     'cat_id',
                     'condition',
-                    'summary'
+                    'summary',
                 ])
                 ->with([
-                    'images' => fn($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true),
-                    'cat_info' => fn($q) => $q->select(['id', 'title']),
-                    'variants' => fn($q) => $q->where('status', 'active')
+                    'images' => fn ($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true),
+                    'cat_info' => fn ($q) => $q->select(['id', 'title']),
+                    'variants' => fn ($q) => $q->where('status', 'active')
                         ->select(['id', 'product_id', 'price', 'discount', 'stock'])
-                        ->with(['images' => fn($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true)])
+                        ->with(['images' => fn ($q) => $q->select(['id', 'image_path', 'product_id', 'is_primary'])->where('is_primary', true)]),
                 ])
                 ->orderBy('id', 'DESC')
                 ->limit(3)
@@ -3397,10 +3417,11 @@ class FrontendController extends Controller
                 $product->in_wishlist = class_exists('Helper') && method_exists('Helper', 'isProductInWishlist')
                     ? Helper::isProductInWishlist($product->slug)
                     : false;
+
                 return $product;
             });
 
-            if (!RedisCacheService::put($key, $recentProducts, $ttl)) {
+            if (! RedisCacheService::put($key, $recentProducts, $ttl)) {
                 Log::warning("Failed to store recent products in Redis for key: {$key}");
             }
 
@@ -3417,13 +3438,13 @@ class FrontendController extends Controller
     {
         $post = Post::query();
 
-        if (!empty($_GET['category'])) {
+        if (! empty($_GET['category'])) {
             $slug = explode(',', $_GET['category']);
             $cat_ids = PostCategory::select('id')->whereIn('slug', $slug)->pluck('id')->toArray();
             $post->whereIn('post_cat_id', $cat_ids);
         }
 
-        if (!empty($_GET['tag'])) {
+        if (! empty($_GET['tag'])) {
             $slug = explode(',', $_GET['tag']);
             $tag_ids = PostTag::select('id')->whereIn('slug', $slug)->pluck('id')->toArray();
             $post->where('post_tag_id', $tag_ids);
@@ -3440,7 +3461,7 @@ class FrontendController extends Controller
     /**
      * Display blog post details by slug.
      *
-     * @param string $slug
+     * @param  string  $slug
      * @return \Illuminate\View\View
      */
     public function blogDetail($slug)
@@ -3456,17 +3477,16 @@ class FrontendController extends Controller
     /**
      * Handle blog search functionality.
      *
-     * @param Request $request
      * @return \Illuminate\View\View
      */
     public function blogSearch(Request $request)
     {
         $rcnt_post = Post::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
-        $posts = Post::orwhere('title', 'like', '%' . $request->search . '%')
-            ->orwhere('quote', 'like', '%' . $request->search . '%')
-            ->orwhere('summary', 'like', '%' . $request->search . '%')
-            ->orwhere('description', 'like', '%' . $request->search . '%')
-            ->orwhere('slug', 'like', '%' . $request->search . '%')
+        $posts = Post::orwhere('title', 'like', '%'.$request->search.'%')
+            ->orwhere('quote', 'like', '%'.$request->search.'%')
+            ->orwhere('summary', 'like', '%'.$request->search.'%')
+            ->orwhere('description', 'like', '%'.$request->search.'%')
+            ->orwhere('slug', 'like', '%'.$request->search.'%')
             ->orderBy('id', 'DESC')
             ->paginate(8);
 
@@ -3478,22 +3498,20 @@ class FrontendController extends Controller
     /**
      * Handle blog filter requests.
      *
-     * @param Request $request
      * @return \Illuminate\Http\RedirectResponse
      */
     public function blogFilter(Request $request)
     {
         $data = $request->all();
-        $catURL = !empty($data['category']) ? '&category=' . implode(',', $data['category']) : '';
-        $tagURL = !empty($data['tag']) ? '&tag=' . implode(',', $data['tag']) : '';
+        $catURL = ! empty($data['category']) ? '&category='.implode(',', $data['category']) : '';
+        $tagURL = ! empty($data['tag']) ? '&tag='.implode(',', $data['tag']) : '';
 
-        return redirect()->route('blog', $catURL . $tagURL);
+        return redirect()->route('blog', $catURL.$tagURL);
     }
 
     /**
      * Display blog posts by category.
      *
-     * @param Request $request
      * @return \Illuminate\View\View
      */
     public function blogByCategory(Request $request)
@@ -3509,7 +3527,6 @@ class FrontendController extends Controller
     /**
      * Display blog posts by tag.
      *
-     * @param Request $request
      * @return \Illuminate\View\View
      */
     public function blogByTag(Request $request)
@@ -3535,7 +3552,6 @@ class FrontendController extends Controller
     /**
      * Handle login submission.
      *
-     * @param Request $request
      * @return \Illuminate\Http\RedirectResponse
      */
     public function loginSubmit(Request $request)
@@ -3552,10 +3568,12 @@ class FrontendController extends Controller
             $this->recentProductService->handleUserLogin(Auth::id(), $preLoginSessionId);
 
             Session::flash('success', 'Successfully login');
+
             return redirect()->route('home');
         }
 
         Session::flash('error', 'Invalid email and password please try again!');
+
         return redirect()->back();
     }
 
@@ -3569,6 +3587,7 @@ class FrontendController extends Controller
         Session::forget('user');
         Auth::logout();
         Session::flash('success', 'Logout successfully');
+
         return back();
     }
 
@@ -3585,7 +3604,6 @@ class FrontendController extends Controller
     /**
      * Handle registration submission.
      *
-     * @param Request $request
      * @return \Illuminate\Http\RedirectResponse
      */
     public function registerSubmit(Request $request)
@@ -3602,17 +3620,18 @@ class FrontendController extends Controller
 
         if ($check) {
             Session::flash('success', 'Successfully registered');
+
             return redirect()->route('home');
         }
 
         Session::flash('error', 'Please try again!');
+
         return back();
     }
 
     /**
      * Create a new user.
      *
-     * @param array $data
      * @return \App\User
      */
     public function create(array $data)
@@ -3621,7 +3640,7 @@ class FrontendController extends Controller
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
-            'status' => 'active'
+            'status' => 'active',
         ]);
     }
 
@@ -3638,35 +3657,36 @@ class FrontendController extends Controller
     /**
      * Handle newsletter subscription.
      *
-     * @param Request $request
      * @return \Illuminate\Http\RedirectResponse
      */
     public function subscribe(Request $request)
     {
-        if (!Newsletter::isSubscribed($request->email)) {
+        if (! Newsletter::isSubscribed($request->email)) {
             Newsletter::subscribePending($request->email);
             if (Newsletter::lastActionSucceeded()) {
                 Session::flash('success', 'Subscribed! Please check your email');
+
                 return redirect()->route('home');
             }
 
             Session::flash('error', 'Something went wrong! please try again');
+
             return back();
         }
 
         Session::flash('error', 'Already Subscribed');
+
         return back();
     }
 
     /**
      * Display cart page.
      *
-     * @param Request $request
      * @return \Illuminate\View\View
      */
     public function cart(Request $request)
     {
-        if (!$request->session()->has('coupon_set')) {
+        if (! $request->session()->has('coupon_set')) {
             session()->forget('coupon');
             session()->put('coupon_set', true);
         }

@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Redis;
 
 /**
  * Fast Filter Service
@@ -20,7 +20,7 @@ class FastFilterService
      * Get filtered product IDs using Redis SET operations
      * OPTIMIZED: Returns temp key for large result sets to avoid memory issues
      *
-     * @param array $filters [
+     * @param  array  $filters [
      *   'category_id' => int,
      *   'brands' => [int],
      *   'price_range' => string,
@@ -35,14 +35,14 @@ class FastFilterService
         $sets = [];
 
         // Collect all filter sets using RedisKeyManager
-        if (!empty($filters['category_id'])) {
+        if (! empty($filters['category_id'])) {
             $categoryKey = RedisKeyManager::indexCategory($filters['category_id']);
             if (Redis::exists($categoryKey)) {
                 $sets[] = $categoryKey;
             }
         }
 
-        if (!empty($filters['category_ids']) && is_array($filters['category_ids'])) {
+        if (! empty($filters['category_ids']) && is_array($filters['category_ids'])) {
             // Union multiple categories first, then intersect with other filters
             $categoryUnionKey = $this->unionCategories($filters['category_ids']);
             if ($categoryUnionKey) {
@@ -50,7 +50,7 @@ class FastFilterService
             }
         }
 
-        if (!empty($filters['brands']) && is_array($filters['brands'])) {
+        if (! empty($filters['brands']) && is_array($filters['brands'])) {
             // Union multiple brands
             $brandUnionKey = $this->unionBrands($filters['brands']);
             if ($brandUnionKey) {
@@ -58,21 +58,21 @@ class FastFilterService
             }
         }
 
-        if (!empty($filters['price_range'])) {
-            $priceKey = RedisKeyManager::indexPrice($filters['price_range']);
+        if (! empty($filters['price_range'])) {
+            $priceKey = RedisKeyManager::indexPriceRange($filters['price_range']);
             if (Redis::exists($priceKey)) {
                 $sets[] = $priceKey;
             }
         }
 
-        if (!empty($filters['min_rating'])) {
+        if (! empty($filters['min_rating'])) {
             $ratingKey = RedisKeyManager::indexRating($filters['min_rating']);
             if (Redis::exists($ratingKey)) {
                 $sets[] = $ratingKey;
             }
         }
 
-        if (!empty($filters['min_discount'])) {
+        if (! empty($filters['min_discount'])) {
             $discountKey = RedisKeyManager::indexDiscount($filters['min_discount']);
             if (Redis::exists($discountKey)) {
                 $sets[] = $discountKey;
@@ -82,6 +82,7 @@ class FastFilterService
         // No filters = return empty (or all products if you prefer)
         if (count($sets) === 0) {
             Log::warning('FastFilter: No valid filter sets found', $filters);
+
             return ['key' => null, 'count' => 0];
         }
 
@@ -93,19 +94,19 @@ class FastFilterService
             Log::info('FastFilter: Single set query', [
                 'filter' => $filters,
                 'result_count' => $count,
-                'time_ms' => $elapsedMs
+                'time_ms' => $elapsedMs,
             ]);
 
             return ['key' => $sets[0], 'count' => $count];
         }
 
         // Multiple filters = intersect all sets
-        $hash = md5(implode('|', $sets) . serialize($filters));
+        $hash = md5(implode('|', $sets).serialize($filters));
         $tempKey = RedisKeyManager::tempFilter($hash);
 
         try {
             // Check if temp key already exists (cached intersection)
-            if (!Redis::exists($tempKey)) {
+            if (! Redis::exists($tempKey)) {
                 // SINTERSTORE is atomic and optimized in C
                 Redis::sinterstore($tempKey, ...$sets);
                 Redis::expire($tempKey, 300); // 5 minutes
@@ -118,15 +119,14 @@ class FastFilterService
                 'filters' => $filters,
                 'sets_count' => count($sets),
                 'result_count' => $count,
-                'time_ms' => $elapsedMs
+                'time_ms' => $elapsedMs,
             ]);
 
             return ['key' => $tempKey, 'count' => $count];
-
         } catch (\Exception $e) {
             Log::error('FastFilter: Intersection failed', [
                 'error' => $e->getMessage(),
-                'filters' => $filters
+                'filters' => $filters,
             ]);
 
             // Cleanup temp key
@@ -139,14 +139,14 @@ class FastFilterService
     /**
      * Get paginated product IDs from a Redis set key
      *
-     * @param string $redisKey Redis SET key
-     * @param int $offset Starting offset
-     * @param int $limit Number of items
+     * @param  string  $redisKey Redis SET key
+     * @param  int  $offset Starting offset
+     * @param  int  $limit Number of items
      * @return array Product IDs
      */
     public function getPaginatedIds(string $redisKey, int $offset, int $limit): array
     {
-        if ($limit <= 0 || !Redis::exists($redisKey)) {
+        if ($limit <= 0 || ! Redis::exists($redisKey)) {
             return [];
         }
 
@@ -162,7 +162,6 @@ class FastFilterService
             }
 
             return array_map('intval', $ids);
-
         } catch (\Exception $e) {
             Log::error('FastFilter: Pagination failed', [
                 'error' => $e->getMessage(),
@@ -170,6 +169,7 @@ class FastFilterService
                 'offset' => $offset,
                 'limit' => $limit,
             ]);
+
             return [];
         }
     }
@@ -201,7 +201,7 @@ class FastFilterService
         }
 
         // Create temp union set
-        $unionKey = "temp:union:categories:" . md5(implode(',', $categoryIds));
+        $unionKey = 'temp:union:categories:'.md5(implode(',', $categoryIds));
         Redis::sunionstore($unionKey, ...$sets);
         Redis::expire($unionKey, 300); // 5 min
 
@@ -235,7 +235,7 @@ class FastFilterService
         }
 
         // Create temp union set
-        $unionKey = "temp:union:brands:" . md5(implode(',', $brandIds));
+        $unionKey = 'temp:union:brands:'.md5(implode(',', $brandIds));
         Redis::sunionstore($unionKey, ...$sets);
         Redis::expire($unionKey, 300); // 5 min
 
@@ -248,11 +248,11 @@ class FastFilterService
     public function canUseIndexes(array $filters): bool
     {
         // At least one indexed dimension should exist
-        $hasCategory = !empty($filters['category_id']) || !empty($filters['category_ids']);
-        $hasBrand = !empty($filters['brands']);
-        $hasPrice = !empty($filters['price_range']);
-        $hasRating = !empty($filters['min_rating']);
-        $hasDiscount = !empty($filters['min_discount']);
+        $hasCategory = ! empty($filters['category_id']) || ! empty($filters['category_ids']);
+        $hasBrand = ! empty($filters['brands']);
+        $hasPrice = ! empty($filters['price_range']);
+        $hasRating = ! empty($filters['min_rating']);
+        $hasDiscount = ! empty($filters['min_discount']);
 
         return $hasCategory || $hasBrand || $hasPrice || $hasRating || $hasDiscount;
     }
@@ -264,17 +264,17 @@ class FastFilterService
     {
         $sets = [];
 
-        if (!empty($filters['category_id'])) {
+        if (! empty($filters['category_id'])) {
             $sets[] = "index:category:{$filters['category_id']}";
         }
 
-        if (!empty($filters['brands']) && is_array($filters['brands'])) {
+        if (! empty($filters['brands']) && is_array($filters['brands'])) {
             foreach ($filters['brands'] as $brandId) {
                 $sets[] = "index:brand:{$brandId}";
             }
         }
 
-        if (!empty($filters['price_range'])) {
+        if (! empty($filters['price_range'])) {
             $sets[] = "index:price:{$filters['price_range']}";
         }
 
@@ -288,7 +288,7 @@ class FastFilterService
 
         // For multiple sets, use sampling to estimate
         // Get size of smallest set as upper bound
-        $sizes = array_map(function($set) {
+        $sizes = array_map(function ($set) {
             return Redis::scard($set);
         }, $sets);
 
@@ -314,7 +314,7 @@ class FastFilterService
             }
         }
 
-        Log::info("Cleaned up temporary filter keys", ['deleted' => $deleted]);
+        Log::info('Cleaned up temporary filter keys', ['deleted' => $deleted]);
 
         return $deleted;
     }
@@ -345,15 +345,15 @@ class FastFilterService
         $totalElements = 0;
         $pattern = RedisKeyManager::pattern('index');
         $cursor = '0';
-        
+
         do {
             [$cursor, $keys] = Redis::scan($cursor, ['match' => $pattern, 'count' => 100]);
-            
+
             foreach ($keys as $key) {
                 $totalElements += Redis::scard($key);
             }
         } while ($cursor !== '0' && $cursor !== 0);
-        
+
         $stats['total_memory_mb'] = round(($totalElements * 10) / 1024 / 1024, 2);
 
         return $stats;

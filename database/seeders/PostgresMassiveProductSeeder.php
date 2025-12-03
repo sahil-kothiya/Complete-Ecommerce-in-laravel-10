@@ -17,45 +17,67 @@ class PostgresMassiveProductSeeder extends Seeder
      */
 
     // Product generation settings
-    protected int $totalProducts = 1_00_000;                      // Total number of products to generate
-    protected ?int $variantProductTarget = 95000;               // Target number of products with variants (null = use ratio)
+    protected int $totalProducts = 1000;                      // Total number of products to generate
+
+    protected ?int $variantProductTarget = 950;               // Target number of products with variants (null = use ratio)
+
     protected float $variantProductRatio = 0.98;             // Ratio of variant products if target not set (0.95 = 95%)
+
     protected int $startProductIdIfEmpty = 1;                // Starting product ID when table is empty (set to 1 for fresh start)
+
     protected ?int $maxProductIdLimit = null;                // Maximum product ID limit (null = no limit)
 
     // Variant configuration per product
     protected int $minVariantsPerProduct = 3;                // Minimum variants per product
+
     protected int $maxVariantsPerProduct = 4;                // Maximum variants per product (reduced for speed)
+
     protected int $minVariantTypesPerProduct = 2;            // Minimum variant types (e.g., color + size)
+
     protected int $maxVariantTypesPerProduct = 2;            // Maximum variant types (reduced for speed)
 
     // Image configuration
     protected int $productImagesPerProduct = 2;              // Images per product (reduced for speed)
+
     protected int $variantImagesPerVariant = 2;              // Images per variant (reduced for speed)
+
     protected bool $forceRefreshImageLists = false;          // Force rescan storage folders (true = rescan, false = use cache)
 
     // Performance settings (optimized for 10M+ records)
     // Note: Batch size limited by PostgreSQL's 65,535 parameter limit
     // Each product with variants generates ~50-100 parameters (product + images + variants + assignments)
     protected int $batchSize = 2000;                         // Increased batch size for speed
+
     protected bool $streamInserts = true;                    // Flush partial batches during processing
+
     protected int $streamFlushInterval = 1000;               // Larger interval for fewer flushes
+
     protected int $maxTrackInsertedIds = 0;                  // Don't track IDs beyond this threshold (saves memory)
 
     // Database operations
     protected bool $truncateBeforeSeeding = false;           // Truncate tables before seeding
+
     protected bool $truncateProductTables = false;           // If truncating, include products table
+
     protected bool $truncateRelatedTables = false;           // If truncating, include related tables
+
     protected bool $syncSequencesAfterSeeding = true;        // Sync PostgreSQL sequences after seeding
+
     protected bool $useTransactions = false;                 // Disable transactions for max speed on large inserts
+
     protected bool $disableIndexesDuringInsert = true;       // Drop/recreate indexes for massive inserts (FASTER!)
+
     protected bool $useUnloggedTables = true;                // Use UNLOGGED tables (MUCH FASTER but no crash recovery)
+
     protected bool $dropForeignKeysDuringInsert = true;      // Drop/recreate FKs to allow UNLOGGED (MAX SPEED!)
+
     protected bool $usePostgresOptimizations = true;         // Apply PostgreSQL-specific optimizations
 
     // Logging settings
     protected int $progressLogFrequency = 50;                // Log progress every N batches (less frequent for performance)
+
     protected bool $emitConsoleProgress = true;              // Show progress in console
+
     protected bool $emitLaravelLog = false;                  // Disable Laravel log for performance
 
     /**
@@ -100,21 +122,30 @@ class PostgresMassiveProductSeeder extends Seeder
      * Runtime counters.
      */
     protected int $nextProductId = 1;
+
     protected int $nextVariantId = 1;
+
     protected int $nextProductImageId = 1;
+
     protected int $nextVariantImageId = 1;
+
     protected int $nextAssignmentId = 1;
+
     protected int $nextTypeSelectionId = 1;
 
     protected int $productsSeeded = 0;
+
     protected int $variantProductsSeeded = 0;
+
     protected int $nonVariantProductsSeeded = 0;
+
     protected int $existingProductsCount = 0;            // Products already in DB before seeding
 
     /**
      * Tracking inserted product IDs and SKU sequences
      */
     protected array $insertedProductIds = [];
+
     protected array $skuSequenceCounters = [];
 
     /**
@@ -123,8 +154,11 @@ class PostgresMassiveProductSeeder extends Seeder
      * This ensures all categories get ~10% featured products regardless of round-robin order
      */
     protected array $categoryFeaturedCount = [];
+
     protected array $categoryProductCount = []; // Track total products assigned to each category
+
     protected array $categoryNames = []; // Track category names for logging
+
     protected int $minFeaturedPerCategory = 30;
 
     /**
@@ -139,19 +173,28 @@ class PostgresMassiveProductSeeder extends Seeder
      * Cached metadata.
      */
     protected array $leafCategories = [];
+
     protected array $allCategories = [];
+
     protected array $categoryParentMap = [];
+
     protected array $topCategoryCache = [];
+
     protected array $brands = [];
+
     protected array $variantTypes = [];
+
     protected array $variantTypeOptions = [];
+
     protected array $optionLookup = [];
+
     protected array $variantOptionCursor = [];
 
     /**
      * Tracking cursors.
      */
     protected int $categoryCursor = 0;
+
     protected int $brandCursor = 0;
 
     /**
@@ -221,6 +264,7 @@ class PostgresMassiveProductSeeder extends Seeder
 
     // These will be populated dynamically from storage folder
     protected array $productImagePool = [];
+
     protected array $variantImagePool = [];
 
     public function run(): void
@@ -275,14 +319,14 @@ class PostgresMassiveProductSeeder extends Seeder
         $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
 
         $dbName = DB::connection()->getDatabaseName();
-        $this->writeOutput('  Database: ' . $dbName);
+        $this->writeOutput('  Database: '.$dbName);
 
         // Increase memory limit for large scale seeding
         $currentLimit = ini_get('memory_limit');
         $targetMemory = $this->totalProducts >= 1_000_000 ? '2G' : '1G';
         if ($currentLimit !== '-1') {
             @ini_set('memory_limit', $targetMemory);
-            $this->writeOutput('  Memory Limit: ' . $currentLimit . ' → ' . $targetMemory);
+            $this->writeOutput('  Memory Limit: '.$currentLimit.' → '.$targetMemory);
         } else {
             $this->writeOutput('  Memory Limit: Unlimited');
         }
@@ -293,13 +337,13 @@ class PostgresMassiveProductSeeder extends Seeder
 
         $this->writeOutput('');
         $this->writeOutput('  Seeding Configuration:');
-        $this->writeOutput('    • Total Products:    ' . number_format($this->totalProducts));
-        $this->writeOutput('    • Variant Target:    ' . number_format($this->variantProductTarget ?? (int)($this->totalProducts * $this->variantProductRatio)));
-        $this->writeOutput('    • Batch Size:        ' . number_format($this->batchSize));
-        $this->writeOutput('    • Stream Inserts:    ' . ($this->streamInserts ? 'Enabled' : 'Disabled'));
-        $this->writeOutput('    • Use Transactions:  ' . ($this->useTransactions ? 'Enabled' : 'Disabled'));
-        $this->writeOutput('    • PG Optimizations:  ' . ($this->usePostgresOptimizations ? 'Enabled' : 'Disabled'));
-        $this->writeOutput('    • Refresh Images:    ' . ($this->forceRefreshImageLists ? 'Yes (rescan)' : 'No (use cache)'));
+        $this->writeOutput('    • Total Products:    '.number_format($this->totalProducts));
+        $this->writeOutput('    • Variant Target:    '.number_format($this->variantProductTarget ?? (int) ($this->totalProducts * $this->variantProductRatio)));
+        $this->writeOutput('    • Batch Size:        '.number_format($this->batchSize));
+        $this->writeOutput('    • Stream Inserts:    '.($this->streamInserts ? 'Enabled' : 'Disabled'));
+        $this->writeOutput('    • Use Transactions:  '.($this->useTransactions ? 'Enabled' : 'Disabled'));
+        $this->writeOutput('    • PG Optimizations:  '.($this->usePostgresOptimizations ? 'Enabled' : 'Disabled'));
+        $this->writeOutput('    • Refresh Images:    '.($this->forceRefreshImageLists ? 'Yes (rescan)' : 'No (use cache)'));
         $this->writeOutput('═══════════════════════════════════════════════════════════════════════');
 
         if ($this->truncateBeforeSeeding) {
@@ -338,11 +382,9 @@ class PostgresMassiveProductSeeder extends Seeder
         }
     }
 
-
-
     protected function truncateTables(): void
     {
-        $this->writeOutput('Truncation settings: Products=' . ($this->truncateProductTables ? 'YES' : 'NO') . ', Related=' . ($this->truncateRelatedTables ? 'YES' : 'NO'));
+        $this->writeOutput('Truncation settings: Products='.($this->truncateProductTables ? 'YES' : 'NO').', Related='.($this->truncateRelatedTables ? 'YES' : 'NO'));
 
         if ($this->truncateProductTables) {
             $this->writeOutput('Truncating product tables...');
@@ -372,14 +414,14 @@ class PostgresMassiveProductSeeder extends Seeder
 
         $this->writeOutput('');
         $this->writeOutput('📂 Storage Directories:');
-        $this->writeOutput('   Products:    ' . $productsDir);
-        $this->writeOutput('   Variants:    ' . $variantsDir);
+        $this->writeOutput('   Products:    '.$productsDir);
+        $this->writeOutput('   Variants:    '.$variantsDir);
         $this->writeOutput('');
         $this->writeOutput('📄 List Files Configuration:');
-        $this->writeOutput('   Products PHP: ' . basename($productsListFile));
-        $this->writeOutput('   Products TXT: ' . basename($productsTextFile));
-        $this->writeOutput('   Variants PHP: ' . basename($variantsListFile));
-        $this->writeOutput('   Variants TXT: ' . basename($variantsTextFile));
+        $this->writeOutput('   Products PHP: '.basename($productsListFile));
+        $this->writeOutput('   Products TXT: '.basename($productsTextFile));
+        $this->writeOutput('   Variants PHP: '.basename($variantsListFile));
+        $this->writeOutput('   Variants TXT: '.basename($variantsTextFile));
 
         $refresh = $this->forceRefreshImageLists;
 
@@ -397,43 +439,43 @@ class PostgresMassiveProductSeeder extends Seeder
         $this->writeOutput('📦 PRODUCT IMAGES');
         $this->writeOutput('─────────────────────────────────────────────────────────────────────');
 
-        if (!$refresh && file_exists($productsListFile)) {
+        if (! $refresh && file_exists($productsListFile)) {
             $productList = $this->loadImageListFromPhpFile($productsListFile);
-            if (!empty($productList)) {
+            if (! empty($productList)) {
                 $productSource = 'cached';
                 $this->writeOutput('✓ Loaded from cache');
-                $this->writeOutput('  File:   ' . basename($productsListFile));
-                $this->writeOutput('  Count:  ' . number_format(count($productList)) . ' images');
+                $this->writeOutput('  File:   '.basename($productsListFile));
+                $this->writeOutput('  Count:  '.number_format(count($productList)).' images');
                 $this->writeOutput('  Source: PHP array (cached)');
             }
         }
 
         if (empty($productList)) {
             $this->writeOutput('⚙ Scanning storage directory...');
-            $this->writeOutput('  Path: ' . $productsDir);
+            $this->writeOutput('  Path: '.$productsDir);
             $topFiles = $this->scanTopLevelImages($productsDir);
-            $this->writeOutput('  Found: ' . number_format(count($topFiles)) . ' images (top-level only)');
+            $this->writeOutput('  Found: '.number_format(count($topFiles)).' images (top-level only)');
             $this->writeOutput('  Note:  Subdirectories (e.g., variants) are ignored');
             $this->writeOutput('  Mode:  Filename-only storage (50% reduction vs full paths)');
 
             $productList = $topFiles; // Store only filenames, not paths
             $productSource = 'fresh scan';
 
-            if (!empty($productList)) {
+            if (! empty($productList)) {
                 $this->writeImageListPhpFile($productsListFile, $productList);
                 $this->writeImageListTextFile($productsTextFile, $productList);
                 $this->writeOutput('');
                 $this->writeOutput('  ✓ Generated cache files:');
-                $this->writeOutput('    • ' . basename($productsListFile) . ' (PHP array)');
-                $this->writeOutput('    • ' . basename($productsTextFile) . ' (text list)');
+                $this->writeOutput('    • '.basename($productsListFile).' (PHP array)');
+                $this->writeOutput('    • '.basename($productsTextFile).' (text list)');
 
                 // Show first few images as sample
                 $sample = array_slice($productList, 0, 3);
-                if (!empty($sample)) {
+                if (! empty($sample)) {
                     $this->writeOutput('');
                     $this->writeOutput('  Sample images:');
                     foreach ($sample as $img) {
-                        $this->writeOutput('    • ' . basename($img));
+                        $this->writeOutput('    • '.basename($img));
                     }
                 }
             } else {
@@ -451,42 +493,42 @@ class PostgresMassiveProductSeeder extends Seeder
         $this->writeOutput('🎨 VARIANT IMAGES');
         $this->writeOutput('─────────────────────────────────────────────────────────────────────');
 
-        if (!$refresh && file_exists($variantsListFile)) {
+        if (! $refresh && file_exists($variantsListFile)) {
             $variantList = $this->loadImageListFromPhpFile($variantsListFile);
-            if (!empty($variantList)) {
+            if (! empty($variantList)) {
                 $variantSource = 'cached';
                 $this->writeOutput('✓ Loaded from cache');
-                $this->writeOutput('  File:   ' . basename($variantsListFile));
-                $this->writeOutput('  Count:  ' . number_format(count($variantList)) . ' images');
+                $this->writeOutput('  File:   '.basename($variantsListFile));
+                $this->writeOutput('  Count:  '.number_format(count($variantList)).' images');
                 $this->writeOutput('  Source: PHP array (cached)');
             }
         }
 
         if (empty($variantList)) {
             $this->writeOutput('⚙ Scanning storage directory...');
-            $this->writeOutput('  Path: ' . $variantsDir);
+            $this->writeOutput('  Path: '.$variantsDir);
             $variantFiles = $this->scanTopLevelImages($variantsDir);
-            $this->writeOutput('  Found: ' . number_format(count($variantFiles)) . ' images');
+            $this->writeOutput('  Found: '.number_format(count($variantFiles)).' images');
             $this->writeOutput('  Mode:  Filename-only storage (50% reduction vs full paths)');
 
             $variantList = $variantFiles; // Store only filenames, not paths
             $variantSource = 'fresh scan';
 
-            if (!empty($variantList)) {
+            if (! empty($variantList)) {
                 $this->writeImageListPhpFile($variantsListFile, $variantList);
                 $this->writeImageListTextFile($variantsTextFile, $variantList);
                 $this->writeOutput('');
                 $this->writeOutput('  ✓ Generated cache files:');
-                $this->writeOutput('    • ' . basename($variantsListFile) . ' (PHP array)');
-                $this->writeOutput('    • ' . basename($variantsTextFile) . ' (text list)');
+                $this->writeOutput('    • '.basename($variantsListFile).' (PHP array)');
+                $this->writeOutput('    • '.basename($variantsTextFile).' (text list)');
 
                 // Show first few images as sample
                 $sample = array_slice($variantList, 0, 3);
-                if (!empty($sample)) {
+                if (! empty($sample)) {
                     $this->writeOutput('');
                     $this->writeOutput('  Sample images:');
                     foreach ($sample as $img) {
-                        $this->writeOutput('    • ' . basename($img));
+                        $this->writeOutput('    • '.basename($img));
                     }
                 }
             } else {
@@ -496,10 +538,10 @@ class PostgresMassiveProductSeeder extends Seeder
         }
 
         // Apply lists or fallback
-        if (!empty($productList)) {
+        if (! empty($productList)) {
             $this->productImagePool = $productList;
         }
-        if (!empty($variantList)) {
+        if (! empty($variantList)) {
             $this->variantImagePool = $variantList;
         }
 
@@ -509,22 +551,22 @@ class PostgresMassiveProductSeeder extends Seeder
             $this->writeOutput('');
             $this->writeOutput('⚠ CRITICAL WARNING: No product images found!');
             $this->writeOutput('  Using placeholder: default-product.webp');
-            $this->writeOutput('  Please add images to: ' . $productsDir);
+            $this->writeOutput('  Please add images to: '.$productsDir);
         }
         if (empty($this->variantImagePool)) {
             $this->variantImagePool = ['default-variant.webp'];
             $this->writeOutput('');
             $this->writeOutput('⚠ CRITICAL WARNING: No variant images found!');
             $this->writeOutput('  Using placeholder: default-variant.webp');
-            $this->writeOutput('  Please add images to: ' . $variantsDir);
+            $this->writeOutput('  Please add images to: '.$variantsDir);
         }
 
         $this->writeOutput('');
         $this->writeOutput('╔════════════════════════════════════════════════════════════════════╗');
         $this->writeOutput('║                    IMAGE POOL SUMMARY                              ║');
         $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
-        $this->writeOutput('  Product Images: ' . str_pad(number_format(count($this->productImagePool)), 10, ' ', STR_PAD_LEFT) . ' (' . $productSource . ')');
-        $this->writeOutput('  Variant Images: ' . str_pad(number_format(count($this->variantImagePool)), 10, ' ', STR_PAD_LEFT) . ' (' . $variantSource . ')');
+        $this->writeOutput('  Product Images: '.str_pad(number_format(count($this->productImagePool)), 10, ' ', STR_PAD_LEFT).' ('.$productSource.')');
+        $this->writeOutput('  Variant Images: '.str_pad(number_format(count($this->variantImagePool)), 10, ' ', STR_PAD_LEFT).' ('.$variantSource.')');
         $this->writeOutput('═══════════════════════════════════════════════════════════════════════');
         $this->writeOutput('');
     }
@@ -545,17 +587,17 @@ class PostgresMassiveProductSeeder extends Seeder
         foreach ($categoryRows as $row) {
             $category = [
                 'id' => (int) $row['id'],
-                'parent_id' => !empty($row['parent_id']) ? (int) $row['parent_id'] : null,
-                'slug' => !empty($row['slug']) ? $row['slug'] : 'product',
-                'has_children' => !empty($row['has_children']),
-                'title' => !empty($row['title']) ? $row['title'] : 'Unknown Category',
+                'parent_id' => ! empty($row['parent_id']) ? (int) $row['parent_id'] : null,
+                'slug' => ! empty($row['slug']) ? $row['slug'] : 'product',
+                'has_children' => ! empty($row['has_children']),
+                'title' => ! empty($row['title']) ? $row['title'] : 'Unknown Category',
             ];
 
             $this->allCategories[] = $category;
             $this->categoryParentMap[$category['id']] = $category['parent_id'];
             $this->categoryNames[$category['id']] = $category['title'];
 
-            if (!$category['has_children']) {
+            if (! $category['has_children']) {
                 $this->leafCategories[] = $category;
             }
         }
@@ -615,7 +657,7 @@ class PostgresMassiveProductSeeder extends Seeder
                     'variant_type_id' => $typeId,
                     'display_value' => $option['display_value'] ?? $option['value'],
                     'value' => $option['value'],
-                    'sku_fragment' => $this->buildSkuFragment($option['display_value'] ?? $option['value'] ?? ('OPT' . $optionId)),
+                    'sku_fragment' => $this->buildSkuFragment($option['display_value'] ?? $option['value'] ?? ('OPT'.$optionId)),
                 ];
                 $this->variantTypeOptions[$typeId][] = $prepared;
                 $this->optionLookup[$optionId] = array_merge($prepared, [
@@ -656,14 +698,14 @@ class PostgresMassiveProductSeeder extends Seeder
         $this->nextAssignmentId = $this->nextIdFor('product_variant_option_assignments');
         $this->nextTypeSelectionId = $this->nextIdFor('product_variant_type_selections');
 
-        $this->writeOutput('  Existing Products:      ' . str_pad(number_format($this->existingProductsCount), 12, ' ', STR_PAD_LEFT));
+        $this->writeOutput('  Existing Products:      '.str_pad(number_format($this->existingProductsCount), 12, ' ', STR_PAD_LEFT));
         $this->writeOutput('  Starting Sequence IDs:');
-        $this->writeOutput('    • Products:             ' . str_pad(number_format($this->nextProductId), 12, ' ', STR_PAD_LEFT));
-        $this->writeOutput('    • Variants:             ' . str_pad(number_format($this->nextVariantId), 12, ' ', STR_PAD_LEFT));
-        $this->writeOutput('    • Product Images:       ' . str_pad(number_format($this->nextProductImageId), 12, ' ', STR_PAD_LEFT));
-        $this->writeOutput('    • Variant Images:       ' . str_pad(number_format($this->nextVariantImageId), 12, ' ', STR_PAD_LEFT));
-        $this->writeOutput('    • Variant Assignments:  ' . str_pad(number_format($this->nextAssignmentId), 12, ' ', STR_PAD_LEFT));
-        $this->writeOutput('    • Type Selections:      ' . str_pad(number_format($this->nextTypeSelectionId), 12, ' ', STR_PAD_LEFT));
+        $this->writeOutput('    • Products:             '.str_pad(number_format($this->nextProductId), 12, ' ', STR_PAD_LEFT));
+        $this->writeOutput('    • Variants:             '.str_pad(number_format($this->nextVariantId), 12, ' ', STR_PAD_LEFT));
+        $this->writeOutput('    • Product Images:       '.str_pad(number_format($this->nextProductImageId), 12, ' ', STR_PAD_LEFT));
+        $this->writeOutput('    • Variant Images:       '.str_pad(number_format($this->nextVariantImageId), 12, ' ', STR_PAD_LEFT));
+        $this->writeOutput('    • Variant Assignments:  '.str_pad(number_format($this->nextAssignmentId), 12, ' ', STR_PAD_LEFT));
+        $this->writeOutput('    • Type Selections:      '.str_pad(number_format($this->nextTypeSelectionId), 12, ' ', STR_PAD_LEFT));
         $this->writeOutput('═══════════════════════════════════════════════════════════════════════');
         $this->writeOutput('');
     }
@@ -671,6 +713,7 @@ class PostgresMassiveProductSeeder extends Seeder
     protected function nextIdFor(string $table): int
     {
         $max = DB::table($table)->max('id');
+
         return $max ? ((int) $max + 1) : 1;
     }
 
@@ -678,6 +721,7 @@ class PostgresMassiveProductSeeder extends Seeder
     {
         if ($this->totalProducts <= 0) {
             $this->writeOutput('No products requested. Exiting seeder.');
+
             return;
         }
 
@@ -800,7 +844,7 @@ class PostgresMassiveProductSeeder extends Seeder
                 }
             }
             // Final flush for this outer batch if any rows remain
-            if (!empty($productRows) || !empty($productImageRows) || !empty($variantRows) || !empty($variantImageRows) || !empty($assignmentRows) || !empty($typeSelectionRows)) {
+            if (! empty($productRows) || ! empty($productImageRows) || ! empty($variantRows) || ! empty($variantImageRows) || ! empty($assignmentRows) || ! empty($typeSelectionRows)) {
                 $this->persistBatch($productRows, $productImageRows, $variantRows, $variantImageRows, $assignmentRows, $typeSelectionRows);
             }
 
@@ -844,51 +888,51 @@ class PostgresMassiveProductSeeder extends Seeder
         $this->writeOutput('╔════════════════════════════════════════════════════════════════════╗');
         $this->writeOutput('║                     SEEDING SUMMARY                                ║');
         $this->writeOutput('╚════════════════════════════════════════════════════════════════════╝');
-        $this->writeOutput('  Products Seeded:       ' . str_pad(number_format($this->productsSeeded), 15, ' ', STR_PAD_LEFT));
-        $this->writeOutput('  → Variant Products:    ' . str_pad(number_format($this->variantProductsSeeded), 15, ' ', STR_PAD_LEFT));
-        $this->writeOutput('  → Non-Variant:         ' . str_pad(number_format($this->nonVariantProductsSeeded), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('  Products Seeded:       '.str_pad(number_format($this->productsSeeded), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('  → Variant Products:    '.str_pad(number_format($this->variantProductsSeeded), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('  → Non-Variant:         '.str_pad(number_format($this->nonVariantProductsSeeded), 15, ' ', STR_PAD_LEFT));
         $this->writeOutput('');
-        $this->writeOutput('  Previous DB Count:     ' . str_pad(number_format($this->existingProductsCount), 15, ' ', STR_PAD_LEFT));
-        $this->writeOutput('  Total in Database:     ' . str_pad(number_format($this->existingProductsCount + $this->productsSeeded), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('  Previous DB Count:     '.str_pad(number_format($this->existingProductsCount), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('  Total in Database:     '.str_pad(number_format($this->existingProductsCount + $this->productsSeeded), 15, ' ', STR_PAD_LEFT));
         $this->writeOutput('');
-        $this->writeOutput('  Images per Product:    ' . str_pad(number_format($this->productImagesPerProduct), 15, ' ', STR_PAD_LEFT));
-        $this->writeOutput('  Images per Variant:    ' . str_pad(number_format($this->variantImagesPerVariant), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('  Images per Product:    '.str_pad(number_format($this->productImagesPerProduct), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('  Images per Variant:    '.str_pad(number_format($this->variantImagesPerVariant), 15, ' ', STR_PAD_LEFT));
 
-        if ($this->shouldTrackInsertedIds() && !empty($this->insertedProductIds)) {
+        if ($this->shouldTrackInsertedIds() && ! empty($this->insertedProductIds)) {
             $this->writeOutput('');
-            $this->writeOutput('  Product ID Range:      ' . min($this->insertedProductIds) . ' → ' . max($this->insertedProductIds));
+            $this->writeOutput('  Product ID Range:      '.min($this->insertedProductIds).' → '.max($this->insertedProductIds));
             $this->writeOutput('');
-            $this->writeOutput('  First 10 IDs: ' . implode(', ', array_slice($this->insertedProductIds, 0, 10)));
+            $this->writeOutput('  First 10 IDs: '.implode(', ', array_slice($this->insertedProductIds, 0, 10)));
             if (count($this->insertedProductIds) > 10) {
-                $this->writeOutput('  Last 10 IDs:  ' . implode(', ', array_slice($this->insertedProductIds, -10)));
+                $this->writeOutput('  Last 10 IDs:  '.implode(', ', array_slice($this->insertedProductIds, -10)));
             }
         } else {
             $this->writeOutput('');
-            $this->writeOutput('  ℹ ID tracking disabled (threshold: ' . number_format($this->maxTrackInsertedIds) . ')');
+            $this->writeOutput('  ℹ ID tracking disabled (threshold: '.number_format($this->maxTrackInsertedIds).')');
         }
 
         $this->writeOutput('');
-        $this->writeOutput('  ⏱ Total Time: ' . $this->formatInterval($totalElapsed));
-        $this->writeOutput('  ⚡ Average Rate: ' . number_format($totalElapsed > 0 ? $this->productsSeeded / $totalElapsed : 0, 0) . ' products/second');
+        $this->writeOutput('  ⏱ Total Time: '.$this->formatInterval($totalElapsed));
+        $this->writeOutput('  ⚡ Average Rate: '.number_format($totalElapsed > 0 ? $this->productsSeeded / $totalElapsed : 0, 0).' products/second');
         $this->writeOutput('');
         $this->writeOutput('  📌 Featured Products Distribution:');
         $totalFeatured = array_sum($this->categoryFeaturedCount);
-        $this->writeOutput('    • Total Featured:       ' . str_pad(number_format($totalFeatured), 15, ' ', STR_PAD_LEFT));
-        $this->writeOutput('    • Categories Seeded:    ' . str_pad(number_format(count($this->categoryFeaturedCount)), 15, ' ', STR_PAD_LEFT));
-        $this->writeOutput('    • Min per Category:     ' . str_pad(number_format($this->minFeaturedPerCategory), 15, ' ', STR_PAD_LEFT));
-        if (!empty($this->categoryFeaturedCount)) {
+        $this->writeOutput('    • Total Featured:       '.str_pad(number_format($totalFeatured), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('    • Categories Seeded:    '.str_pad(number_format(count($this->categoryFeaturedCount)), 15, ' ', STR_PAD_LEFT));
+        $this->writeOutput('    • Min per Category:     '.str_pad(number_format($this->minFeaturedPerCategory), 15, ' ', STR_PAD_LEFT));
+        if (! empty($this->categoryFeaturedCount)) {
             $minFeatured = min($this->categoryFeaturedCount);
             $maxFeatured = max($this->categoryFeaturedCount);
             $avgFeatured = round(array_sum($this->categoryFeaturedCount) / count($this->categoryFeaturedCount));
-            $this->writeOutput('    • Range: Min/Avg/Max:   ' . $minFeatured . ' / ' . $avgFeatured . ' / ' . $maxFeatured);
+            $this->writeOutput('    • Range: Min/Avg/Max:   '.$minFeatured.' / '.$avgFeatured.' / '.$maxFeatured);
         }
 
         // Detailed per-category breakdown
         $this->writeOutput('');
         $this->writeOutput('  📊 Per-Category Breakdown:');
-        $this->writeOutput('  ' . str_repeat('─', 68));
+        $this->writeOutput('  '.str_repeat('─', 68));
         $this->writeOutput(sprintf('  %-30s | %10s | %10s | %8s', 'Category', 'Products', 'Featured', '% Featured'));
-        $this->writeOutput('  ' . str_repeat('─', 68));
+        $this->writeOutput('  '.str_repeat('─', 68));
 
         // Sort by category ID for consistent output
         ksort($this->categoryProductCount);
@@ -907,7 +951,7 @@ class PostgresMassiveProductSeeder extends Seeder
             ));
         }
 
-        $this->writeOutput('  ' . str_repeat('─', 68));
+        $this->writeOutput('  '.str_repeat('─', 68));
         $this->writeOutput('═══════════════════════════════════════════════════════════════════════');
         $this->writeOutput('');
         $this->writeOutput('✅ Seeding completed successfully!');
@@ -922,10 +966,10 @@ class PostgresMassiveProductSeeder extends Seeder
     protected function shouldBeFeatured(int $catId, int $productId): bool
     {
         // Initialize counters for this category if not exists
-        if (!isset($this->categoryFeaturedCount[$catId])) {
+        if (! isset($this->categoryFeaturedCount[$catId])) {
             $this->categoryFeaturedCount[$catId] = 0;
         }
-        if (!isset($this->categoryProductCount[$catId])) {
+        if (! isset($this->categoryProductCount[$catId])) {
             $this->categoryProductCount[$catId] = 0;
         }
 
@@ -936,6 +980,7 @@ class PostgresMassiveProductSeeder extends Seeder
         // If category doesn't have minimum featured products yet, make it featured
         if ($this->categoryFeaturedCount[$catId] < $this->minFeaturedPerCategory) {
             $this->categoryFeaturedCount[$catId]++;
+
             return true;
         }
 
@@ -977,6 +1022,7 @@ class PostgresMassiveProductSeeder extends Seeder
         }
 
         $this->topCategoryCache[$categoryId] = $current;
+
         return $current;
     }
 
@@ -988,12 +1034,13 @@ class PostgresMassiveProductSeeder extends Seeder
 
         $brand = $this->brands[$this->brandCursor % count($this->brands)];
         $this->brandCursor++;
+
         return $brand;
     }
 
     protected function buildProductSlug(string $categorySlug, int $productId): string
     {
-        return trim($categorySlug ?: 'product') . '-' . $productId;
+        return trim($categorySlug ?: 'product').'-'.$productId;
     }
 
     protected function determineStatus(int $productId): string
@@ -1022,7 +1069,7 @@ class PostgresMassiveProductSeeder extends Seeder
 
     protected function generateBaseSku(int $productId): string
     {
-        return 'BASE-' . str_pad((string) $productId, 9, '0', STR_PAD_LEFT);
+        return 'BASE-'.str_pad((string) $productId, 9, '0', STR_PAD_LEFT);
     }
 
     protected function buildProductImages(int $productId, string $timestamp): array
@@ -1032,7 +1079,7 @@ class PostgresMassiveProductSeeder extends Seeder
 
         // Ensure we always have at least the requested number of images
         // If pool is small, repeat images to reach the target count
-        if (count($randomImages) < $this->productImagesPerProduct && !empty($this->productImagePool)) {
+        if (count($randomImages) < $this->productImagesPerProduct && ! empty($this->productImagePool)) {
             while (count($randomImages) < $this->productImagesPerProduct) {
                 $randomImages[] = $this->productImagePool[array_rand($this->productImagePool)];
             }
@@ -1051,6 +1098,7 @@ class PostgresMassiveProductSeeder extends Seeder
                 'updated_at' => $timestamp,
             ];
         }
+
         return $rows;
     }
 
@@ -1150,7 +1198,7 @@ class PostgresMassiveProductSeeder extends Seeder
     protected function selectVariantTypes(int $seed, string $categorySlug = ''): array
     {
         // Check if category has specific variant type mapping (exact or partial match)
-        if (!empty($categorySlug)) {
+        if (! empty($categorySlug)) {
             $allowedTypeNames = null;
 
             // First try exact match
@@ -1179,8 +1227,9 @@ class PostgresMassiveProductSeeder extends Seeder
                     }
                 }
 
-                if (!empty($selected)) {
+                if (! empty($selected)) {
                     usort($selected, fn ($a, $b) => $this->variantTypes[$a]['sort_order'] <=> $this->variantTypes[$b]['sort_order']);
+
                     return $selected;
                 }
             }
@@ -1206,6 +1255,7 @@ class PostgresMassiveProductSeeder extends Seeder
         $selected = array_unique($selected);
         sort($selected);
         usort($selected, fn ($a, $b) => $this->variantTypes[$a]['sort_order'] <=> $this->variantTypes[$b]['sort_order']);
+
         return $selected;
     }
 
@@ -1219,6 +1269,7 @@ class PostgresMassiveProductSeeder extends Seeder
         if ($offset <= 0) {
             return $options;
         }
+
         return array_merge(array_slice($options, $offset), array_slice($options, 0, $offset));
     }
 
@@ -1226,6 +1277,7 @@ class PostgresMassiveProductSeeder extends Seeder
     {
         $combinations = [];
         $this->walkCombinations($optionSets, $typeOrder, 0, [], $combinations, $limit);
+
         return $combinations;
     }
 
@@ -1237,6 +1289,7 @@ class PostgresMassiveProductSeeder extends Seeder
 
         if ($depth === count($typeOrder)) {
             $combinations[] = $current;
+
             return;
         }
 
@@ -1262,12 +1315,12 @@ class PostgresMassiveProductSeeder extends Seeder
         foreach ($typeIds as $typeId) {
             $optionId = $combo[$typeId];
             $option = $this->optionLookup[$optionId] ?? null;
-            if (!$option) {
+            if (! $option) {
                 continue;
             }
             $typeName = $option['type_display_name'] ?? $option['type_name'] ?? 'Option';
             $value = $option['display_value'] ?? $option['value'];
-            $parts[] = $typeName . ': ' . $value;
+            $parts[] = $typeName.': '.$value;
         }
 
         return implode(' / ', $parts);
@@ -1276,7 +1329,7 @@ class PostgresMassiveProductSeeder extends Seeder
     protected function buildSku(int $productId, array $combo, int $index, string $categorySlug = ''): string
     {
         // Initialize sequence counter for this category
-        if (!isset($this->skuSequenceCounters[$categorySlug])) {
+        if (! isset($this->skuSequenceCounters[$categorySlug])) {
             $this->skuSequenceCounters[$categorySlug] = 1;
         }
 
@@ -1292,7 +1345,9 @@ class PostgresMassiveProductSeeder extends Seeder
 
         foreach ($combo as $typeId => $optionId) {
             $option = $this->optionLookup[$optionId] ?? null;
-            if (!$option) continue;
+            if (! $option) {
+                continue;
+            }
 
             $typeName = $this->variantTypes[$typeId]['name'] ?? '';
             $value = $option['sku_fragment'] ?? '';
@@ -1311,10 +1366,18 @@ class PostgresMassiveProductSeeder extends Seeder
         // Format: {color}-{storage}-{ram}-{size}-{timestamp}-{sequenceNumber}
         // Build parts based on what's available for this product category
         $parts = [];
-        if ($color) $parts[] = $color;
-        if ($storage) $parts[] = $storage;
-        if ($ram) $parts[] = $ram;
-        if ($size) $parts[] = $size;
+        if ($color) {
+            $parts[] = $color;
+        }
+        if ($storage) {
+            $parts[] = $storage;
+        }
+        if ($ram) {
+            $parts[] = $ram;
+        }
+        if ($size) {
+            $parts[] = $size;
+        }
         $parts[] = $timestamp;
         $parts[] = $sequenceNumber;
 
@@ -1328,7 +1391,7 @@ class PostgresMassiveProductSeeder extends Seeder
 
         // Ensure we always have at least the requested number of images
         // If pool is small, repeat images to reach the target count
-        if (count($randomImages) < $this->variantImagesPerVariant && !empty($this->variantImagePool)) {
+        if (count($randomImages) < $this->variantImagesPerVariant && ! empty($this->variantImagePool)) {
             while (count($randomImages) < $this->variantImagesPerVariant) {
                 $randomImages[] = $this->variantImagePool[array_rand($this->variantImagePool)];
             }
@@ -1347,6 +1410,7 @@ class PostgresMassiveProductSeeder extends Seeder
                 'updated_at' => $timestamp,
             ];
         }
+
         return $rows;
     }
 
@@ -1365,6 +1429,7 @@ class PostgresMassiveProductSeeder extends Seeder
                 // ignore and treat as empty
             }
         }
+
         return [];
     }
 
@@ -1374,11 +1439,11 @@ class PostgresMassiveProductSeeder extends Seeder
     protected function writeImageListPhpFile(string $file, array $relativePaths): void
     {
         $dir = dirname($file);
-        if (!is_dir($dir)) {
+        if (! is_dir($dir)) {
             @mkdir($dir, 0777, true);
         }
         $export = var_export(array_values($relativePaths), true);
-        $content = "<?php\nreturn " . $export . ";\n";
+        $content = "<?php\nreturn ".$export.";\n";
         @file_put_contents($file, $content);
     }
 
@@ -1388,7 +1453,7 @@ class PostgresMassiveProductSeeder extends Seeder
     protected function writeImageListTextFile(string $file, array $relativePaths): void
     {
         $dir = dirname($file);
-        if (!is_dir($dir)) {
+        if (! is_dir($dir)) {
             @mkdir($dir, 0777, true);
         }
         $content = implode(PHP_EOL, array_values($relativePaths));
@@ -1401,7 +1466,7 @@ class PostgresMassiveProductSeeder extends Seeder
      */
     protected function scanTopLevelImages(string $dir): array
     {
-        if (!is_dir($dir)) {
+        if (! is_dir($dir)) {
             return [];
         }
         $allowed = ['webp', 'jpg', 'jpeg', 'png'];
@@ -1418,7 +1483,7 @@ class PostgresMassiveProductSeeder extends Seeder
             if (strtolower($entry) === 'placeholder.webp') {
                 continue;
             }
-            $full = $dir . DIRECTORY_SEPARATOR . $entry;
+            $full = $dir.DIRECTORY_SEPARATOR.$entry;
             if (is_file($full)) {
                 $ext = strtolower(pathinfo($entry, PATHINFO_EXTENSION));
                 if (in_array($ext, $allowed, true)) {
@@ -1429,6 +1494,7 @@ class PostgresMassiveProductSeeder extends Seeder
         }
         closedir($dh);
         sort($result, SORT_NATURAL | SORT_FLAG_CASE);
+
         return $result;
     }
 
@@ -1451,15 +1517,16 @@ class PostgresMassiveProductSeeder extends Seeder
         if ($count >= $poolSize) {
             $shuffled = $pool;
             shuffle($shuffled);
+
             return $shuffled;
         }
 
         $randomKeys = array_rand($pool, $count);
-        if (!is_array($randomKeys)) {
+        if (! is_array($randomKeys)) {
             $randomKeys = [$randomKeys];
         }
 
-        return array_map(fn($key) => $pool[$key], $randomKeys);
+        return array_map(fn ($key) => $pool[$key], $randomKeys);
     }
 
     protected function generateVariantPrice(): string
@@ -1489,6 +1556,7 @@ class PostgresMassiveProductSeeder extends Seeder
     protected function formatPercent(int $basisPoints): string
     {
         $value = max(0, min($basisPoints / 100, 100));
+
         return number_format($value, 2, '.', '');
     }
 
@@ -1508,22 +1576,22 @@ class PostgresMassiveProductSeeder extends Seeder
             $assignmentRows,
             $typeSelectionRows
         ) {
-            if (!empty($productRows)) {
+            if (! empty($productRows)) {
                 DB::table('products')->insert($productRows);
             }
-            if (!empty($productImageRows)) {
+            if (! empty($productImageRows)) {
                 DB::table('product_images')->insert($productImageRows);
             }
-            if (!empty($variantRows)) {
+            if (! empty($variantRows)) {
                 DB::table('product_variants')->insert($variantRows);
             }
-            if (!empty($variantImageRows)) {
+            if (! empty($variantImageRows)) {
                 DB::table('variant_images')->insert($variantImageRows);
             }
-            if (!empty($assignmentRows)) {
+            if (! empty($assignmentRows)) {
                 DB::table('product_variant_option_assignments')->insert($assignmentRows);
             }
-            if (!empty($typeSelectionRows)) {
+            if (! empty($typeSelectionRows)) {
                 DB::table('product_variant_type_selections')->insert($typeSelectionRows);
             }
         };
@@ -1563,7 +1631,7 @@ class PostgresMassiveProductSeeder extends Seeder
 
         // Show detailed breakdown every 10 batches
         if ($batchIndex % 10 === 0) {
-            $this->writeOutput('   └─ Variant: ' . number_format($this->variantProductsSeeded) . ' │ Non-Variant: ' . number_format($this->nonVariantProductsSeeded));
+            $this->writeOutput('   └─ Variant: '.number_format($this->variantProductsSeeded).' │ Non-Variant: '.number_format($this->nonVariantProductsSeeded));
         }
     }
 
@@ -1576,11 +1644,12 @@ class PostgresMassiveProductSeeder extends Seeder
 
         if (empty($this->categoryProductCount)) {
             $this->writeOutput('  No category data available yet.');
+
             return;
         }
 
         $this->writeOutput(sprintf('  %-30s | %10s | %10s | %8s', 'Category', 'Products', 'Featured', '% Featured'));
-        $this->writeOutput('  ' . str_repeat('─', 68));
+        $this->writeOutput('  '.str_repeat('─', 68));
 
         // Sort by category ID for consistent output
         ksort($this->categoryProductCount);
@@ -1599,7 +1668,7 @@ class PostgresMassiveProductSeeder extends Seeder
             ));
         }
 
-        $this->writeOutput('  ' . str_repeat('─', 68));
+        $this->writeOutput('  '.str_repeat('─', 68));
         $this->writeOutput('');
     }
 
@@ -1651,7 +1720,7 @@ class PostgresMassiveProductSeeder extends Seeder
         if (isset($this->command) && $this->command) {
             $this->command->line($message);
         } else {
-            echo $message . PHP_EOL;
+            echo $message.PHP_EOL;
         }
     }
 
@@ -1667,7 +1736,7 @@ class PostgresMassiveProductSeeder extends Seeder
         $sessionSettings = [
             ['maintenance_work_mem', '1GB', 'maintenance work memory'],
             ['work_mem', '256MB', 'work memory'],
-            ['synchronous_commit', 'OFF', 'synchronous commit', !$this->useTransactions],
+            ['synchronous_commit', 'OFF', 'synchronous commit', ! $this->useTransactions],
         ];
 
         foreach ($sessionSettings as $setting) {
@@ -1762,13 +1831,13 @@ class PostgresMassiveProductSeeder extends Seeder
         // Run ANALYZE to update statistics
         try {
             $this->writeOutput('  Running ANALYZE to update table statistics...');
-            DB::statement("ANALYZE products");
-            DB::statement("ANALYZE product_variants");
-            DB::statement("ANALYZE product_images");
-            DB::statement("ANALYZE variant_images");
+            DB::statement('ANALYZE products');
+            DB::statement('ANALYZE product_variants');
+            DB::statement('ANALYZE product_images');
+            DB::statement('ANALYZE variant_images');
             $this->writeOutput('  ✓ Table statistics updated');
         } catch (\Exception $e) {
-            $this->writeOutput('  ⚠ Warning: Could not update table statistics: ' . $e->getMessage());
+            $this->writeOutput('  ⚠ Warning: Could not update table statistics: '.$e->getMessage());
         }
     }
 
@@ -1795,7 +1864,7 @@ class PostgresMassiveProductSeeder extends Seeder
                 DB::statement("ALTER TABLE {$table} SET UNLOGGED");
                 $successCount++;
             } catch (\Exception $e) {
-                $this->writeOutput("  ⚠ Could not set {$table} to UNLOGGED: " . $e->getMessage());
+                $this->writeOutput("  ⚠ Could not set {$table} to UNLOGGED: ".$e->getMessage());
             }
         }
 
@@ -1855,16 +1924,16 @@ class PostgresMassiveProductSeeder extends Seeder
         foreach ($tables as $table) {
             try {
                 DB::statement("SELECT setval(pg_get_serial_sequence('{$table}', 'id'), COALESCE((SELECT MAX(id) FROM {$table}), 0))");
-                $this->writeOutput('  ✓ Synced sequence for ' . $table);
+                $this->writeOutput('  ✓ Synced sequence for '.$table);
             } catch (\Exception $e) {
-                $this->writeOutput('  ⚠ Warning: Could not sync sequence for ' . $table . ': ' . $e->getMessage());
+                $this->writeOutput('  ⚠ Warning: Could not sync sequence for '.$table.': '.$e->getMessage());
             }
         }
     }
 
     protected function dropNonPrimaryIndexes(): void
     {
-        if (!$this->disableIndexesDuringInsert) {
+        if (! $this->disableIndexesDuringInsert) {
             return;
         }
 
@@ -1903,13 +1972,13 @@ class PostgresMassiveProductSeeder extends Seeder
             $this->writeOutput('  ✓ Dropped non-primary indexes');
             $this->writeOutput('  ⚠ IMPORTANT: Indexes will be recreated after seeding');
         } catch (\Exception $e) {
-            $this->writeOutput('  ⚠ Warning: Could not drop all indexes: ' . $e->getMessage());
+            $this->writeOutput('  ⚠ Warning: Could not drop all indexes: '.$e->getMessage());
         }
     }
 
     protected function recreateIndexes(): void
     {
-        if (!$this->disableIndexesDuringInsert) {
+        if (! $this->disableIndexesDuringInsert) {
             return;
         }
 
@@ -1947,7 +2016,7 @@ class PostgresMassiveProductSeeder extends Seeder
 
             $this->writeOutput('  ✓ Indexes recreated');
         } catch (\Exception $e) {
-            $this->writeOutput('  ⚠ Warning: Could not recreate all indexes: ' . $e->getMessage());
+            $this->writeOutput('  ⚠ Warning: Could not recreate all indexes: '.$e->getMessage());
         }
     }
 
@@ -1962,7 +2031,7 @@ class PostgresMassiveProductSeeder extends Seeder
 
     protected function dropForeignKeys(): void
     {
-        if (!$this->dropForeignKeysDuringInsert) {
+        if (! $this->dropForeignKeysDuringInsert) {
             return;
         }
 
@@ -1997,13 +2066,13 @@ class PostgresMassiveProductSeeder extends Seeder
             $this->writeOutput('  ✓ Dropped foreign keys');
             $this->writeOutput('  ⚠ IMPORTANT: Foreign keys will be recreated after seeding');
         } catch (\Exception $e) {
-            $this->writeOutput('  ⚠ Warning: Could not drop all foreign keys: ' . $e->getMessage());
+            $this->writeOutput('  ⚠ Warning: Could not drop all foreign keys: '.$e->getMessage());
         }
     }
 
     protected function recreateForeignKeys(): void
     {
-        if (!$this->dropForeignKeysDuringInsert) {
+        if (! $this->dropForeignKeysDuringInsert) {
             return;
         }
 
@@ -2123,7 +2192,7 @@ class PostgresMassiveProductSeeder extends Seeder
                 $this->writeOutput("  ⓘ Skipped {$failedCount} constraint(s) (table or column may not exist)");
             }
         } catch (\Exception $e) {
-            $this->writeOutput('  ⚠ Warning: Error during foreign key recreation: ' . $e->getMessage());
+            $this->writeOutput('  ⚠ Warning: Error during foreign key recreation: '.$e->getMessage());
         }
     }
 
@@ -2164,12 +2233,12 @@ class PostgresMassiveProductSeeder extends Seeder
             $typeSelectionCount = DB::table('product_variant_type_selections')->count();
 
             $this->writeOutput('📊 Record Counts:');
-            $this->writeOutput('  Products:                    ' . str_pad(number_format($productCount), 15, ' ', STR_PAD_LEFT));
-            $this->writeOutput('  Product Variants:            ' . str_pad(number_format($variantCount), 15, ' ', STR_PAD_LEFT));
-            $this->writeOutput('  Product Images:              ' . str_pad(number_format($productImageCount), 15, ' ', STR_PAD_LEFT));
-            $this->writeOutput('  Variant Images:              ' . str_pad(number_format($variantImageCount), 15, ' ', STR_PAD_LEFT));
-            $this->writeOutput('  Variant Assignments:         ' . str_pad(number_format($assignmentCount), 15, ' ', STR_PAD_LEFT));
-            $this->writeOutput('  Type Selections:             ' . str_pad(number_format($typeSelectionCount), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Products:                    '.str_pad(number_format($productCount), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Product Variants:            '.str_pad(number_format($variantCount), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Product Images:              '.str_pad(number_format($productImageCount), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Variant Images:              '.str_pad(number_format($variantImageCount), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Variant Assignments:         '.str_pad(number_format($assignmentCount), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Type Selections:             '.str_pad(number_format($typeSelectionCount), 15, ' ', STR_PAD_LEFT));
             $this->writeOutput('');
 
             // Get ID ranges
@@ -2177,9 +2246,9 @@ class PostgresMassiveProductSeeder extends Seeder
             $maxProductId = DB::table('products')->max('id');
 
             $this->writeOutput('🔢 Product ID Range:');
-            $this->writeOutput('  Min ID:                      ' . str_pad(number_format($minProductId), 15, ' ', STR_PAD_LEFT));
-            $this->writeOutput('  Max ID:                      ' . str_pad(number_format($maxProductId), 15, ' ', STR_PAD_LEFT));
-            $this->writeOutput('  Range Span:                  ' . str_pad(number_format($maxProductId - $minProductId + 1), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Min ID:                      '.str_pad(number_format($minProductId), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Max ID:                      '.str_pad(number_format($maxProductId), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Range Span:                  '.str_pad(number_format($maxProductId - $minProductId + 1), 15, ' ', STR_PAD_LEFT));
             $this->writeOutput('');
 
             // Verify data integrity
@@ -2187,58 +2256,58 @@ class PostgresMassiveProductSeeder extends Seeder
 
             // Check for orphaned variants
             $orphanedVariants = DB::table('product_variants')
-                ->whereNotExists(function($query) {
+                ->whereNotExists(function ($query) {
                     $query->select(DB::raw(1))
                           ->from('products')
                           ->whereColumn('products.id', 'product_variants.product_id');
                 })
                 ->count();
 
-            $this->writeOutput('  Orphaned Variants:           ' . str_pad(number_format($orphanedVariants), 15, ' ', STR_PAD_LEFT) . ($orphanedVariants > 0 ? ' ⚠️' : ' ✅'));
+            $this->writeOutput('  Orphaned Variants:           '.str_pad(number_format($orphanedVariants), 15, ' ', STR_PAD_LEFT).($orphanedVariants > 0 ? ' ⚠️' : ' ✅'));
 
             // Check for orphaned product images
             $orphanedProductImages = DB::table('product_images')
-                ->whereNotExists(function($query) {
+                ->whereNotExists(function ($query) {
                     $query->select(DB::raw(1))
                           ->from('products')
                           ->whereColumn('products.id', 'product_images.product_id');
                 })
                 ->count();
 
-            $this->writeOutput('  Orphaned Product Images:     ' . str_pad(number_format($orphanedProductImages), 15, ' ', STR_PAD_LEFT) . ($orphanedProductImages > 0 ? ' ⚠️' : ' ✅'));
+            $this->writeOutput('  Orphaned Product Images:     '.str_pad(number_format($orphanedProductImages), 15, ' ', STR_PAD_LEFT).($orphanedProductImages > 0 ? ' ⚠️' : ' ✅'));
 
             // Check for orphaned variant images
             $orphanedVariantImages = DB::table('variant_images')
-                ->whereNotExists(function($query) {
+                ->whereNotExists(function ($query) {
                     $query->select(DB::raw(1))
                           ->from('product_variants')
                           ->whereColumn('product_variants.id', 'variant_images.product_variant_id');
                 })
                 ->count();
 
-            $this->writeOutput('  Orphaned Variant Images:     ' . str_pad(number_format($orphanedVariantImages), 15, ' ', STR_PAD_LEFT) . ($orphanedVariantImages > 0 ? ' ⚠️' : ' ✅'));
+            $this->writeOutput('  Orphaned Variant Images:     '.str_pad(number_format($orphanedVariantImages), 15, ' ', STR_PAD_LEFT).($orphanedVariantImages > 0 ? ' ⚠️' : ' ✅'));
 
             // Check for products without images
             $productsWithoutImages = DB::table('products')
-                ->whereNotExists(function($query) {
+                ->whereNotExists(function ($query) {
                     $query->select(DB::raw(1))
                           ->from('product_images')
                           ->whereColumn('product_images.product_id', 'products.id');
                 })
                 ->count();
 
-            $this->writeOutput('  Products Without Images:     ' . str_pad(number_format($productsWithoutImages), 15, ' ', STR_PAD_LEFT) . ($productsWithoutImages > 0 ? ' ⚠️' : ' ✅'));
+            $this->writeOutput('  Products Without Images:     '.str_pad(number_format($productsWithoutImages), 15, ' ', STR_PAD_LEFT).($productsWithoutImages > 0 ? ' ⚠️' : ' ✅'));
 
             // Check for variants without assignments
             $variantsWithoutAssignments = DB::table('product_variants')
-                ->whereNotExists(function($query) {
+                ->whereNotExists(function ($query) {
                     $query->select(DB::raw(1))
                           ->from('product_variant_option_assignments')
                           ->whereColumn('product_variant_option_assignments.product_variant_id', 'product_variants.id');
                 })
                 ->count();
 
-            $this->writeOutput('  Variants Without Assignments:' . str_pad(number_format($variantsWithoutAssignments), 15, ' ', STR_PAD_LEFT) . ($variantsWithoutAssignments > 0 ? ' ⚠️' : ' ✅'));
+            $this->writeOutput('  Variants Without Assignments:'.str_pad(number_format($variantsWithoutAssignments), 15, ' ', STR_PAD_LEFT).($variantsWithoutAssignments > 0 ? ' ⚠️' : ' ✅'));
 
             $this->writeOutput('');
 
@@ -2248,9 +2317,9 @@ class PostgresMassiveProductSeeder extends Seeder
             $avgImagesPerVariant = $variantCount > 0 ? $variantImageCount / $variantCount : 0;
 
             $this->writeOutput('📈 Averages:');
-            $this->writeOutput('  Variants per Product:        ' . str_pad(number_format($avgVariantsPerProduct, 2), 15, ' ', STR_PAD_LEFT));
-            $this->writeOutput('  Images per Product:          ' . str_pad(number_format($avgImagesPerProduct, 2), 15, ' ', STR_PAD_LEFT));
-            $this->writeOutput('  Images per Variant:          ' . str_pad(number_format($avgImagesPerVariant, 2), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Variants per Product:        '.str_pad(number_format($avgVariantsPerProduct, 2), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Images per Product:          '.str_pad(number_format($avgImagesPerProduct, 2), 15, ' ', STR_PAD_LEFT));
+            $this->writeOutput('  Images per Variant:          '.str_pad(number_format($avgImagesPerVariant, 2), 15, ' ', STR_PAD_LEFT));
             $this->writeOutput('');
 
             // Summary
@@ -2260,14 +2329,13 @@ class PostgresMassiveProductSeeder extends Seeder
             if ($totalIssues === 0) {
                 $this->writeOutput('✅ All integrity checks passed!');
             } else {
-                $this->writeOutput('⚠️  Found ' . $totalIssues . ' integrity issue(s) - review recommended');
+                $this->writeOutput('⚠️  Found '.$totalIssues.' integrity issue(s) - review recommended');
             }
 
             $this->writeOutput('═══════════════════════════════════════════════════════════════════════');
             $this->writeOutput('');
-
         } catch (\Exception $e) {
-            $this->writeOutput('⚠️  Verification failed: ' . $e->getMessage());
+            $this->writeOutput('⚠️  Verification failed: '.$e->getMessage());
             $this->writeOutput('');
         }
     }
