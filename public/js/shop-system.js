@@ -672,7 +672,13 @@
                 d = t.getCategorySlug();
             d && (n += `/${d}`);
             try {
-                let c = await fetch(`${n}?${l.toString()}`, { method: "GET", signal: this.abortController.signal, headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" } });
+                let c = await fetch(`${n}?${l.toString()}`, {
+                    method: "GET",
+                    signal: this.abortController.signal,
+                    cache: "no-store",
+                    credentials: "same-origin",
+                    headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" }
+                });
                 if (!c.ok) throw Error(`Server returned ${c.status}`);
                 let o = await c.json();
                 if (o.ok && s) {

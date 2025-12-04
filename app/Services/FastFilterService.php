@@ -59,9 +59,9 @@ class FastFilterService
         }
 
         if (! empty($filters['price_range'])) {
-            $priceKey = RedisKeyManager::indexPriceRange($filters['price_range']);
-            if (Redis::exists($priceKey)) {
-                $sets[] = $priceKey;
+            $priceUnionKey = $this->unionPriceRanges($filters['price_range']);
+            if ($priceUnionKey) {
+                $sets[] = $priceUnionKey;
             }
         }
 
@@ -74,9 +74,9 @@ class FastFilterService
 
         if (! empty($filters['min_discount'])) {
             $discountKey = RedisKeyManager::indexDiscount($filters['min_discount']);
-            if (Redis::exists($discountKey)) {
-                $sets[] = $discountKey;
-            }
+            // Always add discount filter to force 0 results if index is empty
+            // Empty index means no products match this discount level
+            $sets[] = $discountKey;
         }
 
         // No filters = return empty (or all products if you prefer)
@@ -185,12 +185,13 @@ class FastFilterService
 
         // Single category - no union needed
         if (count($categoryIds) === 1) {
-            return "index:category:{$categoryIds[0]}";
+            $key = RedisKeyManager::indexCategory($categoryIds[0]);
+            return Redis::exists($key) ? $key : null;
         }
 
         $sets = [];
         foreach ($categoryIds as $catId) {
-            $key = "index:category:{$catId}";
+            $key = RedisKeyManager::indexCategory($catId);
             if (Redis::exists($key)) {
                 $sets[] = $key;
             }
@@ -201,8 +202,65 @@ class FastFilterService
         }
 
         // Create temp union set
-        $unionKey = 'temp:union:categories:'.md5(implode(',', $categoryIds));
+        $unionKey = RedisKeyManager::tempFilter('categories:' . md5(implode(',', $categoryIds)));
         Redis::sunionstore($unionKey, ...$sets);
+        Redis::expire($unionKey, 300); // 5 min
+
+        return $unionKey;
+    }
+
+    /**
+     * Union price range sets
+     * Maps dynamic ranges (e.g., 0-500) to fixed Redis indexes (0-100, 100-500)
+     */
+    private function unionPriceRanges(string $priceRange): ?string
+    {
+        if (empty($priceRange)) {
+            return null;
+        }
+
+        // Parse price range: "100-500" or "500+"
+        $minPrice = 0;
+        $maxPrice = PHP_INT_MAX;
+
+        if (str_contains($priceRange, '-')) {
+            [$minPrice, $maxPrice] = explode('-', $priceRange, 2);
+            $minPrice = (float) $minPrice;
+            $maxPrice = (float) $maxPrice;
+        } elseif (str_contains($priceRange, '+')) {
+            $minPrice = (float) str_replace('+', '', $priceRange);
+            $maxPrice = PHP_INT_MAX;
+        }
+
+        // Map to fixed Redis price indexes: 0-100, 100-500, 500-1000
+        $fixedRanges = [
+            ['min' => 0, 'max' => 100, 'key' => RedisKeyManager::indexPriceRange('0-100')],
+            ['min' => 100, 'max' => 500, 'key' => RedisKeyManager::indexPriceRange('100-500')],
+            ['min' => 500, 'max' => 1000, 'key' => RedisKeyManager::indexPriceRange('500-1000')],
+        ];
+
+        $matchingSets = [];
+        foreach ($fixedRanges as $range) {
+            // Include if ranges overlap: fixed_max >= requested_min AND fixed_min <= requested_max
+            if ($range['max'] >= $minPrice && $range['min'] <= $maxPrice) {
+                if (Redis::exists($range['key'])) {
+                    $matchingSets[] = $range['key'];
+                }
+            }
+        }
+
+        if (empty($matchingSets)) {
+            return null;
+        }
+
+        // Single range - no union needed
+        if (count($matchingSets) === 1) {
+            return $matchingSets[0];
+        }
+
+        // Multiple ranges - create union
+        $unionKey = RedisKeyManager::tempFilter('price:' . md5($priceRange));
+        Redis::sunionstore($unionKey, ...$matchingSets);
         Redis::expire($unionKey, 300); // 5 min
 
         return $unionKey;
@@ -219,12 +277,13 @@ class FastFilterService
 
         // Single brand - no union needed
         if (count($brandIds) === 1) {
-            return "index:brand:{$brandIds[0]}";
+            $key = RedisKeyManager::indexBrand($brandIds[0]);
+            return Redis::exists($key) ? $key : null;
         }
 
         $sets = [];
         foreach ($brandIds as $brandId) {
-            $key = "index:brand:{$brandId}";
+            $key = RedisKeyManager::indexBrand($brandId);
             if (Redis::exists($key)) {
                 $sets[] = $key;
             }
@@ -235,7 +294,7 @@ class FastFilterService
         }
 
         // Create temp union set
-        $unionKey = 'temp:union:brands:'.md5(implode(',', $brandIds));
+        $unionKey = RedisKeyManager::tempFilter('brands:' . md5(implode(',', $brandIds)));
         Redis::sunionstore($unionKey, ...$sets);
         Redis::expire($unionKey, 300); // 5 min
 

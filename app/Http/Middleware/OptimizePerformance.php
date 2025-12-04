@@ -34,8 +34,6 @@ class OptimizePerformance
     /**
      * Handle an incoming request.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Closure  $next
      * @return mixed
      */
     public function handle(Request $request, Closure $next)
@@ -43,7 +41,7 @@ class OptimizePerformance
         $response = $next($request);
 
         // Only optimize HTML responses
-        if (!$this->shouldOptimize($response)) {
+        if (! $this->shouldOptimize($response)) {
             return $response;
         }
 
@@ -58,21 +56,16 @@ class OptimizePerformance
 
     /**
      * Determine if response should be optimized.
-     *
-     * @param  \Symfony\Component\HttpFoundation\Response  $response
-     * @return bool
      */
     protected function shouldOptimize(Response $response): bool
     {
         $contentType = $response->headers->get('Content-Type', '');
+
         return stripos($contentType, 'text/html') !== false;
     }
 
     /**
      * Add resource hints (preload, dns-prefetch, preconnect).
-     *
-     * @param  \Symfony\Component\HttpFoundation\Response  $response
-     * @return void
      */
     protected function addResourceHints(Response $response): void
     {
@@ -88,11 +81,11 @@ class OptimizePerformance
         foreach ($this->criticalAssets as $asset => $attrs) {
             $resolved = $this->resolveAssetPath($asset);
             $linkValue = "<{$resolved}>; rel=preload; as={$attrs['as']}";
-            
+
             if (isset($attrs['crossorigin'])) {
                 $linkValue .= '; crossorigin';
             }
-            
+
             if (isset($attrs['type'])) {
                 $linkValue .= "; type={$attrs['type']}";
             }
@@ -101,7 +94,7 @@ class OptimizePerformance
         }
 
         // Add all Link headers at once
-        if (!empty($links)) {
+        if (! empty($links)) {
             $response->headers->set('Link', implode(', ', $links), false);
         }
     }
@@ -117,14 +110,12 @@ class OptimizePerformance
 
     /**
      * Add optimal cache headers.
-     *
-     * @param  \Symfony\Component\HttpFoundation\Response  $response
-     * @return void
      */
     protected function addCacheHeaders(Response $response): void
     {
         // For HTML pages: use stale-while-revalidate for better UX
-        if (!$response->headers->has('Cache-Control')) {
+        // Don't override if controller already set Cache-Control (e.g., for API debugging)
+        if (! $response->headers->has('Cache-Control')) {
             $response->headers->set(
                 'Cache-Control',
                 'public, max-age=300, stale-while-revalidate=600, stale-if-error=86400'
@@ -132,16 +123,13 @@ class OptimizePerformance
         }
 
         // Add timing headers
-        if (!$response->headers->has('X-Content-Type-Options')) {
+        if (! $response->headers->has('X-Content-Type-Options')) {
             $response->headers->set('X-Content-Type-Options', 'nosniff');
         }
     }
 
     /**
      * Add security headers.
-     *
-     * @param  \Symfony\Component\HttpFoundation\Response  $response
-     * @return void
      */
     protected function addSecurityHeaders(Response $response): void
     {
@@ -153,7 +141,7 @@ class OptimizePerformance
         ];
 
         foreach ($headers as $key => $value) {
-            if (!$response->headers->has($key)) {
+            if (! $response->headers->has($key)) {
                 $response->headers->set($key, $value);
             }
         }
@@ -161,9 +149,6 @@ class OptimizePerformance
 
     /**
      * Optimize response headers for performance.
-     *
-     * @param  \Symfony\Component\HttpFoundation\Response  $response
-     * @return void
      */
     protected function optimizeHeaders(Response $response): void
     {

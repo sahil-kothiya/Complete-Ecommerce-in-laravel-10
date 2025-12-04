@@ -214,7 +214,7 @@ class IndexHealthService
         $missing = [];
         
         if (!empty($filters['category_id'])) {
-            $key = "index:category:{$filters['category_id']}";
+            $key = RedisKeyManager::indexCategory($filters['category_id']);
             if (!$this->indexExists($key)) {
                 $missing[] = $key;
             }
@@ -222,7 +222,7 @@ class IndexHealthService
         
         if (!empty($filters['brands'])) {
             foreach ($filters['brands'] as $brandId) {
-                $key = "index:brand:{$brandId}";
+                $key = RedisKeyManager::indexBrand($brandId);
                 if (!$this->indexExists($key)) {
                     $missing[] = $key;
                 }
@@ -230,21 +230,21 @@ class IndexHealthService
         }
         
         if (!empty($filters['price_range'])) {
-            $key = "index:price:{$filters['price_range']}";
+            $key = RedisKeyManager::indexPriceRange($filters['price_range']);
             if (!$this->indexExists($key)) {
                 $missing[] = $key;
             }
         }
         
         if (!empty($filters['min_rating'])) {
-            $key = "index:rating:{$filters['min_rating']}";
+            $key = RedisKeyManager::indexRating($filters['min_rating']);
             if (!$this->indexExists($key)) {
                 $missing[] = $key;
             }
         }
         
         if (!empty($filters['min_discount'])) {
-            $key = "index:discount:{$filters['min_discount']}";
+            $key = RedisKeyManager::indexDiscount($filters['min_discount']);
             if (!$this->indexExists($key)) {
                 $missing[] = $key;
             }
@@ -276,25 +276,26 @@ class IndexHealthService
      */
     private function buildSingleIndex(string $indexKey, ProductIndexService $indexService): void
     {
+        // New format: ec:idx:cat:4 or ec:idx:br:10
         $parts = explode(':', $indexKey);
-        if (count($parts) < 3) {
+        if (count($parts) < 4) {
             return;
         }
         
-        $type = $parts[1]; // category, brand, price, etc.
-        $value = $parts[2];
+        $type = $parts[2]; // cat, br, price, rating, discount
+        $value = $parts[3];
         
         Log::info("Building single index: {$indexKey}");
         
         switch ($type) {
-            case 'category':
+            case 'cat':
                 $this->buildCategoryIndex((int)$value);
                 break;
-            case 'brand':
+            case 'br':
                 $this->buildBrandIndex((int)$value);
                 break;
             case 'price':
-                $this->buildPriceRangeIndex($value);
+                $this->buildPriceIndex($value);
                 break;
             case 'rating':
                 $this->buildRatingIndex((int)$value);
@@ -310,7 +311,7 @@ class IndexHealthService
      */
     private function buildCategoryIndex(int $categoryId): void
     {
-        $indexKey = "index:category:{$categoryId}";
+        $indexKey = RedisKeyManager::indexCategory($categoryId);
         Redis::del($indexKey);
         
         DB::table('products')
@@ -337,7 +338,7 @@ class IndexHealthService
      */
     private function buildBrandIndex(int $brandId): void
     {
-        $indexKey = "index:brand:{$brandId}";
+        $indexKey = RedisKeyManager::indexBrand($brandId);
         Redis::del($indexKey);
         
         DB::table('products')
@@ -359,9 +360,9 @@ class IndexHealthService
     /**
      * Build single price range index
      */
-    private function buildPriceRangeIndex(string $rangeKey): void
+    private function buildPriceIndex(string $rangeKey): void
     {
-        $indexKey = "index:price:{$rangeKey}";
+        $indexKey = RedisKeyManager::indexPriceRange($rangeKey);
         Redis::del($indexKey);
         
         $ranges = [
@@ -419,7 +420,7 @@ class IndexHealthService
      */
     private function buildRatingIndex(int $minRating): void
     {
-        $indexKey = "index:rating:{$minRating}";
+        $indexKey = RedisKeyManager::indexRating($minRating);
         Redis::del($indexKey);
         
         DB::table('products')
@@ -445,7 +446,7 @@ class IndexHealthService
      */
     private function buildDiscountIndex(int $minDiscount): void
     {
-        $indexKey = "index:discount:{$minDiscount}";
+        $indexKey = RedisKeyManager::indexDiscount($minDiscount);
         Redis::del($indexKey);
         
         // Base products
@@ -498,7 +499,7 @@ class IndexHealthService
     private function getIndexKeyCount(): int
     {
         try {
-            return count(Redis::keys('index:*'));
+            return count(Redis::keys('ec:idx:*'));
         } catch (\Exception $e) {
             return 0;
         }
@@ -516,7 +517,7 @@ class IndexHealthService
             ->pluck('id');
         
         foreach ($categories as $catId) {
-            $critical[] = "index:category:{$catId}";
+            $critical[] = RedisKeyManager::indexCategory($catId);
         }
         
         // Get first 3 brands
@@ -526,12 +527,12 @@ class IndexHealthService
             ->pluck('id');
         
         foreach ($brands as $brandId) {
-            $critical[] = "index:brand:{$brandId}";
+            $critical[] = RedisKeyManager::indexBrand($brandId);
         }
         
         // Critical price ranges
-        $critical[] = 'index:price:0-100';
-        $critical[] = 'index:price:100-500';
+        $critical[] = RedisKeyManager::indexPriceRange('0-100');
+        $critical[] = RedisKeyManager::indexPriceRange('100-500');
         
         return $critical;
     }
@@ -539,7 +540,7 @@ class IndexHealthService
     private function areIndexesFresh(): bool
     {
         try {
-            $sampleKeys = array_slice(Redis::keys('index:*'), 0, 10);
+            $sampleKeys = array_slice(Redis::keys('ec:idx:*'), 0, 10);
             
             foreach ($sampleKeys as $key) {
                 $ttl = Redis::ttl($key);
@@ -559,7 +560,7 @@ class IndexHealthService
         $stale = [];
         
         try {
-            $allIndexes = Redis::keys('index:*');
+            $allIndexes = Redis::keys('ec:idx:*');
             
             foreach ($allIndexes as $key) {
                 $ttl = Redis::ttl($key);

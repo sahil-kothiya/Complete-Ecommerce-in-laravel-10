@@ -59,7 +59,8 @@ class UltraFastFilterController extends Controller
             $sortBy = $request->input('sortBy', 'latest');
 
             // Check index health and attempt on-demand rebuild if needed
-            $this->ensureIndexesExist($categoryContext, $currentFilters);
+            // DISABLED: On-demand building causes race conditions
+            // $this->ensureIndexesExist($categoryContext, $currentFilters);
 
             // Use Redis indexes for all filtering (no Elasticsearch for now)
             $result = $this->getRedisIndexResults($categoryContext, $currentFilters, $page, $perPage, $sortBy);
@@ -81,7 +82,9 @@ class UltraFastFilterController extends Controller
                     'msg' => $result['message'] ?? null,
                 ],
             ], 200, [
-                'Cache-Control' => 'public, max-age='.self::CACHE_TTL,
+                'Cache-Control' => 'no-cache, no-store, must-revalidate', // TEMP: Disable caching for debugging
+                'Pragma' => 'no-cache',
+                'Expires' => '0',
                 'X-Response-Time' => $executionTime.'ms',
             ]);
         } catch (\Exception $e) {
@@ -136,165 +139,123 @@ class UltraFastFilterController extends Controller
 
     /**
      * Use Redis Set-based indexes for ultra-fast filtering
-     * OPTIMIZED FOR 10M PRODUCTS: Use database with indexed WHERE clauses
-     * NOW WITH AUTOMATIC FALLBACK: If Redis indexes missing, uses pure database
+     * OPTIMIZED FOR 10M PRODUCTS: Use FastFilterService with Redis SET operations
+     * Fallback to database only if Redis indexes unavailable
      */
     private function getRedisIndexResults($category, array $filters, int $page, int $perPage, string $sortBy): array
     {
         $cacheKey = $this->generateCacheKey($category, $filters, $page, $perPage, $sortBy);
 
+        // TEMPORARILY DISABLED: Caching disabled for debugging filter issues
         // Use shorter TTL for filter results to keep cache fresh
-        $cacheTtl = 180; // 3 minutes instead of 5
+        // $cacheTtl = 180; // 3 minutes instead of 5
 
-        return Cache::remember($cacheKey, $cacheTtl, function () use ($category, $filters, $page, $perPage, $sortBy) {
-            // Log the sort parameter for debugging
-            Log::info('UltraFastFilter Query', [
-                'sortBy' => $sortBy,
-                'filters' => $filters,
-                'category' => $category?->slug,
-                'page' => $page,
+        // return Cache::remember($cacheKey, $cacheTtl, function () use ($category, $filters, $page, $perPage, $sortBy) {
+
+        // Execute query directly without caching
+
+        $startTime = microtime(true);
+
+        // Log the sort parameter for debugging
+        Log::info('UltraFastFilter Query', [
+            'sortBy' => $sortBy,
+            'filters' => $filters,
+            'category' => $category?->slug,
+            'page' => $page,
+        ]);
+
+        // Convert filters to FastFilterService format
+        $redisFilters = $this->convertFiltersForRedis($filters, $category);
+
+        Log::info('Converted Redis Filters', ['redis_filters' => $redisFilters]);
+
+        // Use FastFilterService to get product IDs via Redis SET operations (5-50ms)
+        $result = $this->filterService->getFilteredProductIds($redisFilters);
+
+        $redisTime = round((microtime(true) - $startTime) * 1000, 2);
+        Log::info('FastFilter Redis Query Time', ['time_ms' => $redisTime, 'count' => $result['count']]);
+
+        // Debug: Check if Redis result is 0 - verify against PostgreSQL
+        if ($result['count'] === 0 || ! $result['key']) {
+            Log::warning('❌ REDIS RETURNED 0 RESULTS - Checking PostgreSQL', [
+                'filters_received' => $filters,
+                'redis_filters' => $redisFilters,
+                'redis_result' => $result,
+                'category' => $category?->slug ?? 'none',
             ]);
 
-            // Convert filters to database query (robust fallback strategy)
-            $query = Product::where('products.status', 'active');
+            // Verify: Check if PostgreSQL has products for this category
+            $dbCount = $this->verifyDatabaseHasProducts($category, $filters);
 
-            $priceFilterConfig = $this->parsePriceFilterConfig($filters['price_range'] ?? '');
-            $requiresVariantPricing = $priceFilterConfig !== null || in_array($sortBy, ['price_low_high', 'price_high_low']);
-
-            if ($requiresVariantPricing) {
-                $variantPriceSubquery = $this->buildVariantPriceSubquery($priceFilterConfig);
-                $query->leftJoin(
-                    DB::raw("LATERAL ({$variantPriceSubquery}) as pv_min"),
-                    DB::raw('TRUE'),
-                    DB::raw('TRUE')
-                );
-            }
-
-            $effectivePriceExpression = $this->getEffectivePriceExpression($requiresVariantPricing);
-
-            // Apply category filter (indexed column - fast)
-            if ($category) {
-                $query->where('products.cat_id', $category->id);
-            }
-
-            // Apply brand filter (indexed column - fast)
-            if (! empty($filters['brands'])) {
-                $brandIds = $this->getBrandIdsBySlug($filters['brands']);
-                if (! empty($brandIds)) {
-                    // Optimize: Use IN clause with limit to prevent full scan
-                    $query->whereIn('products.brand_id', array_slice($brandIds, 0, 50)); // Max 50 brands
-                }
-            }
-
-            // Apply price range filter using effective price expression (covers variants via lateral join)
-            if ($priceFilterConfig) {
-                if ($priceFilterConfig['type'] === 'between') {
-                    $query->whereBetween(DB::raw($effectivePriceExpression), [$priceFilterConfig['min'], $priceFilterConfig['max']]);
-                } else {
-                    $query->where(DB::raw($effectivePriceExpression), '>=', $priceFilterConfig['min']);
-                }
-            }
-
-            // Apply rating filter - OPTIMIZED with LEFT JOIN
-            if (! empty($filters['ratings'])) {
-                $minRating = min(array_map('intval', $filters['ratings']));
-                $query->leftJoin('product_ratings_cache as prc', 'products.id', '=', 'prc.product_id')
-                      ->where('prc.average_rating', '>=', $minRating);
-            }
-
-            // Apply discount filter - OPTIMIZED to prevent timeout
-            if (! empty($filters['discounts'])) {
-                $minDiscount = min(array_map('intval', $filters['discounts']));
-
-                // Simplified: Only check base_discount for speed
-                $query->where(function ($q) use ($minDiscount) {
-                    $q->where('base_discount', '>=', $minDiscount)
-                      ->orWhere(function ($subQ) use ($minDiscount) {
-                          // For variant products, be permissive (check later)
-                          $subQ->where('has_variants', true)
-                               ->where('base_discount', '>=', $minDiscount * 0.5);
-                      });
-                });
-            }
-
-            // Get total count (fast with indexes) - clone query to avoid interference
-            $total = (clone $query)->count('products.id');
-
-            if ($total === 0) {
-                // Show similar products instead of empty page
-                return $this->buildSimilarProductsResponse($category, $filters, $perPage);
-            }
-
-            // Select base fields (after count to avoid interference)
-            $query->select([
-                'products.id', 'products.title', 'products.slug', 'products.base_price',
-                'products.base_discount', 'products.base_stock', 'products.condition',
-                'products.has_variants', 'products.brand_id',
+            Log::warning('🔍 DATABASE VERIFICATION', [
+                'redis_count' => $result['count'],
+                'database_count' => $dbCount,
+                'mismatch' => $dbCount > 0,
             ]);
 
-            // Apply sorting - use database ORDER BY for efficiency
-            switch ($sortBy) {
-                case 'price_low_high':
-                    $query->orderBy(DB::raw($effectivePriceExpression), 'asc')
-                          ->orderBy('products.id', 'desc'); // Secondary sort for consistency
-                    break;
-                case 'price_high_low':
-                    $query->orderBy(DB::raw($effectivePriceExpression), 'desc')
-                          ->orderBy('products.id', 'desc'); // Secondary sort for consistency
-                    break;
-                case 'rating_high_low':
-                    // Check if rating join already exists
-                    $hasRatingJoin = collect($query->getQuery()->joins ?? [])->contains(function ($join) {
-                        return strpos($join->table ?? '', 'product_ratings_cache') !== false;
-                    });
+            return $this->buildSimilarProductsResponse($category, $filters, $perPage);
+        }
 
-                    if (! $hasRatingJoin) {
-                        $query->leftJoin('product_ratings_cache as prc_rating', 'products.id', '=', 'prc_rating.product_id');
-                    }
-                    $query->orderByDesc(DB::raw('COALESCE(prc_rating.average_rating, 0)'))
-                          ->orderBy('products.id', 'desc'); // Secondary sort
-                    break;
-                case 'name_a_z':
-                    $query->orderBy('products.title', 'asc')
-                          ->orderBy('products.id', 'asc'); // Secondary sort
-                    break;
-                case 'name_z_a':
-                    $query->orderBy('products.title', 'desc')
-                          ->orderBy('products.id', 'desc'); // Secondary sort
-                    break;
-                case 'latest':
-                default:
-                    $query->orderByDesc('products.id');
-                    break;
-            }
+        $total = $result['count'];
 
-            // Apply pagination
-            $productIds = $query->skip(($page - 1) * $perPage)
-                               ->take($perPage)
-                               ->pluck('products.id')
-                               ->toArray();
+        // STRATEGY: Get a larger sample from Redis, sort in DB, then paginate
+        // For sorting to work correctly, we need more products than just one page
+        $sampleSize = min($total, $perPage * 10); // Get 10 pages worth for sorting
+        $allSortableIds = $this->filterService->getPaginatedIds($result['key'], 0, $sampleSize);
 
-            if (empty($productIds)) {
-                // Show similar products for pagination edge case
-                return $this->buildSimilarProductsResponse($category, $filters, $perPage);
-            }
+        if (empty($allSortableIds)) {
+            Log::warning('No product IDs from Redis', ['total' => $total, 'sample_size' => $sampleSize]);
 
-            // Fetch product details
-            $products = $this->fetchProductDetails($productIds, $filters);
+            return $this->buildSimilarProductsResponse($category, $filters, $perPage);
+        }
 
-            // Build filter data
-            $filterData = $this->buildRedisFilterData($category, $filters);
+        // Apply sorting via database on the larger sample
+        $sortedIds = $this->sortProductIds($allSortableIds, $sortBy);
 
-            return [
-                'filters' => $filterData,
-                'products' => $products,
-                'pagination' => $this->buildPagination($page, $perPage, $total),
-                'total' => $total,
-                'source' => 'database_indexed',
-                'cached' => false,
-                'similar' => false,
-            ];
-        });
+        // Now paginate the sorted results
+        $offset = ($page - 1) * $perPage;
+        $productIds = array_slice($sortedIds, $offset, $perPage);
+
+        if (empty($productIds)) {
+            Log::warning('No product IDs after pagination', ['page' => $page, 'offset' => $offset]);
+
+            return $this->buildSimilarProductsResponse($category, $filters, $perPage);
+        }
+
+        $sortTime = round((microtime(true) - $startTime) * 1000, 2);
+        Log::info('Sorting & Pagination', [
+            'time_ms' => $sortTime - $redisTime,
+            'sort' => $sortBy,
+            'sample_size' => count($allSortableIds),
+            'after_sort' => count($sortedIds),
+            'page' => $page,
+            'final_products' => count($productIds),
+        ]);
+
+        // Fetch product details (20-80ms for 12-48 products)
+        $products = $this->fetchProductDetails($productIds, $filters);
+
+        // Build filter data
+        $filterData = $this->buildRedisFilterData($category, $filters);
+
+        $totalTime = round((microtime(true) - $startTime) * 1000, 2);
+        Log::info('Total Query Time', ['time_ms' => $totalTime]);
+
+        return [
+            'filters' => $filterData,
+            'products' => $products,
+            'pagination' => $this->buildPagination($page, $perPage, $total),
+            'total' => $total,
+            'source' => 'redis_indexes',
+            'cached' => false,
+            'similar' => false,
+            'performance' => [
+                'redis_ms' => $redisTime,
+                'sort_ms' => $sortTime - $redisTime,
+                'total_ms' => $totalTime,
+            ],
+        ];
+        // });  // DISABLED: Caching temporarily disabled
     }
 
     /**
@@ -758,6 +719,8 @@ class UltraFastFilterController extends Controller
     private function resolveCategoryContext(Request $request, $path = null)
     {
         if (! $path) {
+            Log::info('resolveCategoryContext: No path provided');
+
             return null;
         }
 
@@ -765,15 +728,36 @@ class UltraFastFilterController extends Controller
             $decodedPath = UrlEncryptor::decodePath($path);
             $segments = array_filter(explode('/', trim($decodedPath, '/')));
 
+            Log::info('resolveCategoryContext', [
+                'encrypted_path' => $path,
+                'decoded_path' => $decodedPath,
+                'segments' => $segments,
+            ]);
+
             if (empty($segments)) {
+                Log::warning('resolveCategoryContext: No segments after decode');
+
                 return null;
             }
 
-            return Category::whereNull('parent_id')
+            $category = Category::whereNull('parent_id')
                 ->where('status', 'active')
                 ->where('slug', $segments[0])
                 ->first();
+
+            Log::info('resolveCategoryContext: Category lookup result', [
+                'slug' => $segments[0],
+                'found' => $category ? true : false,
+                'category_id' => $category?->id,
+            ]);
+
+            return $category;
         } catch (\Exception $e) {
+            Log::error('resolveCategoryContext: Exception', [
+                'path' => $path,
+                'error' => $e->getMessage(),
+            ]);
+
             return null;
         }
     }
@@ -863,16 +847,24 @@ class UltraFastFilterController extends Controller
             'message' => $message,
         ]);
 
-        return [
+        // Only set similar=true if filters were actually applied
+        $hasFilters = ! empty($message);
+
+        $response = [
             'filters' => $this->buildRedisFilterData($category, $filters),
             'products' => $products,
             'pagination' => $this->buildPagination(1, $perPage, $fallbackCount),
             'total' => $fallbackCount,
             'source' => 'similar_fallback',
             'cached' => false,
-            'similar' => true,
-            'message' => $message,
+            'similar' => $hasFilters, // Only show warning when filters applied but no results
         ];
+
+        if ($hasFilters) {
+            $response['message'] = $message;
+        }
+
+        return $response;
     }
 
     private function buildSimilarProductMessage($category, array $filters): string
@@ -895,8 +887,10 @@ class UltraFastFilterController extends Controller
             $appliedFilters[] = 'discount: '.min($filters['discounts']).'%+';
         }
 
+        // Only show message when filters are applied but no products found
+        // If no filters applied, return empty string (no warning needed)
         if (empty($appliedFilters)) {
-            return 'Showing recommended products for you.';
+            return '';
         }
 
         $filterText = implode(', ', $appliedFilters);
@@ -1207,5 +1201,111 @@ class UltraFastFilterController extends Controller
 
         // Simple case: just use base price with discount
         return 'products.base_price * (1 - COALESCE(products.base_discount, 0) / 100.0)';
+    }
+
+    /**
+     * Sort product IDs using database query (optimized for small result sets)
+     * Only called with 12-48 IDs, so very fast even with complex sorts
+     */
+    /**
+     * Verify if PostgreSQL database has products for the given filters
+     * Used to debug Redis vs Database mismatches
+     */
+    private function verifyDatabaseHasProducts($category, array $filters): int
+    {
+        $query = Product::where('status', 'active');
+
+        if ($category) {
+            $query->where('cat_id', $category->id);
+        }
+
+        // Apply brand filter if present
+        if (! empty($filters['brands'])) {
+            $brandIds = $this->getBrandIdsBySlug($filters['brands']);
+            if (! empty($brandIds)) {
+                $query->whereIn('brand_id', $brandIds);
+            }
+        }
+
+        // Apply discount filter if present
+        if (! empty($filters['discounts'])) {
+            $minDiscount = min(array_map('intval', $filters['discounts']));
+            $query->where(function ($q) use ($minDiscount) {
+                $q->where(function ($nonVariant) use ($minDiscount) {
+                    $nonVariant->where('has_variants', false)
+                               ->where('base_discount', '>=', $minDiscount);
+                })
+                ->orWhereHas('variants', function ($variant) use ($minDiscount) {
+                    $variant->where('status', 'active')
+                            ->where('discount', '>=', $minDiscount);
+                });
+            });
+        }
+
+        $count = $query->count();
+
+        Log::info('📊 DATABASE QUERY DETAILS', [
+            'category_id' => $category?->id,
+            'filters' => $filters,
+            'count' => $count,
+            'sql' => $query->toSql(),
+            'bindings' => $query->getBindings(),
+        ]);
+
+        return $count;
+    }
+
+    private function sortProductIds(array $productIds, string $sortBy): array
+    {
+        if (empty($productIds)) {
+            return [];
+        }
+
+        $query = Product::whereIn('products.id', $productIds)
+            ->where('products.status', 'active');
+
+        switch ($sortBy) {
+            case 'price_low_high':
+            case 'price_high_low':
+                // For price sorting, calculate effective price (base + variants)
+                $query->leftJoin(
+                    DB::raw("LATERAL (
+                        SELECT 
+                            product_variants.product_id,
+                            MIN(product_variants.price * (1 - COALESCE(product_variants.discount, 0) / 100.0)) as min_variant_price
+                        FROM product_variants
+                        WHERE product_variants.product_id = products.id
+                          AND product_variants.status = 'active'
+                        GROUP BY product_variants.product_id
+                    ) as pv_min"),
+                    DB::raw('TRUE'),
+                    DB::raw('TRUE')
+                )
+                ->orderBy(
+                    DB::raw('COALESCE(pv_min.min_variant_price, products.base_price * (1 - COALESCE(products.base_discount, 0) / 100.0))'),
+                    $sortBy === 'price_low_high' ? 'asc' : 'desc'
+                );
+                break;
+
+            case 'rating_high_low':
+                $query->leftJoin('product_ratings_cache', 'products.id', '=', 'product_ratings_cache.product_id')
+                    ->orderByDesc(DB::raw('COALESCE(product_ratings_cache.average_rating, 0)'));
+                break;
+
+            case 'name_a_z':
+                $query->orderBy('products.title', 'asc');
+                break;
+
+            case 'name_z_a':
+                $query->orderBy('products.title', 'desc');
+                break;
+
+            case 'latest':
+            default:
+                $query->orderByDesc('products.id');
+                break;
+        }
+
+        return $query->pluck('products.id')->toArray();
     }
 }

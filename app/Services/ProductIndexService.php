@@ -250,11 +250,12 @@ class ProductIndexService
             Redis::unlink($indexKey);
             $count = 0;
 
-            // Optimized: Chunked query for base products
+            // Optimized: Chunked query for base products (using DISCOUNTED price)
             DB::table('products')
                 ->where('status', 'active')
                 ->where('has_variants', false)
-                ->whereBetween('base_price', $range)
+                ->whereRaw('(base_price * (1 - COALESCE(base_discount, 0) / 100.0)) >= ?', [$range[0]])
+                ->whereRaw('(base_price * (1 - COALESCE(base_discount, 0) / 100.0)) <= ?', [$range[1]])
                 ->select('id')
                 ->orderBy('id')
                 ->chunkById(self::BATCH_SIZE, function ($products) use ($indexKey, &$count) {
@@ -265,13 +266,14 @@ class ProductIndexService
                     }
                 });
 
-            // Optimized: Chunked query for variants
+            // Optimized: Chunked query for variants (using DISCOUNTED price)
             DB::table('product_variants')
                 ->join('products', 'product_variants.product_id', '=', 'products.id')
                 ->where('products.status', 'active')
                 ->where('products.has_variants', true)
                 ->where('product_variants.status', 'active')
-                ->whereBetween('product_variants.price', $range)
+                ->whereRaw('(product_variants.price * (1 - COALESCE(product_variants.discount, 0) / 100.0)) >= ?', [$range[0]])
+                ->whereRaw('(product_variants.price * (1 - COALESCE(product_variants.discount, 0) / 100.0)) <= ?', [$range[1]])
                 ->select('products.id', 'product_variants.id as variant_id')
                 ->distinct()
                 ->orderBy('product_variants.id')
@@ -381,7 +383,7 @@ class ProductIndexService
         Log::info("[5/5] Building discount indexes ({$total} levels)...");
 
         foreach ($discountRanges as $key => $minDiscount) {
-            $indexKey = "index:discount:{$key}";
+            $indexKey = RedisKeyManager::indexDiscount($minDiscount);
             $discountStart = microtime(true);
 
             Redis::unlink($indexKey);
