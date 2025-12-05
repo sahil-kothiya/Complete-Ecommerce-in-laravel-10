@@ -147,15 +147,46 @@ if (($productData->has_variants ?? false) && $variants->count()) {
             @php
                 $productStock = $totalStock;
                 $inWishlist = class_exists('Helper') ? Helper::isProductInWishlist($productData->slug) : false;
+                $hasVariants = $productData->has_variants ?? false;
+
+                // Get default variant ID for variant products (first in-stock variant)
+                $defaultVariantId = null;
+                if ($hasVariants && $variants->count() > 0) {
+                    $firstInStock = $variants->first(function ($v) {
+                        $stock = is_object($v) ? $v->stock ?? 0 : $v['stock'] ?? 0;
+                        return $stock > 0;
+                    });
+
+                    if ($firstInStock) {
+                        $defaultVariantId = is_object($firstInStock)
+                            ? $firstInStock->id ?? null
+                            : $firstInStock['id'] ?? null;
+                    } else {
+                        // If no in-stock variant, use first variant
+                        $firstVariant = $variants->first();
+                        $defaultVariantId = is_object($firstVariant)
+                            ? $firstVariant->id ?? null
+                            : $firstVariant['id'] ?? null;
+                    }
+                }
             @endphp
 
             <div class="mt-auto">
-                <a href="{{ route('add-to-cart', $productData->slug) }}"
-                    class="btn btn-sm btn-block btn-dark text-uppercase mb-2 text-center {{ $productStock <= 0 ? 'disabled' : '' }}"
-                    style="padding: 0.4rem 0.5rem; font-size: 0.75rem;">
-                    <i class="ti-shopping-cart mr-1" aria-hidden="true"></i>
-                    {{ $productStock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
-                </a>
+                <form action="{{ route('single-add-to-cart') }}" method="POST" class="d-inline w-100">
+                    @csrf
+                    <input type="hidden" name="slug" value="{{ $productData->slug }}">
+                    <input type="hidden" name="quantity" value="1">
+                    @if ($hasVariants && $defaultVariantId)
+                        <input type="hidden" name="variant_id" value="{{ $defaultVariantId }}">
+                    @endif
+
+                    <button type="submit"
+                        class="btn btn-sm btn-block btn-dark text-uppercase mb-2 {{ $productStock <= 0 ? 'disabled' : '' }}"
+                        style="padding: 0.4rem 0.5rem; font-size: 0.75rem;" {{ $productStock <= 0 ? 'disabled' : '' }}>
+                        <i class="ti-shopping-cart mr-1" aria-hidden="true"></i>
+                        {{ $productStock <= 0 ? 'Out of Stock' : 'Add to Cart' }}
+                    </button>
+                </form>
 
                 <div class="d-flex justify-content-between align-items-center px-0" style="font-size: 0.7rem;">
                     <a href="{{ route('add-to-wishlist', $productData->slug) }}" class="text-decoration-none"

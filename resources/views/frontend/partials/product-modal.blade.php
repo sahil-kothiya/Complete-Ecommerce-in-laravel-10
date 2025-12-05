@@ -137,27 +137,74 @@
 
                             {{-- Add to Cart Form --}}
                             @if ($productStock > 0)
+                                @php
+                                    // Get variants for this product
+                                    $normalizeToArray = function ($value) {
+                                        if ($value instanceof \Illuminate\Support\Collection) {
+                                            return $value->all();
+                                        }
+                                        if (is_object($value)) {
+                                            if ($value instanceof \Traversable) {
+                                                return iterator_to_array($value);
+                                            }
+                                            if (property_exists($value, 'items') && is_array($value->items)) {
+                                                return $value->items;
+                                            }
+                                        }
+                                        if (is_array($value)) {
+                                            return $value;
+                                        }
+                                        return [];
+                                    };
+
+                                    $variants = collect($normalizeToArray($productData->variants ?? []));
+                                    $hasVariants = ($productData->has_variants ?? false) && $variants->count() > 0;
+
+                                    // Get default variant ID (first in-stock variant)
+                                    $defaultVariantId = null;
+                                    if ($hasVariants) {
+                                        $firstInStock = $variants->first(function ($v) {
+                                            $stock = is_object($v) ? $v->stock ?? 0 : $v['stock'] ?? 0;
+                                            return $stock > 0;
+                                        });
+
+                                        if ($firstInStock) {
+                                            $defaultVariantId = is_object($firstInStock)
+                                                ? $firstInStock->id ?? null
+                                                : $firstInStock['id'] ?? null;
+                                        } else {
+                                            // If no in-stock variant, use first variant
+                                            $firstVariant = $variants->first();
+                                            $defaultVariantId = is_object($firstVariant)
+                                                ? $firstVariant->id ?? null
+                                                : $firstVariant['id'] ?? null;
+                                        }
+                                    }
+                                @endphp
                                 <form action="{{ route('single-add-to-cart') }}" method="POST" class="quickview-form">
                                     @csrf
                                     <input type="hidden" name="slug" value="{{ $productSlug }}">
+                                    @if ($hasVariants && $defaultVariantId)
+                                        <input type="hidden" name="variant_id" value="{{ $defaultVariantId }}">
+                                    @endif
 
                                     {{-- Quantity Controls --}}
                                     <div class="form-group mb-3">
                                         <label class="font-weight-bold mb-2">Quantity:</label>
-                                        <div class="quantity-controls d-flex align-items-center">
-                                            <button type="button" class="btn btn-outline-secondary btn-sm quantity-btn"
+                                        <div class="quantity-selector">
+                                            <button type="button" class="quantity-btn decrease-btn"
                                                 data-action="decrease" data-product-id="{{ $productId }}">
                                                 <i class="fa fa-minus"></i>
                                             </button>
-                                            <input type="number" id="quantity-{{ $productId }}"
-                                                name="quant[{{ $productId }}]"
-                                                class="form-control quantity-input mx-2 text-center" value="1"
-                                                min="1" max="{{ $productStock }}" readonly>
-                                            <button type="button" class="btn btn-outline-secondary btn-sm quantity-btn"
+                                            <input type="number" id="quantity-{{ $productId }}" name="quantity"
+                                                class="quantity-input" value="1" min="1"
+                                                max="{{ $productStock }}">
+                                            <button type="button" class="quantity-btn increase-btn"
                                                 data-action="increase" data-product-id="{{ $productId }}">
                                                 <i class="fa fa-plus"></i>
                                             </button>
                                         </div>
+                                        <small class="text-muted">Available: {{ $productStock }} units</small>
                                     </div>
 
                                     {{-- Action Buttons --}}
@@ -329,41 +376,78 @@
             line-height: 1.5;
         }
 
-        /* Quantity Controls */
-        .quantity-controls {
-            max-width: 140px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
+        /* Quantity Selector - E-commerce Style */
+        .quantity-selector {
+            display: inline-flex;
+            align-items: center;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
             overflow: hidden;
+            background: white;
+            max-width: 150px;
         }
 
         .quantity-btn {
             border: none;
             background: #f8f9fa;
-            width: 40px;
-            height: 40px;
+            width: 45px;
+            height: 45px;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background-color 0.3s ease;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 16px;
+            color: #333;
+            outline: none;
         }
 
         .quantity-btn:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .quantity-btn:active {
+            transform: scale(0.95);
+        }
+
+        .quantity-btn:disabled {
             background: #e9ecef;
+            color: #999;
+            cursor: not-allowed;
+        }
+
+        .decrease-btn {
+            border-right: 1px solid #e0e0e0;
+        }
+
+        .increase-btn {
+            border-left: 1px solid #e0e0e0;
         }
 
         .quantity-input {
             border: none;
             background: white;
             width: 60px;
-            height: 40px;
+            height: 45px;
             text-align: center;
             font-weight: bold;
+            font-size: 16px;
+            color: #333;
+            outline: none;
+            -moz-appearance: textfield;
+        }
+
+        .quantity-input::-webkit-outer-spin-button,
+        .quantity-input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
         }
 
         .quantity-input:focus {
             box-shadow: none;
             outline: none;
+            background: #f9f9f9;
         }
 
         /* Action Buttons */
@@ -440,14 +524,33 @@
 
 @push('scripts')
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Initialize Quick View Modal functionality
-            initQuickViewModal();
-        });
+        // Use IIFE to avoid multiple event listener attachments
+        (function() {
+            // Flag to ensure initialization happens only once
+            if (window.quickViewModalInitialized) {
+                return;
+            }
+            window.quickViewModalInitialized = true;
 
-        function initQuickViewModal() {
-            // Handle thumbnail image clicks
+            // Update quantity button states
+            function updateQuantityButtons(productId, currentValue, min, max) {
+                const quantityInput = document.getElementById('quantity-' + productId);
+                if (!quantityInput) return;
+
+                const decreaseBtn = quantityInput.parentElement.querySelector('[data-action="decrease"]');
+                const increaseBtn = quantityInput.parentElement.querySelector('[data-action="increase"]');
+
+                if (decreaseBtn) {
+                    decreaseBtn.disabled = currentValue <= min;
+                }
+                if (increaseBtn) {
+                    increaseBtn.disabled = currentValue >= max;
+                }
+            }
+
+            // Handle all clicks with event delegation (single listener)
             document.addEventListener('click', function(e) {
+                // Handle thumbnail image clicks
                 if (e.target.classList.contains('thumbnail-image')) {
                     const productId = e.target.dataset.productId;
                     const mainImageSrc = e.target.dataset.mainImage;
@@ -462,46 +565,57 @@
                         thumbnails.forEach(thumb => thumb.classList.remove('active'));
                         e.target.classList.add('active');
                     }
+                    return;
                 }
-            });
 
-            // Handle quantity controls
-            document.addEventListener('click', function(e) {
-                if (e.target.classList.contains('quantity-btn') || e.target.parentElement.classList.contains(
-                        'quantity-btn')) {
-                    const btn = e.target.classList.contains('quantity-btn') ? e.target : e.target.parentElement;
-                    const action = btn.dataset.action;
-                    const productId = btn.dataset.productId;
+                // Handle quantity button clicks
+                const quantityBtn = e.target.closest('.quantity-btn');
+                if (quantityBtn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    const action = quantityBtn.dataset.action;
+                    const productId = quantityBtn.dataset.productId;
                     const quantityInput = document.getElementById('quantity-' + productId);
 
-                    if (quantityInput) {
-                        let currentValue = parseInt(quantityInput.value);
-                        const min = parseInt(quantityInput.min);
-                        const max = parseInt(quantityInput.max);
+                    if (quantityInput && action && productId) {
+                        let currentValue = parseInt(quantityInput.value) || 1;
+                        const min = parseInt(quantityInput.min) || 1;
+                        const max = parseInt(quantityInput.max) || 999;
 
                         if (action === 'increase' && currentValue < max) {
                             quantityInput.value = currentValue + 1;
+                            updateQuantityButtons(productId, currentValue + 1, min, max);
                         } else if (action === 'decrease' && currentValue > min) {
                             quantityInput.value = currentValue - 1;
+                            updateQuantityButtons(productId, currentValue - 1, min, max);
                         }
                     }
+                    return;
+                }
+            }, true); // Use capture phase to prevent bubbling issues
+
+            // Handle manual quantity input changes
+            document.addEventListener('input', function(e) {
+                if (e.target.classList.contains('quantity-input')) {
+                    let value = parseInt(e.target.value) || 1;
+                    const min = parseInt(e.target.min) || 1;
+                    const max = parseInt(e.target.max) || 999;
+
+                    // Enforce min/max constraints
+                    if (value < min) {
+                        e.target.value = min;
+                        value = min;
+                    } else if (value > max) {
+                        e.target.value = max;
+                        value = max;
+                    }
+
+                    // Update button states
+                    const productId = e.target.id.replace('quantity-', '');
+                    updateQuantityButtons(productId, value, min, max);
                 }
             });
-
-            // // Handle modal events
-            // $(document).on('show.bs.modal', '[id^="productModal"]', function() {
-            //     // Add any initialization code when modal opens
-            //     console.log('Quick View modal opened');
-            // });
-
-            // $(document).on('hidden.bs.modal', '[id^="productModal"]', function() {
-            //     // Reset modal state when closed
-            //     const productId = this.id.replace('productModal', '');
-            //     const quantityInput = document.getElementById('quantity-' + productId);
-            //     if (quantityInput) {
-            //         quantityInput.value = 1;
-            //     }
-            // });
 
             // Handle form submission with loading state
             document.addEventListener('submit', function(e) {
@@ -519,6 +633,29 @@
                     }
                 }
             });
-        }
+
+            // Initialize button states when modal opens
+            $(document).on('shown.bs.modal', '[id^="productModal"]', function() {
+                const productId = this.id.replace('productModal', '');
+                const quantityInput = document.getElementById('quantity-' + productId);
+                if (quantityInput) {
+                    const min = parseInt(quantityInput.min) || 1;
+                    const max = parseInt(quantityInput.max) || 999;
+                    updateQuantityButtons(productId, parseInt(quantityInput.value) || 1, min, max);
+                }
+            });
+
+            // Reset quantity when modal closes
+            $(document).on('hidden.bs.modal', '[id^="productModal"]', function() {
+                const productId = this.id.replace('productModal', '');
+                const quantityInput = document.getElementById('quantity-' + productId);
+                if (quantityInput) {
+                    quantityInput.value = 1;
+                    const min = parseInt(quantityInput.min) || 1;
+                    const max = parseInt(quantityInput.max) || 999;
+                    updateQuantityButtons(productId, 1, min, max);
+                }
+            });
+        })();
     </script>
 @endpush

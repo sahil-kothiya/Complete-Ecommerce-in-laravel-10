@@ -395,11 +395,17 @@ class CartController extends Controller
             // Recalculate cart totals
             $cartSummary = $this->calculateCartSummary();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Item removed from cart.',
-                ...$cartSummary
-            ]);
+            // Check if request is AJAX
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Item removed from cart.',
+                    ...$cartSummary
+                ]);
+            }
+
+            // For regular form submission, redirect back with success message
+            return redirect()->back()->with('success', 'Item removed from cart.');
 
         } catch (\Exception $e) {
             Log::error('Cart delete failed: ' . $e->getMessage(), [
@@ -407,10 +413,16 @@ class CartController extends Controller
                 'cart_id' => $id
             ]);
 
-            return response()->json([
-                'success' => false,
-                'message' => 'An error occurred while removing item.'
-            ], 500);
+            // Check if request is AJAX
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'An error occurred while removing item.'
+                ], 500);
+            }
+
+            // For regular form submission, redirect back with error message
+            return redirect()->back()->with('error', 'An error occurred while removing item.');
         }
     }
 

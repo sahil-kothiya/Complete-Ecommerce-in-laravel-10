@@ -7,63 +7,54 @@
     <ul class="shopping-list">
         @forelse(Helper::getAllProductFromWishlist() as $index => $data)
             @php
-                // Determine image: variant image → product image → default
-                $imageUrl = asset('default.jpg');
-                if ($data->variant && $data->variant->images->isNotEmpty()) {
-                    $imageUrl = $data->variant->images->first()->url ?? $imageUrl;
-                } elseif ($data->product && $data->product->images->isNotEmpty()) {
-                    $imageUrl = $data->product->images->first()->url ?? $imageUrl;
+                // Determine the first image: prefer variant images if variant exists, fallback to product images
+                $firstImage = null;
+                if (
+                    isset($data->variant) &&
+                    $data->variant &&
+                    $data->variant->images &&
+                    $data->variant->images->isNotEmpty()
+                ) {
+                    $firstImage = $data->variant->images->first();
+                } elseif ($data->product && $data->product->images && $data->product->images->isNotEmpty()) {
+                    $firstImage = $data->product->images->first();
                 }
+                $imageUrl = $firstImage ? $firstImage->url : asset('default.jpg');
 
-                // Variant display name
-                $variantName = $data->variant?->display_name ?? '';
-
-                // Price (variant price with discount)
-                $price = $data->variant
-                    ? $data->variant->discounted_price
-                    : ($data->product->base_price - ($data->product->base_price * ($data->product->base_discount ?? 0) / 100));
-
-                $productSlug = $data->product->slug;
-                $productTitle = $data->product->title;
+                // Build product detail URL with variant_id if applicable for pre-selection
+                $productUrl = route('product-detail', $data->product->slug);
+                if ($data->variant_id) {
+                    $productUrl .= '?variant_id=' . $data->variant_id;
+                }
             @endphp
 
             <li>
                 <!-- Remove Button -->
-                <form action="{{ route('wishlist-delete', $data->id) }}" method="POST" class="d-inline">
+                <form action="{{ route('wishlist-delete', $data->id) }}" method="POST" style="display:inline;">
                     @csrf
                     @method('POST')
-                    <button type="submit" class="remove btn-link p-0 border-0 bg-transparent" title="Remove">
+                    <button type="submit" class="remove" title="Remove this item" tabindex="{{ 2 + $index * 3 }}"
+                        style="background:none;border:none;cursor:pointer;padding:0;">
                         <i class="fa fa-remove"></i>
                     </button>
                 </form>
 
                 <!-- Product Image -->
-                <a class="cart-img" href="{{ route('product-detail', $productSlug) }}" tabindex="{{ 3 + $index * 3 }}">
-                    <img src="{{ $imageUrl }}" alt="{{ $productTitle }}" loading="lazy" style="width:60px;height:60px;object-fit:cover;">
+                <a class="cart-img" href="{{ $productUrl }}" tabindex="{{ 3 + $index * 3 }}">
+                    <img src="{{ $imageUrl }}" alt="{{ $data->product->title ?? 'Product Image' }}" loading="lazy">
                 </a>
 
-                <div class="cart-item-details">
-                    <!-- Product Title -->
-                    <h4 class="mb-1">
-                        <a href="{{ route('product-detail', $productSlug) }}" class="text-dark text-decoration-none">
-                            {{ Str::limit($productTitle, 40) }}
-                        </a>
-                    </h4>
+                <!-- Product Title -->
+                <h4>
+                    <a href="{{ $productUrl }}" target="_blank" tabindex="{{ 4 + $index * 3 }}">
+                        {{ $data->product->title ?? 'Product' }}
+                    </a>
+                </h4>
 
-                    <!-- Variant Info -->
-                    @if($variantName)
-                        <p class="text-muted small mb-1">
-                            <em>{{ $variantName }}</em>
-                        </p>
-                    @endif
-
-                    <!-- Price -->
-                    <p class="quantity mb-0">
-                        <span class="amount text-primary fw-bold">
-                            ${{ number_format($price, 2) }}
-                        </span>
-                    </p>
-                </div>
+                <!-- Price -->
+                <p class="quantity">
+                    <span class="amount">${{ number_format($data->price, 2) }}</span>
+                </p>
             </li>
         @empty
             <li class="text-center py-3 text-muted">
@@ -77,9 +68,8 @@
             <span>Total</span>
             <span class="total-amount">${{ number_format(Helper::totalWishlistPrice(), 2) }}</span>
         </div>
-        <a href="{{ route('cart') }}"
-           class="btn animate"
-           tabindex="{{ 2 + (Helper::getAllProductFromWishlist()->count() * 3) + 1 }}">
+        <a href="{{ route('cart') }}" class="btn animate"
+            tabindex="{{ 2 + Helper::getAllProductFromWishlist()->count() * 3 + 1 }}">
             Cart
         </a>
     </div>

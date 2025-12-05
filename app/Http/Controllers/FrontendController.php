@@ -791,6 +791,7 @@ class FrontendController extends Controller
      * Transform product for display (reusable method)
      * Optimized for both variant and non-variant products
      * Returns a plain object that survives Redis serialization
+     * UPDATED: Now matches detail page pricing logic exactly
      */
     private function transformProductForDisplay($product)
     {
@@ -799,9 +800,23 @@ class FrontendController extends Controller
         $variantsData = [];
         $variantStockTotal = 0;
         $variantMaxDiscount = 0;
+        $defaultVariantPrice = null;
+        $defaultVariantDiscount = null;
 
         if ($product->has_variants && $product->variants && $product->variants->count() > 0) {
-            foreach ($product->variants as $variant) {
+            // Sort variants: in-stock first, then by discounted price (cheapest first)
+            $sortedVariants = $product->variants->sortBy(function ($variant) {
+                $inStock = $variant->stock > 0 ? 0 : 1; // 0 = in stock (higher priority)
+                $price = $variant->price ?? 0;
+                $discount = $variant->discount ?? 0;
+                $discountedPrice = $price * (1 - $discount / 100);
+
+                return [$inStock, $discountedPrice];
+            });
+
+            $firstVariant = $sortedVariants->first(); // This is the default variant (matches detail page logic)
+
+            foreach ($sortedVariants as $index => $variant) {
                 // Gather images (limit 3) for this variant - always load if not present
                 if (! $variant->relationLoaded('images')) {
                     $variant->load(['images' => fn ($q) => $q->orderBy('sort_order', 'asc')->take(3)]);
@@ -845,9 +860,15 @@ class FrontendController extends Controller
                 $variantStockTotal += (int) $variant->stock;
                 $variantMaxDiscount = max($variantMaxDiscount, (float) ($variant->discount ?? 0));
 
-                // Also expose first variant images globally if master images list still small
-                if (empty($images) && ! empty($variantImageArray)) {
-                    $images = $variantImageArray; // seed product-level images with variant images
+                // Store first (default) variant pricing for display
+                if ($index === 0) {
+                    $defaultVariantPrice = (float) $variant->price;
+                    $defaultVariantDiscount = (float) ($variant->discount ?? 0);
+
+                    // Use first variant images as default product images
+                    if (! empty($variantImageArray)) {
+                        $images = $variantImageArray;
+                    }
                 }
             }
         }
@@ -890,13 +911,18 @@ class FrontendController extends Controller
             ];
         }
 
-        // Calculate stock and max discount
+        // Calculate stock, pricing and max discount
+        // For variant products: use first (cheapest in-stock) variant's pricing
+        // For simple products: use base pricing
         if ($product->has_variants && count($variantsData) > 0) {
             $stock = $variantStockTotal;
-            $maxDiscount = $variantMaxDiscount ?: ($product->base_discount ?? 0);
+            $maxDiscount = $defaultVariantDiscount ?? $variantMaxDiscount;
+            // Use default variant price if available, otherwise use base_price
+            $displayPrice = $defaultVariantPrice ?? $product->base_price;
         } else {
             $stock = $product->base_stock ?? 0;
             $maxDiscount = $product->base_discount ?? 0;
+            $displayPrice = $product->base_price;
         }
 
         // Return a plain stdClass object that survives serialization
@@ -904,8 +930,8 @@ class FrontendController extends Controller
             'id' => $product->id,
             'title' => $product->title,
             'slug' => $product->slug,
-            'base_price' => (float) $product->base_price,
-            'base_discount' => (float) ($product->base_discount ?? 0),
+            'base_price' => (float) $displayPrice, // Use default variant price for variant products
+            'base_discount' => (float) $maxDiscount, // Use default variant discount
             'base_stock' => (int) ($product->base_stock ?? 0),
             'has_variants' => (bool) $product->has_variants,
             'cat_id' => $product->cat_id,

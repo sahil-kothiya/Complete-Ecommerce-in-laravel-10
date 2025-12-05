@@ -528,7 +528,7 @@
 
 .header .shopping .shopping-item {
     position: absolute;
-    top: 68px;
+    /* top: 68px; */
     right: 0;
     width: 300px;
     background: #fff;
